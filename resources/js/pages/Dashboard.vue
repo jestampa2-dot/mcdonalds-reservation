@@ -1,0 +1,115 @@
+<script setup>
+import { reactive } from 'vue'
+import { router } from '@inertiajs/vue3'
+import AppShell from '@/Components/AppShell.vue'
+import StatusBadge from '@/Components/StatusBadge.vue'
+
+const props = defineProps({
+  bookings: Array,
+  stats: Array,
+})
+
+const rescheduleState = reactive(
+  Object.fromEntries(
+    props.bookings.map((booking) => [
+      booking.id,
+      { event_date: booking.event_date, event_time: booking.event_time },
+    ]),
+  ),
+)
+
+const cancelBooking = (id) => {
+  router.post(route('reservations.cancel', id))
+}
+
+const rescheduleBooking = (id) => {
+  router.post(route('reservations.reschedule', id), rescheduleState[id])
+}
+</script>
+
+<template>
+  <AppShell title="My Dashboard">
+    <section class="mcd-section">
+      <div class="mcd-panel p-8">
+        <div class="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <p class="mcd-chip">Customer dashboard</p>
+            <h1 class="mt-4 text-4xl">Track your upcoming bookings, payment review, and check-in pass.</h1>
+          </div>
+          <a :href="route('reservations.create')" class="mcd-button">Create another booking</a>
+        </div>
+      </div>
+
+      <div class="mcd-grid mcd-grid--3">
+        <article v-for="item in stats" :key="item.label" class="mcd-panel p-6">
+          <p class="text-sm uppercase tracking-[0.25em] text-slate-500">{{ item.label }}</p>
+          <p class="mt-3 text-4xl text-red-700">{{ item.value }}</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="mcd-section">
+      <div>
+        <p class="mcd-chip">Upcoming bookings</p>
+        <h2 class="mt-3 text-3xl">Everything you need before arrival</h2>
+      </div>
+
+      <div v-if="bookings.length" class="space-y-5">
+        <article v-for="booking in bookings" :key="booking.id" class="mcd-panel p-6">
+          <div class="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <div class="flex flex-wrap items-center gap-3">
+                <h3 class="text-2xl">{{ booking.package_name }}</h3>
+                <StatusBadge :value="booking.status" />
+                <StatusBadge :value="booking.service_status" />
+              </div>
+              <p class="mt-2 text-sm text-slate-500">
+                {{ booking.booking_reference }} | {{ booking.branch }} | {{ booking.event_date }} at {{ booking.event_time }}
+              </p>
+            </div>
+            <div class="text-right">
+              <p class="text-sm uppercase tracking-[0.25em] text-slate-500">Total</p>
+              <p class="mt-2 text-3xl text-red-700">${{ booking.total_amount }}</p>
+            </div>
+          </div>
+
+          <div class="mt-5 grid gap-4 md:grid-cols-[1.4fr,1fr]">
+            <div class="rounded-3xl bg-white/80 p-5">
+              <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">Reservation details</p>
+              <p class="mt-3 text-sm leading-6 text-slate-600">Guest count: {{ booking.guests }}</p>
+              <p class="mt-1 text-sm leading-6 text-slate-600">Check-in code: {{ booking.check_in_code }}</p>
+              <p v-if="booking.notes" class="mt-1 text-sm leading-6 text-slate-600">Notes: {{ booking.notes }}</p>
+
+              <div class="mt-5 flex flex-wrap gap-3">
+                <a :href="booking.pass_url" class="mcd-button">Download QR Pass</a>
+                <a :href="booking.payment_proof_url" class="mcd-button mcd-button--ghost">Payment Proof</a>
+              </div>
+            </div>
+
+            <div class="rounded-3xl bg-amber-50 p-5">
+              <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">Reschedule</p>
+              <div class="mt-4 grid gap-3">
+                <input v-model="rescheduleState[booking.id].event_date" type="date" class="mcd-input" />
+                <select v-model="rescheduleState[booking.id].event_time" class="mcd-select">
+                  <option>10:00</option>
+                  <option>11:30</option>
+                  <option>13:00</option>
+                  <option>14:30</option>
+                  <option>16:00</option>
+                  <option>17:30</option>
+                  <option>19:00</option>
+                </select>
+                <button type="button" class="mcd-button" @click="rescheduleBooking(booking.id)">Save new slot</button>
+                <button type="button" class="mcd-button mcd-button--ghost" @click="cancelBooking(booking.id)">Cancel booking</button>
+              </div>
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <div v-else class="mcd-empty">
+        No bookings yet. Start with a birthday bash, business huddle, or quick table reservation.
+      </div>
+    </section>
+  </AppShell>
+</template>
