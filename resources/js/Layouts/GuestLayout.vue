@@ -1,5 +1,6 @@
 <script setup>
 import { Link } from '@inertiajs/vue3'
+import FlashToast from '@/Components/FlashToast.vue'
 
 defineProps({
   title: {
@@ -27,6 +28,7 @@ defineProps({
 
 <template>
   <div class="auth-shell">
+    <FlashToast />
     <div class="auth-shell__glow auth-shell__glow--left"></div>
     <div class="auth-shell__glow auth-shell__glow--right"></div>
 

@@ -13,6 +13,7 @@ const props = defineProps({
 const availabilityState = ref(props.availability)
 const eventTypeKeys = Object.keys(props.catalog.eventTypes)
 let availabilityTimer = null
+let manilaTimer = null
 
 const form = useForm({
   name: '',
@@ -22,6 +23,7 @@ const form = useForm({
   branch_code: Object.keys(props.catalog.branches)[0],
   event_date: props.defaults.event_date,
   event_time: props.defaults.event_time,
+  duration_hours: props.defaults.duration_hours,
   guests: 10,
   package_code: props.catalog.packages[eventTypeKeys[0]][0].code,
   menu_bundles: ['burger-10'],
@@ -45,10 +47,106 @@ const branchAvailability = computed(() =>
 )
 
 const dateCards = computed(() => branchAvailability.value?.dates ?? [])
+const weekIndex = ref(0)
 
 const selectedDateAvailability = computed(() =>
   dateCards.value.find((item) => item.date === form.event_date),
 )
+
+const formatTimeLabel = (time) => {
+  const [hours, minutes] = time.split(':').map(Number)
+  const meridian = hours >= 12 ? 'PM' : 'AM'
+  const hour12 = hours % 12 || 12
+  return `${hour12}:${String(minutes).padStart(2, '0')} ${meridian}`
+}
+
+const addHoursToTime = (time, hoursToAdd) => {
+  const [hours, minutes] = time.split(':').map(Number)
+  const totalMinutes = (hours * 60) + minutes + (hoursToAdd * 60)
+  const nextHours = Math.floor(totalMinutes / 60) % 24
+  const nextMinutes = totalMinutes % 60
+  return `${String(nextHours).padStart(2, '0')}:${String(nextMinutes).padStart(2, '0')}`
+}
+
+const endTimeLabel = computed(() => formatTimeLabel(addHoursToTime(form.event_time, Number(form.duration_hours))))
+
+const canStartAt = (time, dateAvailability = selectedDateAvailability.value) => {
+  if (!dateAvailability) {
+    return false
+  }
+
+  const duration = Number(form.duration_hours)
+  const slotMap = Object.fromEntries((dateAvailability.slots ?? []).map((slot) => [slot.time, slot]))
+
+  for (let offset = 0; offset < duration; offset += 1) {
+    const slot = slotMap[addHoursToTime(time, offset)]
+    if (!slot || slot.full) {
+      return false
+    }
+  }
+
+  return true
+}
+
+const selectableStartSlots = computed(() =>
+  (selectedDateAvailability.value?.slots ?? []).map((slot) => ({
+    ...slot,
+    startable: canStartAt(slot.time),
+    endLabel: formatTimeLabel(addHoursToTime(slot.time, Number(form.duration_hours))),
+  })),
+)
+
+const dateCardsView = computed(() =>
+  dateCards.value.map((item) => {
+    const validStartCount = (item.slots ?? []).filter((slot) => canStartAt(slot.time, item)).length
+
+    return {
+      ...item,
+      valid_start_count: validStartCount,
+      computed_status: validStartCount === 0 ? 'full' : (validStartCount <= 2 ? 'limited' : 'available'),
+    }
+  }),
+)
+
+const selectedDateCard = computed(() =>
+  dateCardsView.value.find((item) => item.date === form.event_date),
+)
+
+const weekGroups = computed(() => {
+  const groups = []
+
+  for (let index = 0; index < dateCardsView.value.length; index += 7) {
+    groups.push(dateCardsView.value.slice(index, index + 7))
+  }
+
+  return groups
+})
+
+const activeWeek = computed(() => weekGroups.value[weekIndex.value] ?? [])
+
+const activeWeekLabel = computed(() => {
+  if (!activeWeek.value.length) {
+    return ''
+  }
+
+  const first = new Date(`${activeWeek.value[0].date}T12:00:00`)
+  const last = new Date(`${activeWeek.value[activeWeek.value.length - 1].date}T12:00:00`)
+
+  return `${first.toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })} - ${last.toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })}`
+})
+
+const manilaNow = ref('')
+
+const updateManilaNow = () => {
+  manilaNow.value = new Intl.DateTimeFormat('en-PH', {
+    timeZone: 'Asia/Manila',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    month: 'short',
+    day: 'numeric',
+  }).format(new Date())
+}
 
 const pricingRule = computed(() => {
   if (props.catalog.pricing.holidays.includes(form.event_date)) {
@@ -75,10 +173,19 @@ const pricingRule = computed(() => {
 
 const receiptPreview = computed(() => {
   const lineItems = [
-    ...(selectedPackage.value ? [{ label: selectedPackage.value.name, amount: selectedPackage.value.price }] : []),
+    ...(selectedPackage.value ? [{ label: `${selectedPackage.value.name} (includes 4 hours)`, amount: selectedPackage.value.price }] : []),
     ...selectedBundles.value.map((item) => ({ label: item.name, amount: item.price })),
     ...selectedAddOns.value.map((item) => ({ label: item.name, amount: item.price })),
   ]
+  const extensionHours = Math.max(Number(form.duration_hours) - 4, 0)
+
+  if (extensionHours > 0) {
+    lineItems.push({
+      label: `Extended event time (${extensionHours} hour${extensionHours > 1 ? 's' : ''})`,
+      amount: extensionHours * Number(props.catalog.pricing.extension_hourly_rate),
+    })
+  }
+
   const subtotal = lineItems.reduce((sum, item) => sum + item.amount, 0)
   const adjustment = subtotal * pricingRule.value.multiplier - subtotal
   const total = subtotal + adjustment
@@ -91,11 +198,6 @@ const receiptPreview = computed(() => {
   }
 })
 
-const slotIsFull = (time) => {
-  const slot = selectedDateAvailability.value?.slots.find((item) => item.time === time)
-  return slot?.full ?? false
-}
-
 const syncSelectionToAvailability = () => {
   const fallbackBranch = supportedBranches.value[0]
 
@@ -107,18 +209,19 @@ const syncSelectionToAvailability = () => {
     form.package_code = packages.value[0]?.code ?? ''
   }
 
-  if (!dateCards.value.some((item) => item.date === form.event_date && item.status !== 'full')) {
-    form.event_date = dateCards.value.find((item) => item.status !== 'full')?.date ?? props.defaults.event_date
+  if (!dateCardsView.value.some((item) => item.date === form.event_date && item.computed_status !== 'full')) {
+    form.event_date = dateCardsView.value.find((item) => item.computed_status !== 'full')?.date ?? props.defaults.event_date
   }
 
-  if (slotIsFull(form.event_time)) {
-    form.event_time = selectedDateAvailability.value?.slots.find((item) => !item.full)?.time ?? props.defaults.event_time
+  if (!canStartAt(form.event_time)) {
+    form.event_time = selectableStartSlots.value.find((item) => item.startable)?.time ?? props.defaults.event_time
   }
 }
 
 watch(
   () => [form.event_type, form.branch_code],
   () => {
+    weekIndex.value = 0
     syncSelectionToAvailability()
   },
 )
@@ -126,8 +229,17 @@ watch(
 watch(
   () => form.event_date,
   () => {
-    if (slotIsFull(form.event_time)) {
-      form.event_time = selectedDateAvailability.value?.slots.find((item) => !item.full)?.time ?? props.defaults.event_time
+    if (!canStartAt(form.event_time)) {
+      form.event_time = selectableStartSlots.value.find((item) => item.startable)?.time ?? props.defaults.event_time
+    }
+  },
+)
+
+watch(
+  () => form.duration_hours,
+  () => {
+    if (!canStartAt(form.event_time)) {
+      form.event_time = selectableStartSlots.value.find((item) => item.startable)?.time ?? props.defaults.event_time
     }
   },
 )
@@ -140,6 +252,8 @@ const refreshAvailability = async () => {
 
 onMounted(() => {
   availabilityTimer = window.setInterval(refreshAvailability, 15000)
+  manilaTimer = window.setInterval(updateManilaNow, 60000)
+  updateManilaNow()
   syncSelectionToAvailability()
 })
 
@@ -147,10 +261,16 @@ onBeforeUnmount(() => {
   if (availabilityTimer) {
     window.clearInterval(availabilityTimer)
   }
+  if (manilaTimer) {
+    window.clearInterval(manilaTimer)
+  }
 })
 
 const submit = () => {
-  form.post(route('reservations.store'))
+  form.post(route('reservations.store'), {
+    preserveScroll: true,
+    preserveState: true,
+  })
 }
 </script>
 
@@ -204,6 +324,17 @@ const submit = () => {
               </div>
 
               <div class="mcd-field">
+                <label>Event duration</label>
+                <select v-model="form.duration_hours" class="mcd-select">
+                  <option v-for="hours in [4, 5, 6, 7, 8]" :key="hours" :value="hours">
+                    {{ hours }} hours
+                  </option>
+                </select>
+                <p class="mt-2 text-xs text-slate-500">All packages include 4 hours. Extra hours up to 8 total are charged at ${{ Number(catalog.pricing.extension_hourly_rate).toLocaleString() }}/hour.</p>
+                <p v-if="form.errors.duration_hours" class="text-sm text-red-700">{{ form.errors.duration_hours }}</p>
+              </div>
+
+              <div class="mcd-field">
                 <label>Branch</label>
                 <select v-model="form.branch_code" class="mcd-select">
                   <option v-for="item in supportedBranches" :key="item.code" :value="item.code">
@@ -214,57 +345,95 @@ const submit = () => {
               </div>
 
               <div class="rounded-3xl bg-white p-5">
-                <div class="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">Date availability</p>
-                    <p class="mt-1 text-sm text-slate-500">Pick from live available, limited, or full dates.</p>
-                  </div>
-                  <button type="button" class="mcd-button mcd-button--ghost" @click="refreshAvailability">Refresh now</button>
+                <div class="h-2 rounded-full bg-slate-100">
+                  <div class="h-2 w-2/3 rounded-full bg-gradient-to-r from-emerald-400 via-teal-300 to-slate-200"></div>
                 </div>
 
-                <div class="mt-4 grid gap-3 md:grid-cols-2">
+                <div class="mt-6 flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">Select date and time</p>
+                    <p class="mt-2 text-sm text-slate-500">Pick a Philippine-time booking window using the weekly calendar below.</p>
+                  </div>
+                  <div class="min-w-[220px] rounded-3xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                    <p class="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Timezone</p>
+                    <p class="mt-2 text-base font-bold text-slate-700">Philippines - {{ manilaNow }}</p>
+                  </div>
+                </div>
+
+                <div class="mt-6 flex items-center justify-between gap-3">
+                  <button type="button" class="mcd-button mcd-button--ghost px-4 py-2" :disabled="weekIndex === 0" @click="weekIndex = Math.max(weekIndex - 1, 0)">
+                    &lt;
+                  </button>
+                  <p class="text-center text-lg font-black">{{ activeWeekLabel }}</p>
                   <button
-                    v-for="item in dateCards"
+                    type="button"
+                    class="mcd-button mcd-button--ghost px-4 py-2"
+                    :disabled="weekIndex >= weekGroups.length - 1"
+                    @click="weekIndex = Math.min(weekIndex + 1, weekGroups.length - 1)"
+                  >
+                    &gt;
+                  </button>
+                </div>
+
+                <div class="mt-5 grid grid-cols-7 gap-2 text-center text-xs font-black uppercase tracking-[0.14em] text-slate-400">
+                  <span v-for="item in activeWeek" :key="`${item.date}-label`">
+                    {{ new Date(`${item.date}T12:00:00`).toLocaleDateString('en-PH', { weekday: 'short' }) }}
+                  </span>
+                </div>
+
+                <div class="mt-3 grid grid-cols-7 gap-2">
+                  <button
+                    v-for="item in activeWeek"
                     :key="item.date"
                     type="button"
-                    class="rounded-3xl border p-4 text-left transition"
-                    :class="item.status === 'full'
-                      ? 'border-slate-200 bg-slate-100 text-slate-500'
+                    class="rounded-3xl border px-3 py-4 text-center transition"
+                    :class="item.computed_status === 'full'
+                      ? 'border-slate-200 bg-slate-100 text-slate-400'
                       : form.event_date === item.date
-                        ? 'border-red-500 bg-red-50'
-                        : item.status === 'limited'
-                          ? 'border-amber-300 bg-amber-50'
-                          : 'border-emerald-200 bg-emerald-50'"
-                    :disabled="item.status === 'full'"
+                        ? 'border-emerald-400 bg-emerald-50 text-emerald-700'
+                        : 'border-slate-200 bg-white text-slate-700'"
+                    :disabled="item.computed_status === 'full'"
                     @click="form.event_date = item.date"
                   >
-                    <p class="font-bold">{{ item.date }}</p>
-                    <p class="mt-1 text-sm">Status: {{ item.status }}</p>
-                    <p class="mt-1 text-xs">Available slots: {{ item.available_slots }}</p>
+                    <p class="text-2xl font-bold">{{ new Date(`${item.date}T12:00:00`).getDate() }}</p>
+                    <p class="mt-1 text-[11px] capitalize">{{ item.computed_status }}</p>
                   </button>
                 </div>
-              </div>
 
-              <div class="rounded-3xl bg-amber-50 p-5">
-                <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">Available slots</p>
-                <div class="mt-4 flex flex-wrap gap-2">
+                <div class="mt-6 rounded-3xl bg-emerald-50/60 p-5">
+                  <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p class="text-sm font-black uppercase tracking-[0.2em] text-emerald-700">Available booking times</p>
+                      <p class="mt-1 text-sm text-slate-500">
+                        {{ selectedDateCard ? `${selectedDateCard.valid_start_count} start windows open on ${selectedDateCard.date}` : 'Select a date to view booking times.' }}
+                      </p>
+                    </div>
+                    <button type="button" class="mcd-button mcd-button--ghost" @click="refreshAvailability">Refresh now</button>
+                  </div>
+
+                  <div class="mt-5 grid gap-3 md:grid-cols-2">
                   <button
-                    v-for="slot in selectedDateAvailability?.slots ?? []"
+                    v-for="slot in selectableStartSlots"
                     :key="slot.time"
                     type="button"
-                    class="rounded-full px-4 py-2 text-sm font-bold"
-                    :class="slot.full
-                      ? 'cursor-not-allowed bg-slate-200 text-slate-500'
+                    class="rounded-3xl border px-4 py-4 text-left text-sm font-bold shadow-sm transition"
+                    :class="!slot.startable
+                      ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
                       : form.event_time === slot.time
-                        ? 'bg-red-600 text-white'
-                        : 'bg-white text-slate-700'"
-                    :disabled="slot.full"
+                        ? 'border-emerald-400 bg-white text-emerald-700 ring-2 ring-emerald-200'
+                        : 'border-slate-200 bg-white text-slate-700'"
+                    :disabled="!slot.startable"
                     @click="form.event_time = slot.time"
                   >
-                    {{ slot.time }} ({{ slot.remaining }} left)
+                    <p class="text-lg">{{ slot.label }} - {{ slot.endLabel }}</p>
+                    <p class="mt-2 text-xs font-semibold" :class="slot.startable ? 'text-slate-500' : 'text-slate-400'">
+                      {{ slot.startable ? `Available (${slot.remaining} branch slot${slot.remaining !== 1 ? 's' : ''} left at start)` : 'Unavailable for selected duration' }}
+                    </p>
                   </button>
                 </div>
-                <p v-if="form.errors.event_time" class="mt-3 text-sm text-red-700">{{ form.errors.event_time }}</p>
+                  <p v-if="form.errors.event_time" class="mt-3 text-sm text-red-700">{{ form.errors.event_time }}</p>
+                  <p class="mt-3 text-xs text-slate-500">Choose a start time, and the system automatically calculates the end time based on your selected duration.</p>
+                </div>
               </div>
 
               <div v-if="branch" class="rounded-3xl bg-white p-5">
@@ -322,6 +491,7 @@ const submit = () => {
                   <div>
                     <p class="text-lg">{{ item.name }}</p>
                     <p class="mt-1 text-sm text-slate-500">{{ item.guest_range }}</p>
+                    <p class="mt-1 text-xs font-bold uppercase tracking-[0.12em] text-red-700">Includes 4 hours | extendable up to 8 hours</p>
                   </div>
                   <strong class="text-red-700">${{ Number(item.price).toLocaleString() }}</strong>
                 </div>
@@ -389,8 +559,12 @@ const submit = () => {
                 <strong class="text-white">{{ branch?.name }}</strong>
               </div>
               <div class="flex items-center justify-between">
-                <span>Slot</span>
-                <strong class="text-white">{{ form.event_date }} at {{ form.event_time }}</strong>
+                <span>Event time</span>
+                <strong class="text-white">{{ formatTimeLabel(form.event_time) }} to {{ endTimeLabel }}</strong>
+              </div>
+              <div class="flex items-center justify-between">
+                <span>Duration</span>
+                <strong class="text-white">{{ form.duration_hours }} hours</strong>
               </div>
               <div class="mt-4 rounded-3xl bg-white/5 p-4">
                 <p class="text-sm uppercase tracking-[0.2em] text-amber-200">Receipt preview</p>
@@ -416,7 +590,7 @@ const submit = () => {
                 <p class="mt-2 text-4xl text-white">${{ receiptPreview.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</p>
                 <p class="mt-2 text-xs text-white/65">This receipt updates in real time as dates and slots become unavailable.</p>
               </div>
-              <button type="submit" class="mcd-button mt-6 w-full" :disabled="form.processing || !selectedDateAvailability || selectedDateAvailability.status === 'full'">
+              <button type="submit" class="mcd-button mt-6 w-full" :disabled="form.processing || !selectedDateCard || selectedDateCard.computed_status === 'full' || !canStartAt(form.event_time)">
                 {{ form.processing ? 'Submitting...' : 'Confirm reservation' }}
               </button>
             </div>

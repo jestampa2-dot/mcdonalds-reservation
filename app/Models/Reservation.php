@@ -25,8 +25,10 @@ class Reservation extends Model
         'branch_code',
         'event_date',
         'event_time',
+        'duration_hours',
         'menu_bundles',
         'add_ons',
+        'service_adjustments',
         'payment_proof_path',
         'guests',
         'total_amount',
@@ -41,6 +43,7 @@ class Reservation extends Model
     protected $casts = [
         'menu_bundles' => 'array',
         'add_ons' => 'array',
+        'service_adjustments' => 'array',
         'checked_in_at' => 'datetime',
         'event_date' => 'date',
         'total_amount' => 'decimal:2',

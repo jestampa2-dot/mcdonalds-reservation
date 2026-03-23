@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { Head, Link, usePage } from '@inertiajs/vue3'
+import FlashToast from '@/Components/FlashToast.vue'
 
 const props = defineProps({
   title: {
@@ -35,7 +36,6 @@ const navLinks = computed(() => {
   return links
 })
 
-const flash = computed(() => page.props.flash ?? {})
 </script>
 
 <template>
@@ -75,14 +75,7 @@ const flash = computed(() => page.props.flash ?? {})
     </header>
 
     <main class="mcd-content">
-      <section v-if="flash.success || flash.error" class="mcd-flash-wrap">
-        <div v-if="flash.success" class="mcd-flash mcd-flash--success">
-          {{ flash.success }}
-        </div>
-        <div v-if="flash.error" class="mcd-flash mcd-flash--error">
-          {{ flash.error }}
-        </div>
-      </section>
+      <FlashToast />
 
       <slot />
     </main>

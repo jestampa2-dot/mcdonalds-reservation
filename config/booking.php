@@ -18,18 +18,14 @@ return [
             'icon' => 'UtensilsCrossed',
         ],
     ],
-    'slot_options' => [
-        '10:00',
-        '11:30',
-        '13:00',
-        '14:30',
-        '16:00',
-        '17:30',
-        '19:00',
-    ],
+    'slot_options' => array_map(
+        fn ($hour) => str_pad((string) $hour, 2, '0', STR_PAD_LEFT).':00',
+        range(0, 23)
+    ),
     'pricing' => [
         'weekend_multiplier' => 1.15,
         'holiday_multiplier' => 1.25,
+        'extension_hourly_rate' => 450,
         'holidays' => [
             '2026-04-03',
             '2026-05-01',

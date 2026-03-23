@@ -1,5 +1,5 @@
 <script setup>
-import { reactive } from 'vue'
+import { onBeforeUnmount, onMounted, reactive, watch } from 'vue'
 import { router } from '@inertiajs/vue3'
 import AppShell from '@/Components/AppShell.vue'
 import StatusBadge from '@/Components/StatusBadge.vue'
@@ -8,22 +8,62 @@ const props = defineProps({
   bookings: Array,
   stats: Array,
 })
+let dashboardTimer = null
+
+const timeOptions = Array.from({ length: 24 }, (_, hour) => {
+  const value = `${String(hour).padStart(2, '0')}:00`
+  const meridian = hour >= 12 ? 'PM' : 'AM'
+  const hour12 = hour % 12 || 12
+
+  return {
+    value,
+    label: `${hour12}:00 ${meridian}`,
+  }
+})
 
 const rescheduleState = reactive(
   Object.fromEntries(
     props.bookings.map((booking) => [
       booking.id,
-      { event_date: booking.event_date, event_time: booking.event_time },
+      { event_date: booking.event_date, event_time: booking.event_start_time },
     ]),
   ),
 )
 
+onMounted(() => {
+  dashboardTimer = window.setInterval(() => {
+    router.reload({
+      only: ['bookings', 'stats'],
+      preserveScroll: true,
+      preserveState: true,
+    })
+  }, 15000)
+})
+
+watch(
+  () => props.bookings,
+  (bookings) => {
+    bookings.forEach((booking) => {
+      rescheduleState[booking.id] = {
+        event_date: booking.event_date,
+        event_time: booking.event_start_time,
+      }
+    })
+  },
+)
+
+onBeforeUnmount(() => {
+  if (dashboardTimer) {
+    window.clearInterval(dashboardTimer)
+  }
+})
+
 const cancelBooking = (id) => {
-  router.post(route('reservations.cancel', id))
+  router.post(route('reservations.cancel', id), {}, { preserveScroll: true, preserveState: true })
 }
 
 const rescheduleBooking = (id) => {
-  router.post(route('reservations.reschedule', id), rescheduleState[id])
+  router.post(route('reservations.reschedule', id), rescheduleState[id], { preserveScroll: true, preserveState: true })
 }
 </script>
 
@@ -91,13 +131,7 @@ const rescheduleBooking = (id) => {
               <div class="mt-4 grid gap-3">
                 <input v-model="rescheduleState[booking.id].event_date" type="date" class="mcd-input" />
                 <select v-model="rescheduleState[booking.id].event_time" class="mcd-select">
-                  <option>10:00</option>
-                  <option>11:30</option>
-                  <option>13:00</option>
-                  <option>14:30</option>
-                  <option>16:00</option>
-                  <option>17:30</option>
-                  <option>19:00</option>
+                  <option v-for="option in timeOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
                 </select>
                 <button type="button" class="mcd-button" @click="rescheduleBooking(booking.id)">Save new slot</button>
                 <button type="button" class="mcd-button mcd-button--ghost" @click="cancelBooking(booking.id)">Cancel booking</button>

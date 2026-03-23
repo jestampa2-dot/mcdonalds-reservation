@@ -17,6 +17,13 @@ Route::middleware('auth')->group(function () {
     Route::get('/availability', [ReservationController::class, 'availability'])->name('availability.index');
 
     Route::get('/admin/dashboard', [ReservationController::class, 'adminDashboard'])->name('admin.dashboard');
+    Route::get('/admin/bookings', [ReservationController::class, 'adminBookings'])->name('admin.bookings');
+    Route::get('/admin/confirmed-events', [ReservationController::class, 'adminConfirmedEvents'])->name('admin.confirmed');
+    Route::get('/admin/availability', [ReservationController::class, 'adminAvailability'])->name('admin.availability');
+    Route::get('/admin/branches', [ReservationController::class, 'adminBranches'])->name('admin.branches');
+    Route::get('/admin/accounts', [ReservationController::class, 'adminAccounts'])->name('admin.accounts');
+    Route::get('/admin/reports', [ReservationController::class, 'adminReports'])->name('admin.reports');
+    Route::get('/admin/timeline', [ReservationController::class, 'adminTimeline'])->name('admin.timeline');
     Route::post('/admin/reservations/{reservation}/status', [ReservationController::class, 'updateBookingStatus'])->name('admin.reservations.status');
     Route::post('/admin/reservations/{reservation}/crew', [ReservationController::class, 'assignCrew'])->name('admin.reservations.crew');
     Route::post('/admin/users/{user}/role', [ReservationController::class, 'updateUserRole'])->name('admin.users.role');
@@ -25,6 +32,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/staff/dashboard', [ReservationController::class, 'staffDashboard'])->name('staff.dashboard');
     Route::post('/staff/check-in', [ReservationController::class, 'checkIn'])->name('staff.check-in');
     Route::post('/staff/reservations/{reservation}/service-status', [ReservationController::class, 'updateServiceStatus'])->name('staff.reservations.service-status');
+    Route::post('/staff/reservations/{reservation}/adjustments', [ReservationController::class, 'updateServiceAdjustments'])->name('staff.reservations.adjustments');
 
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');

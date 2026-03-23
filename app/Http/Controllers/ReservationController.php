@@ -43,10 +43,11 @@ class ReservationController extends Controller
 
         return Inertia::render('Reservations/Create', [
             'catalog' => $catalog,
-            'availability' => $this->availabilityPayload($catalog, 14),
+            'availability' => $this->availabilityPayload($catalog, 366),
             'defaults' => [
                 'event_date' => now()->addDays(3)->toDateString(),
-                'event_time' => $catalog['slotOptions'][2],
+                'event_time' => '08:00',
+                'duration_hours' => 4,
             ],
         ]);
     }
@@ -63,6 +64,7 @@ class ReservationController extends Controller
             'branch_code' => ['required', Rule::in(array_keys($catalog['branches']))],
             'event_date' => ['required', 'date', 'after_or_equal:today'],
             'event_time' => ['required', Rule::in($catalog['slotOptions'])],
+            'duration_hours' => ['required', 'integer', 'min:4', 'max:8'],
             'guests' => ['required', 'integer', 'min:2', 'max:60'],
             'package_code' => ['required', 'string'],
             'menu_bundles' => ['array'],
@@ -89,9 +91,15 @@ class ReservationController extends Controller
             ])->withInput();
         }
 
-        if (! $this->isSlotAvailable($validated['branch_code'], $validated['event_date'], $validated['event_time'])) {
+        if (! $this->isDurationWindowValid($validated['event_time'], (int) $validated['duration_hours'])) {
             return back()->withErrors([
-                'event_time' => 'That time slot is already full for the selected branch.',
+                'event_time' => 'Choose a Philippine-time start and end window that fits within the same day.',
+            ])->withInput();
+        }
+
+        if (! $this->isSlotAvailable($validated['branch_code'], $validated['event_date'], $validated['event_time'], (int) $validated['duration_hours'])) {
+            return back()->withErrors([
+                'event_time' => 'That time range is already full for the selected branch.',
             ])->withInput();
         }
 
@@ -112,7 +120,8 @@ class ReservationController extends Controller
             $validated['event_date'],
             $package,
             $menuBundles,
-            $addOns
+            $addOns,
+            (int) $validated['duration_hours']
         );
 
         Reservation::create([
@@ -132,8 +141,13 @@ class ReservationController extends Controller
             'branch_code' => $branch['code'],
             'event_date' => $validated['event_date'],
             'event_time' => $validated['event_time'],
+            'duration_hours' => (int) $validated['duration_hours'],
             'menu_bundles' => Arr::pluck($menuBundles, 'code'),
             'add_ons' => Arr::pluck($addOns, 'code'),
+            'service_adjustments' => [
+                'extra_menu_bundles' => [],
+                'extra_add_ons' => [],
+            ],
             'payment_proof_path' => $proofPath,
             'guests' => $validated['guests'],
             'total_amount' => $receipt['total_raw'],
@@ -168,38 +182,110 @@ class ReservationController extends Controller
     {
         $this->authorizeRoles($request, ['admin', 'manager']);
 
+        $data = $this->adminPageData();
+
         $catalog = $this->catalog();
-        $bookings = Reservation::query()->orderBy('event_date')->orderBy('event_time')->get();
 
         return Inertia::render('Admin/Dashboard', [
-            'stats' => $this->adminStats($bookings),
-            'calendar' => $bookings->map(fn (Reservation $reservation) => $this->serializeReservation($reservation))->values(),
-            'groupedBookings' => $this->groupedBookings($catalog, $bookings),
-            'inventory' => $this->inventorySnapshot($catalog, $bookings),
-            'staffAssignments' => $this->staffAssignments($catalog, $bookings),
-            'availability' => $this->availabilityPayload($catalog, 14),
-            'pricing' => $catalog['pricing'],
-            'report' => $this->analyticsReport($bookings),
-            'users' => User::query()
-                ->orderByRaw("CASE role WHEN 'admin' THEN 1 WHEN 'manager' THEN 2 WHEN 'staff' THEN 3 ELSE 4 END")
-                ->orderBy('name')
-                ->get(['id', 'name', 'email', 'role'])
-                ->map(fn (User $user) => [
-                    'id' => $user->id,
-                    'name' => $user->name,
-                    'email' => $user->email,
-                    'role' => $user->role,
-                ]),
-            'staffUsers' => User::query()
-                ->whereIn('role', ['staff', 'manager'])
-                ->orderBy('name')
-                ->get(['id', 'name', 'email', 'role'])
-                ->map(fn (User $user) => [
-                    'id' => $user->id,
-                    'name' => $user->name,
-                    'role' => $user->role,
-                ]),
-            'branches' => array_values($catalog['branches']),
+            'stats' => $data['stats'],
+            'notifications' => $data['notifications'],
+            'history' => $data['history'],
+            'branchSummaries' => collect($data['branches'])->map(fn ($branch) => [
+                'code' => $branch['code'],
+                'name' => $branch['name'],
+                'city' => $branch['city'],
+            ])->values(),
+        ]);
+    }
+
+    public function adminBookings(Request $request): InertiaResponse
+    {
+        $this->authorizeRoles($request, ['admin', 'manager']);
+
+        $data = $this->adminPageData();
+
+        return Inertia::render('Admin/Bookings', [
+            'stats' => $data['stats'],
+            'groupedBookings' => $data['groupedBookings'],
+            'staffUsers' => $data['staffUsers'],
+            'menuBundles' => $data['menuBundles'],
+            'addOns' => $data['addOns'],
+            'durationOptions' => $data['durationOptions'],
+        ]);
+    }
+
+    public function adminConfirmedEvents(Request $request): InertiaResponse
+    {
+        $this->authorizeRoles($request, ['admin', 'manager']);
+
+        $data = $this->adminPageData();
+
+        return Inertia::render('Admin/ConfirmedEvents', [
+            'stats' => $data['stats'],
+            'confirmedEvents' => $data['confirmedEvents'],
+            'staffUsers' => $data['staffUsers'],
+            'menuBundles' => $data['menuBundles'],
+            'addOns' => $data['addOns'],
+            'durationOptions' => $data['durationOptions'],
+        ]);
+    }
+
+    public function adminAvailability(Request $request): InertiaResponse
+    {
+        $this->authorizeRoles($request, ['admin', 'manager']);
+
+        $data = $this->adminPageData();
+
+        return Inertia::render('Admin/Availability', [
+            'availability' => $data['availability'],
+        ]);
+    }
+
+    public function adminBranches(Request $request): InertiaResponse
+    {
+        $this->authorizeRoles($request, ['admin', 'manager']);
+
+        $data = $this->adminPageData();
+
+        return Inertia::render('Admin/Branches', [
+            'branches' => $data['branches'],
+        ]);
+    }
+
+    public function adminAccounts(Request $request): InertiaResponse
+    {
+        $this->authorizeRoles($request, ['admin', 'manager']);
+
+        $data = $this->adminPageData();
+
+        return Inertia::render('Admin/Accounts', [
+            'users' => $data['users'],
+        ]);
+    }
+
+    public function adminReports(Request $request): InertiaResponse
+    {
+        $this->authorizeRoles($request, ['admin', 'manager']);
+
+        $data = $this->adminPageData();
+
+        return Inertia::render('Admin/Reports', [
+            'pricing' => $data['pricing'],
+            'report' => $data['report'],
+            'inventory' => $data['inventory'],
+            'staffAssignments' => $data['staffAssignments'],
+        ]);
+    }
+
+    public function adminTimeline(Request $request): InertiaResponse
+    {
+        $this->authorizeRoles($request, ['admin', 'manager']);
+
+        $data = $this->adminPageData();
+
+        return Inertia::render('Admin/Timeline', [
+            'notifications' => $data['notifications'],
+            'history' => $data['history'],
         ]);
     }
 
@@ -209,15 +295,38 @@ class ReservationController extends Controller
 
         $catalog = $this->catalog();
         $today = now()->toDateString();
-        $bookings = Reservation::query()
+        $todayBookings = Reservation::query()
+            ->when($request->user()->role === 'staff', function ($query) use ($request) {
+                $query->where(function ($inner) use ($request) {
+                    $inner->where('assigned_staff_id', $request->user()->id)
+                        ->orWhereNull('assigned_staff_id');
+                });
+            })
             ->whereDate('event_date', $today)
+            ->whereIn('status', ['confirmed', 'rescheduled', 'checked_in'])
+            ->orderBy('event_time')
+            ->get();
+        $relevantBookings = Reservation::query()
+            ->when($request->user()->role === 'staff', function ($query) use ($request) {
+                $query->where(function ($inner) use ($request) {
+                    $inner->where('assigned_staff_id', $request->user()->id)
+                        ->orWhereNull('assigned_staff_id');
+                });
+            })
+            ->whereIn('status', ['confirmed', 'rescheduled', 'checked_in', 'completed', 'cancelled'])
+            ->orderBy('event_date')
             ->orderBy('event_time')
             ->get();
 
         return Inertia::render('Staff/Dashboard', [
-            'prepList' => $this->prepList($catalog, $bookings),
-            'todayBookings' => $bookings->map(fn (Reservation $reservation) => $this->serializeReservation($reservation))->values(),
+            'prepList' => $this->prepList($catalog, $todayBookings),
+            'todayBookings' => $todayBookings->map(fn (Reservation $reservation) => $this->serializeReservation($reservation))->values(),
+            'notifications' => $this->upcomingEventNotifications($relevantBookings, 6),
+            'history' => $this->eventHistory($relevantBookings, 8),
             'statusOptions' => ['available', 'cleaning', 'in_progress'],
+            'menuBundles' => $catalog['menuBundles'],
+            'addOns' => $catalog['addOns'],
+            'durationOptions' => range(4, 8),
         ]);
     }
 
@@ -246,9 +355,17 @@ class ReservationController extends Controller
             'event_time' => ['required', Rule::in($this->catalog()['slotOptions'])],
         ]);
 
-        if (! $this->isSlotAvailable($reservation->branch_code, $validated['event_date'], $validated['event_time'], $reservation->id)) {
+        $durationHours = (int) ($reservation->duration_hours ?? 4);
+
+        if (! $this->isDurationWindowValid($validated['event_time'], $durationHours)) {
             return back()->withErrors([
-                'event_time' => 'That new slot is already full.',
+                'event_time' => 'Choose a Philippine-time start and end window that fits within the same day.',
+            ]);
+        }
+
+        if (! $this->isSlotAvailable($reservation->branch_code, $validated['event_date'], $validated['event_time'], $durationHours, $reservation->id)) {
+            return back()->withErrors([
+                'event_time' => 'That new time range is already full.',
             ]);
         }
 
@@ -273,6 +390,10 @@ class ReservationController extends Controller
         ]);
 
         $reservation->update(['status' => $validated['status']]);
+
+        if ($validated['status'] === 'confirmed') {
+            return back()->with('success', 'Ba-da-ba-ba-ba. The customer reservation is successful and officially confirmed.');
+        }
 
         return back()->with('success', 'Booking status updated.');
     }
@@ -357,6 +478,61 @@ class ReservationController extends Controller
         return back()->with('success', 'Floor status updated.');
     }
 
+    public function updateServiceAdjustments(Request $request, Reservation $reservation): RedirectResponse
+    {
+        $this->authorizeRoles($request, ['admin', 'manager', 'staff']);
+
+        $validated = $request->validate([
+            'duration_hours' => ['required', 'integer', 'min:4', 'max:8'],
+            'extra_menu_bundles' => ['array'],
+            'extra_menu_bundles.*' => ['string'],
+            'extra_add_ons' => ['array'],
+            'extra_add_ons.*' => ['string'],
+        ]);
+
+        if (! in_array($reservation->status, ['confirmed', 'rescheduled', 'checked_in'], true)) {
+            return back()->with('error', 'Only confirmed or active events can be edited on the service floor.');
+        }
+
+        if (! $this->isDurationWindowValid($reservation->event_time, (int) $validated['duration_hours'])) {
+            return back()->with('error', 'The updated duration must still end within the same Philippine day.');
+        }
+
+        $catalog = $this->catalog();
+        $package = collect($catalog['packages'][$reservation->reservation_type] ?? [])->firstWhere('code', $reservation->package_code)
+            ?? ['name' => $reservation->package_name, 'price' => (float) $reservation->total_amount];
+        $menuBundles = collect($catalog['menuBundles'])->whereIn('code', $reservation->menu_bundles ?? [])->values()->all();
+        $addOns = collect($catalog['addOns'])->whereIn('code', $reservation->add_ons ?? [])->values()->all();
+        $serviceAdjustments = [
+            'extra_menu_bundles' => collect($validated['extra_menu_bundles'] ?? [])
+                ->filter(fn ($code) => collect($catalog['menuBundles'])->pluck('code')->contains($code))
+                ->values()
+                ->all(),
+            'extra_add_ons' => collect($validated['extra_add_ons'] ?? [])
+                ->filter(fn ($code) => collect($catalog['addOns'])->pluck('code')->contains($code))
+                ->values()
+                ->all(),
+        ];
+
+        $receipt = $this->buildReceipt(
+            $reservation->reservation_type,
+            $reservation->event_date?->toDateString() ?? now()->toDateString(),
+            $package,
+            $menuBundles,
+            $addOns,
+            (int) $validated['duration_hours'],
+            $serviceAdjustments
+        );
+
+        $reservation->update([
+            'duration_hours' => (int) $validated['duration_hours'],
+            'service_adjustments' => $serviceAdjustments,
+            'total_amount' => $receipt['total_raw'],
+        ]);
+
+        return back()->with('success', 'Live event updates saved.');
+    }
+
     public function checkIn(Request $request): RedirectResponse
     {
         $this->authorizeRoles($request, ['admin', 'manager', 'staff']);
@@ -374,6 +550,10 @@ class ReservationController extends Controller
             return back()->with('error', 'No reservation matched that code.');
         }
 
+        if (! in_array($reservation->status, ['confirmed', 'rescheduled'], true)) {
+            return back()->with('error', 'This booking must be confirmed by admin before staff can check it in.');
+        }
+
         $reservation->update([
             'status' => 'checked_in',
             'checked_in_at' => now(),
@@ -388,7 +568,7 @@ class ReservationController extends Controller
     {
         $this->authorizeRoles($request, ['customer', 'staff', 'manager', 'admin']);
 
-        return response()->json($this->availabilityPayload($this->catalog(), 14));
+        return response()->json($this->availabilityPayload($this->catalog(), 366));
     }
 
     public function paymentProof(Request $request, Reservation $reservation)
@@ -462,19 +642,25 @@ class ReservationController extends Controller
     {
         return Reservation::query()
             ->whereIn('status', ['pending_review', 'confirmed', 'rescheduled', 'checked_in'])
-            ->get(['branch_code', 'event_date', 'event_time'])
-            ->map(fn (Reservation $reservation) => [
-                'branch_code' => $reservation->branch_code,
-                'event_date' => $reservation->event_date->toDateString(),
-                'event_time' => substr($reservation->event_time, 0, 5),
-            ])
+            ->get(['branch_code', 'event_date', 'event_time', 'duration_hours'])
+            ->flatMap(function (Reservation $reservation) {
+                $hours = range(0, max(((int) ($reservation->duration_hours ?? 4)) - 1, 0));
+
+                return collect($hours)->map(function (int $offset) use ($reservation) {
+                    return [
+                        'branch_code' => $reservation->branch_code,
+                        'event_date' => $reservation->event_date->toDateString(),
+                        'event_time' => $this->addHoursToTime(substr($reservation->event_time, 0, 5), $offset),
+                    ];
+                });
+            })
             ->values()
             ->all();
     }
 
     protected function availabilityPayload(array $catalog, int $days): array
     {
-        $days = max(7, min($days, 30));
+        $days = max(28, min($days, 366));
         $bookedSlots = collect($this->bookedSlots())->groupBy(fn ($slot) => $slot['branch_code'].'|'.$slot['event_date'].'|'.$slot['event_time']);
 
         return [
@@ -490,13 +676,16 @@ class ReservationController extends Controller
 
                         return [
                             'time' => $time,
+                            'label' => $this->formatTimeLabel($time),
                             'booked' => $booked,
                             'remaining' => $remaining,
                             'full' => $remaining === 0,
                         ];
                     })->values();
 
-                    $availableSlots = $slots->where('full', false)->count();
+                    $availableSlots = $slots
+                        ->filter(fn ($slot) => $this->isStartSlotOpen($slot['time'], 4, $slots))
+                        ->count();
 
                     return [
                         'date' => $date,
@@ -517,17 +706,21 @@ class ReservationController extends Controller
         ];
     }
 
-    protected function isSlotAvailable(string $branchCode, string $date, string $time, ?int $ignoreReservationId = null): bool
+    protected function isSlotAvailable(string $branchCode, string $date, string $time, int $durationHours, ?int $ignoreReservationId = null): bool
     {
-        $count = Reservation::query()
+        return Reservation::query()
             ->where('branch_code', $branchCode)
             ->whereDate('event_date', $date)
-            ->where('event_time', $time)
             ->whereIn('status', ['pending_review', 'confirmed', 'rescheduled', 'checked_in'])
             ->when($ignoreReservationId, fn ($query) => $query->whereKeyNot($ignoreReservationId))
-            ->count();
-
-        return $count < ($this->catalog()['branches'][$branchCode]['concurrent_limit'] ?? 1);
+            ->get(['event_time', 'duration_hours'])
+            ->filter(fn (Reservation $reservation) => $this->timeRangesOverlap(
+                substr($reservation->event_time, 0, 5),
+                (int) ($reservation->duration_hours ?? 4),
+                $time,
+                $durationHours
+            ))
+            ->count() < ($this->catalog()['branches'][$branchCode]['concurrent_limit'] ?? 1);
     }
 
     protected function calculatePrice(string $eventDate, float $basePrice, array $menuBundles, array $addOns): float
@@ -535,7 +728,15 @@ class ReservationController extends Controller
         return $this->buildReceipt('unknown', $eventDate, ['price' => $basePrice, 'name' => 'Base Package'], $menuBundles, $addOns)['total_raw'];
     }
 
-    protected function buildReceipt(string $eventType, string $eventDate, array $package, array $menuBundles, array $addOns): array
+    protected function buildReceipt(
+        string $eventType,
+        string $eventDate,
+        array $package,
+        array $menuBundles,
+        array $addOns,
+        int $durationHours = 4,
+        array $serviceAdjustments = []
+    ): array
     {
         $catalog = $this->catalog();
         $date = Carbon::parse($eventDate);
@@ -550,9 +751,22 @@ class ReservationController extends Controller
             $multiplierLabel = 'Weekend rate';
         }
 
+        $durationHours = max(4, min(8, $durationHours));
+        $includedHours = 4;
+        $extensionHours = max($durationHours - $includedHours, 0);
+        $extensionHourlyRate = (float) ($catalog['pricing']['extension_hourly_rate'] ?? 450);
+        $extraMenuBundles = collect($catalog['menuBundles'])
+            ->whereIn('code', $serviceAdjustments['extra_menu_bundles'] ?? [])
+            ->values()
+            ->all();
+        $extraAddOns = collect($catalog['addOns'])
+            ->whereIn('code', $serviceAdjustments['extra_add_ons'] ?? [])
+            ->values()
+            ->all();
+
         $lineItems = collect([
             [
-                'label' => $package['name'],
+                'label' => $package['name'].' (includes '.$includedHours.' hours)',
                 'type' => 'package',
                 'amount_raw' => (float) $package['price'],
                 'amount' => number_format((float) $package['price'], 2),
@@ -570,15 +784,40 @@ class ReservationController extends Controller
                 'amount_raw' => (float) $item['price'],
                 'amount' => number_format((float) $item['price'], 2),
             ]))
+            ->when($extensionHours > 0, fn ($items) => $items->push([
+                'label' => 'Extended event time ('.$extensionHours.' hour'.($extensionHours > 1 ? 's' : '').')',
+                'type' => 'duration_extension',
+                'amount_raw' => $extensionHours * $extensionHourlyRate,
+                'amount' => number_format($extensionHours * $extensionHourlyRate, 2),
+            ]))
+            ->merge(collect($extraMenuBundles)->map(fn ($item) => [
+                'label' => 'Extra food: '.$item['name'],
+                'type' => 'service_bundle',
+                'amount_raw' => (float) $item['price'],
+                'amount' => number_format((float) $item['price'], 2),
+            ]))
+            ->merge(collect($extraAddOns)->map(fn ($item) => [
+                'label' => 'Extra service: '.$item['name'],
+                'type' => 'service_add_on',
+                'amount_raw' => (float) $item['price'],
+                'amount' => number_format((float) $item['price'], 2),
+            ]))
             ->values();
 
         $bundleTotal = collect($menuBundles)->sum('price');
         $addOnTotal = collect($addOns)->sum('price');
-        $subtotal = (float) $package['price'] + $bundleTotal + $addOnTotal;
+        $adjustmentBundleTotal = collect($extraMenuBundles)->sum('price');
+        $adjustmentAddOnTotal = collect($extraAddOns)->sum('price');
+        $durationExtensionTotal = $extensionHours * $extensionHourlyRate;
+        $subtotal = (float) $package['price'] + $bundleTotal + $addOnTotal + $adjustmentBundleTotal + $adjustmentAddOnTotal + $durationExtensionTotal;
         $total = round($subtotal * $multiplier, 2);
 
         return [
             'event_type' => $eventType,
+            'duration_hours' => $durationHours,
+            'included_hours' => $includedHours,
+            'extension_hours' => $extensionHours,
+            'extension_hourly_rate' => number_format($extensionHourlyRate, 2),
             'line_items' => $lineItems->map(fn ($item) => Arr::except($item, ['amount_raw']))->all(),
             'subtotal' => number_format($subtotal, 2),
             'subtotal_raw' => $subtotal,
@@ -594,6 +833,7 @@ class ReservationController extends Controller
     protected function serializeReservation(Reservation $reservation): array
     {
         $catalog = $this->catalog();
+        $serviceAdjustments = $reservation->service_adjustments ?? ['extra_menu_bundles' => [], 'extra_add_ons' => []];
         $package = collect($catalog['packages'][$reservation->reservation_type] ?? [])->firstWhere('code', $reservation->package_code)
             ?? ['name' => $reservation->package_name, 'price' => (float) $reservation->total_amount];
         $menuBundles = collect($catalog['menuBundles'])->whereIn('code', $reservation->menu_bundles ?? [])->values()->all();
@@ -603,24 +843,35 @@ class ReservationController extends Controller
             $reservation->event_date?->toDateString() ?? now()->toDateString(),
             $package,
             $menuBundles,
-            $addOns
+            $addOns,
+            (int) ($reservation->duration_hours ?? 4),
+            $serviceAdjustments
         );
 
         return [
             'id' => $reservation->id,
             'booking_reference' => $reservation->booking_reference,
+            'customer_name' => $reservation->name,
+            'customer_email' => $reservation->email,
+            'customer_phone' => $reservation->phone,
             'event_type' => $reservation->reservation_type,
             'package_name' => $reservation->package_name,
             'branch' => $reservation->branch,
             'branch_code' => $reservation->branch_code,
             'event_date' => $reservation->event_date?->toDateString(),
-            'event_time' => substr($reservation->event_time, 0, 5),
+            'event_start_time' => substr($reservation->event_time, 0, 5),
+            'event_start_label' => $this->formatTimeLabel(substr($reservation->event_time, 0, 5)),
+            'event_end_time' => $this->endTime($reservation->event_time, (int) ($reservation->duration_hours ?? 4)),
+            'event_end_label' => $this->formatTimeLabel($this->endTime($reservation->event_time, (int) ($reservation->duration_hours ?? 4))),
+            'event_time' => $this->formatTimeRange(substr($reservation->event_time, 0, 5), (int) ($reservation->duration_hours ?? 4)),
+            'duration_hours' => (int) ($reservation->duration_hours ?? 4),
             'guests' => $reservation->guests,
             'status' => $reservation->status,
             'service_status' => $reservation->service_status,
             'notes' => $reservation->notes,
             'menu_bundles' => $reservation->menu_bundles ?? [],
             'add_ons' => $reservation->add_ons ?? [],
+            'service_adjustments' => $serviceAdjustments,
             'total_amount' => number_format((float) $reservation->total_amount, 2),
             'receipt' => $receipt,
             'assigned_staff_id' => $reservation->assigned_staff_id,
@@ -630,6 +881,7 @@ class ReservationController extends Controller
             'checked_in_by' => $reservation->checked_in_by,
             'pass_url' => route('reservations.pass', $reservation),
             'payment_proof_url' => route('reservations.payment-proof', $reservation),
+            'payment_proof_preview_url' => $reservation->payment_proof_path ? asset('storage/'.$reservation->payment_proof_path) : null,
         ];
     }
 
@@ -640,8 +892,54 @@ class ReservationController extends Controller
         return [
             ['label' => 'Revenue pipeline', 'value' => '$'.number_format($bookings->sum('total_amount'), 2)],
             ['label' => 'Confirmed events', 'value' => $confirmed->count()],
-            ['label' => 'Peak booking hour', 'value' => $bookings->groupBy(fn ($booking) => substr($booking->event_time, 0, 5))->map->count()->sortDesc()->keys()->first() ?: '14:30'],
+            ['label' => 'Peak booking hour', 'value' => $this->formatTimeLabel($bookings->groupBy(fn ($booking) => substr($booking->event_time, 0, 5))->map->count()->sortDesc()->keys()->first() ?: '14:00')],
             ['label' => 'Weekend uplift', 'value' => '+15%'],
+        ];
+    }
+
+    protected function adminPageData(): array
+    {
+        $catalog = $this->catalog();
+        $bookings = Reservation::query()->orderBy('event_date')->orderBy('event_time')->get();
+
+        return [
+            'stats' => $this->adminStats($bookings),
+            'calendar' => $bookings->map(fn (Reservation $reservation) => $this->serializeReservation($reservation))->values(),
+            'groupedBookings' => $this->groupedBookings($catalog, $bookings->where('status', 'pending_review')->values()),
+            'confirmedEvents' => $bookings
+                ->whereIn('status', ['confirmed', 'rescheduled', 'checked_in'])
+                ->values()
+                ->map(fn (Reservation $reservation) => $this->serializeReservation($reservation)),
+            'notifications' => $this->upcomingEventNotifications($bookings),
+            'history' => $this->eventHistory($bookings),
+            'inventory' => $this->inventorySnapshot($catalog, $bookings),
+            'staffAssignments' => $this->staffAssignments($catalog, $bookings),
+            'availability' => $this->availabilityPayload($catalog, 366),
+            'pricing' => $catalog['pricing'],
+            'report' => $this->analyticsReport($bookings),
+            'menuBundles' => $catalog['menuBundles'],
+            'addOns' => $catalog['addOns'],
+            'durationOptions' => range(4, 8),
+            'users' => User::query()
+                ->orderByRaw("CASE role WHEN 'admin' THEN 1 WHEN 'manager' THEN 2 WHEN 'staff' THEN 3 ELSE 4 END")
+                ->orderBy('name')
+                ->get(['id', 'name', 'email', 'role'])
+                ->map(fn (User $user) => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'role' => $user->role,
+                ]),
+            'staffUsers' => User::query()
+                ->whereIn('role', ['staff', 'manager'])
+                ->orderBy('name')
+                ->get(['id', 'name', 'email', 'role'])
+                ->map(fn (User $user) => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'role' => $user->role,
+                ]),
+            'branches' => array_values($catalog['branches']),
         ];
     }
 
@@ -682,7 +980,7 @@ class ReservationController extends Controller
                 return [
                     'booking_reference' => $reservation->booking_reference,
                     'branch' => $reservation->branch,
-                    'slot' => $reservation->event_date?->format('M d').', '.substr($reservation->event_time, 0, 5),
+                    'slot' => $reservation->event_date?->format('M d').', '.$this->formatTimeRange(substr($reservation->event_time, 0, 5), (int) ($reservation->duration_hours ?? 4)),
                     'host' => $assigned ?: $hosts[$index % count($hosts)],
                     'event_type' => $reservation->reservation_type,
                 ];
@@ -713,6 +1011,94 @@ class ReservationController extends Controller
         })->values()->all();
     }
 
+    protected function upcomingEventNotifications($bookings, int $limit = 8): array
+    {
+        $today = now()->startOfDay();
+
+        return $bookings
+            ->filter(function (Reservation $reservation) use ($today) {
+                if (! $reservation->event_date) {
+                    return false;
+                }
+
+                return $reservation->event_date->copy()->startOfDay()->greaterThanOrEqualTo($today)
+                    && in_array($reservation->status, ['pending_review', 'confirmed', 'rescheduled', 'checked_in'], true);
+            })
+            ->sortBy(fn (Reservation $reservation) => sprintf(
+                '%s %s',
+                $reservation->event_date?->toDateString() ?? '9999-12-31',
+                $reservation->event_time ?? '23:59:59'
+            ))
+            ->take($limit)
+            ->values()
+            ->map(fn (Reservation $reservation) => [
+                'id' => $reservation->id,
+                'booking_reference' => $reservation->booking_reference,
+                'package_name' => $reservation->package_name,
+                'branch' => $reservation->branch,
+                'event_type' => ucfirst($reservation->reservation_type),
+                'event_date' => $reservation->event_date?->format('M d, Y'),
+                'event_time' => $this->formatTimeRange(substr($reservation->event_time, 0, 5), (int) ($reservation->duration_hours ?? 4)),
+                'status' => $reservation->status,
+                'assigned_staff_name' => $reservation->assignedStaff?->name,
+                'message' => $this->notificationMessage($reservation),
+            ])
+            ->all();
+    }
+
+    protected function eventHistory($bookings, int $limit = 10): array
+    {
+        $today = now()->startOfDay();
+
+        return $bookings
+            ->filter(function (Reservation $reservation) use ($today) {
+                if (! $reservation->event_date) {
+                    return false;
+                }
+
+                return $reservation->event_date->copy()->startOfDay()->lessThan($today)
+                    || in_array($reservation->status, ['completed', 'cancelled'], true);
+            })
+            ->sortByDesc(fn (Reservation $reservation) => sprintf(
+                '%s %s',
+                $reservation->event_date?->toDateString() ?? '0000-00-00',
+                $reservation->event_time ?? '00:00:00'
+            ))
+            ->take($limit)
+            ->values()
+            ->map(fn (Reservation $reservation) => [
+                'id' => $reservation->id,
+                'booking_reference' => $reservation->booking_reference,
+                'package_name' => $reservation->package_name,
+                'branch' => $reservation->branch,
+                'event_type' => ucfirst($reservation->reservation_type),
+                'event_date' => $reservation->event_date?->format('M d, Y'),
+                'event_time' => $this->formatTimeRange(substr($reservation->event_time, 0, 5), (int) ($reservation->duration_hours ?? 4)),
+                'status' => $reservation->status,
+                'service_status' => $reservation->service_status,
+                'assigned_staff_name' => $reservation->assignedStaff?->name,
+                'checked_in_by' => $reservation->checked_in_by,
+            ])
+            ->all();
+    }
+
+    protected function notificationMessage(Reservation $reservation): string
+    {
+        if ($reservation->status === 'pending_review') {
+            return 'Needs approval before the guest arrives.';
+        }
+
+        if ($reservation->status === 'rescheduled') {
+            return 'Recently moved to a new schedule and should be re-checked.';
+        }
+
+        if ($reservation->status === 'checked_in') {
+            return 'Guest is already on site and service is active.';
+        }
+
+        return 'Confirmed event coming up soon.';
+    }
+
     protected function analyticsReport($bookings): array
     {
         return [
@@ -730,19 +1116,35 @@ class ReservationController extends Controller
     protected function prepList(array $catalog, $bookings): array
     {
         return $bookings->map(function (Reservation $reservation) use ($catalog) {
+            $serviceAdjustments = $reservation->service_adjustments ?? ['extra_menu_bundles' => [], 'extra_add_ons' => []];
             $bundleLabels = collect($catalog['menuBundles'])
                 ->whereIn('code', $reservation->menu_bundles ?? [])
                 ->pluck('prep_label')
                 ->values()
                 ->all();
+            $extraBundleLabels = collect($catalog['menuBundles'])
+                ->whereIn('code', $serviceAdjustments['extra_menu_bundles'] ?? [])
+                ->pluck('prep_label')
+                ->map(fn ($label) => 'Extra order: '.$label)
+                ->values()
+                ->all();
+            $materialItems = collect($catalog['addOns'])
+                ->whereIn('code', array_merge($reservation->add_ons ?? [], $serviceAdjustments['extra_add_ons'] ?? []))
+                ->pluck('name')
+                ->map(fn ($label) => 'Materials/service: '.$label)
+                ->values()
+                ->all();
+            $prepAt = Carbon::parse(($reservation->event_date?->toDateString() ?? now()->toDateString()).' '.substr($reservation->event_time, 0, 5))->subHour();
 
             return [
                 'booking_reference' => $reservation->booking_reference,
-                'time' => substr($reservation->event_time, 0, 5),
+                'time' => $this->formatTimeRange(substr($reservation->event_time, 0, 5), (int) ($reservation->duration_hours ?? 4)),
                 'branch' => $reservation->branch,
                 'package_name' => $reservation->package_name,
-                'items' => $bundleLabels ?: ['Welcome tray and seating prep'],
+                'items' => array_values(array_filter(array_merge($bundleLabels ?: ['Welcome tray and seating prep'], $extraBundleLabels, $materialItems))),
                 'guest_name' => $reservation->name,
+                'prep_deadline' => $prepAt->format('M d, Y h:i A'),
+                'reminder' => 'Prepare all meals, products, and event materials at least 1 hour before the event starts.',
             ];
         })->values()->all();
     }
@@ -791,7 +1193,7 @@ class ReservationController extends Controller
 
         $squareMarkup = implode('', $squares);
         $eventDate = $reservation->event_date?->format('M d, Y');
-        $eventTime = substr($reservation->event_time, 0, 5);
+        $eventTime = $this->formatTimeRange(substr($reservation->event_time, 0, 5), (int) ($reservation->duration_hours ?? 4));
 
         return <<<SVG
 <svg xmlns="http://www.w3.org/2000/svg" width="420" height="280" viewBox="0 0 420 280" fill="none">
@@ -818,5 +1220,63 @@ SVG;
     protected function finderPatterns(int $x = 40, int $y = 40): string
     {
         return '<rect x="'.$x.'" y="'.$y.'" width="40" height="40" rx="6" fill="#1F1F1F" /><rect x="'.($x + 8).'" y="'.($y + 8).'" width="24" height="24" rx="4" fill="#FFF7E6" /><rect x="'.($x + 14).'" y="'.($y + 14).'" width="12" height="12" rx="2" fill="#1F1F1F" />';
+    }
+
+    protected function formatTimeLabel(string $time): string
+    {
+        return Carbon::createFromFormat('H:i', substr($time, 0, 5), config('app.timezone'))->format('g:i A');
+    }
+
+    protected function addHoursToTime(string $time, int $hours): string
+    {
+        return Carbon::createFromFormat('H:i', substr($time, 0, 5), config('app.timezone'))
+            ->addHours($hours)
+            ->format('H:i');
+    }
+
+    protected function endTime(string $time, int $durationHours): string
+    {
+        return $this->addHoursToTime($time, $durationHours);
+    }
+
+    protected function formatTimeRange(string $time, int $durationHours): string
+    {
+        return $this->formatTimeLabel($time).' to '.$this->formatTimeLabel($this->endTime($time, $durationHours));
+    }
+
+    protected function isDurationWindowValid(string $time, int $durationHours): bool
+    {
+        $startMinutes = ((int) substr($time, 0, 2) * 60) + (int) substr($time, 3, 2);
+
+        return ($startMinutes + ($durationHours * 60)) <= 1440;
+    }
+
+    protected function timeRangesOverlap(string $existingStart, int $existingDuration, string $requestedStart, int $requestedDuration): bool
+    {
+        $existingStartMinutes = ((int) substr($existingStart, 0, 2) * 60) + (int) substr($existingStart, 3, 2);
+        $existingEndMinutes = $existingStartMinutes + ($existingDuration * 60);
+        $requestedStartMinutes = ((int) substr($requestedStart, 0, 2) * 60) + (int) substr($requestedStart, 3, 2);
+        $requestedEndMinutes = $requestedStartMinutes + ($requestedDuration * 60);
+
+        return $requestedStartMinutes < $existingEndMinutes && $existingStartMinutes < $requestedEndMinutes;
+    }
+
+    protected function isStartSlotOpen(string $time, int $durationHours, $slots): bool
+    {
+        if (! $this->isDurationWindowValid($time, $durationHours)) {
+            return false;
+        }
+
+        $slotLookup = collect($slots)->keyBy('time');
+
+        foreach (range(0, $durationHours - 1) as $offset) {
+            $slot = $slotLookup->get($this->addHoursToTime($time, $offset));
+
+            if (! $slot || $slot['full']) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }
