@@ -65,6 +65,9 @@ const cancelBooking = (id) => {
 const rescheduleBooking = (id) => {
   router.post(route('reservations.reschedule', id), rescheduleState[id], { preserveScroll: true, preserveState: true })
 }
+
+const formatCurrency = (value) =>
+  `₱${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 </script>
 
 <template>
@@ -109,7 +112,7 @@ const rescheduleBooking = (id) => {
             </div>
             <div class="text-right">
               <p class="text-sm uppercase tracking-[0.25em] text-slate-500">Total</p>
-              <p class="mt-2 text-3xl text-red-700">${{ booking.total_amount }}</p>
+              <p class="mt-2 text-3xl text-red-700">{{ formatCurrency(booking.total_amount) }}</p>
             </div>
           </div>
 

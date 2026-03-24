@@ -70,6 +70,9 @@ const addHoursToTime = (time, hoursToAdd) => {
 
 const endTimeLabel = computed(() => formatTimeLabel(addHoursToTime(form.event_time, Number(form.duration_hours))))
 
+const formatCurrency = (value) =>
+  `₱${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
 const canStartAt = (time, dateAvailability = selectedDateAvailability.value) => {
   if (!dateAvailability) {
     return false
@@ -330,7 +333,7 @@ const submit = () => {
                     {{ hours }} hours
                   </option>
                 </select>
-                <p class="mt-2 text-xs text-slate-500">All packages include 4 hours. Extra hours up to 8 total are charged at ${{ Number(catalog.pricing.extension_hourly_rate).toLocaleString() }}/hour.</p>
+                <p class="mt-2 text-xs text-slate-500">All packages include 4 hours. Extra hours up to 8 total are charged at {{ formatCurrency(catalog.pricing.extension_hourly_rate) }}/hour.</p>
                 <p v-if="form.errors.duration_hours" class="text-sm text-red-700">{{ form.errors.duration_hours }}</p>
               </div>
 
@@ -493,7 +496,7 @@ const submit = () => {
                     <p class="mt-1 text-sm text-slate-500">{{ item.guest_range }}</p>
                     <p class="mt-1 text-xs font-bold uppercase tracking-[0.12em] text-red-700">Includes 4 hours | extendable up to 8 hours</p>
                   </div>
-                  <strong class="text-red-700">${{ Number(item.price).toLocaleString() }}</strong>
+                  <strong class="text-red-700">{{ formatCurrency(item.price) }}</strong>
                 </div>
                 <ul class="mt-3 space-y-1 text-sm text-slate-600">
                   <li v-for="feature in item.features" :key="feature">{{ feature }}</li>
@@ -515,7 +518,7 @@ const submit = () => {
                   <p class="mt-1 text-sm text-slate-500">{{ item.prep_label }}</p>
                 </div>
                 <div class="flex items-center gap-3">
-                  <span class="font-bold text-red-700">${{ Number(item.price).toLocaleString() }}</span>
+                  <span class="font-bold text-red-700">{{ formatCurrency(item.price) }}</span>
                   <input v-model="form.menu_bundles" :value="item.code" type="checkbox" class="h-5 w-5 rounded border-slate-300 text-red-600" />
                 </div>
               </label>
@@ -534,7 +537,7 @@ const submit = () => {
                   <p class="text-lg">{{ item.name }}</p>
                 </div>
                 <div class="flex items-center gap-3">
-                  <span class="font-bold text-red-700">${{ Number(item.price).toLocaleString() }}</span>
+                  <span class="font-bold text-red-700">{{ formatCurrency(item.price) }}</span>
                   <input v-model="form.add_ons" :value="item.code" type="checkbox" class="h-5 w-5 rounded border-slate-300 text-red-600" />
                 </div>
               </label>
@@ -571,23 +574,23 @@ const submit = () => {
                 <div class="mt-4 space-y-3">
                   <div v-for="item in receiptPreview.lineItems" :key="item.label" class="flex items-center justify-between gap-4">
                     <span>{{ item.label }}</span>
-                    <strong class="text-white">${{ item.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</strong>
+                    <strong class="text-white">{{ formatCurrency(item.amount) }}</strong>
                   </div>
                 </div>
                 <div class="mt-4 space-y-2 border-t border-white/10 pt-4">
                   <div class="flex items-center justify-between">
                     <span>Subtotal</span>
-                    <strong class="text-white">${{ receiptPreview.subtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</strong>
+                    <strong class="text-white">{{ formatCurrency(receiptPreview.subtotal) }}</strong>
                   </div>
                   <div class="flex items-center justify-between">
                     <span>{{ pricingRule.label }} ({{ pricingRule.multiplier }}x)</span>
-                    <strong class="text-white">${{ receiptPreview.adjustment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</strong>
+                    <strong class="text-white">{{ formatCurrency(receiptPreview.adjustment) }}</strong>
                   </div>
                 </div>
               </div>
               <div class="mt-4 border-t border-white/10 pt-4">
                 <p class="text-sm uppercase tracking-[0.2em] text-amber-200">Total before confirmation</p>
-                <p class="mt-2 text-4xl text-white">${{ receiptPreview.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</p>
+                <p class="mt-2 text-4xl text-white">{{ formatCurrency(receiptPreview.total) }}</p>
                 <p class="mt-2 text-xs text-white/65">This receipt updates in real time as dates and slots become unavailable.</p>
               </div>
               <button type="submit" class="mcd-button mt-6 w-full" :disabled="form.processing || !selectedDateCard || selectedDateCard.computed_status === 'full' || !canStartAt(form.event_time)">

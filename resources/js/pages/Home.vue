@@ -10,6 +10,9 @@ defineProps({
 })
 
 const page = usePage()
+
+const formatCurrency = (value) =>
+  `₱${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 </script>
 
 <template>
@@ -136,7 +139,7 @@ const page = usePage()
         <article v-for="item in featuredPackages" :key="item.code" class="mcd-panel p-6">
           <p class="text-sm uppercase tracking-[0.25em] text-slate-500">{{ item.guest_range }}</p>
           <h3 class="mt-2 text-2xl">{{ item.name }}</h3>
-          <p class="mt-4 text-3xl text-red-700">${{ Number(item.price).toLocaleString() }}</p>
+          <p class="mt-4 text-3xl text-red-700">{{ formatCurrency(item.price) }}</p>
           <ul class="mt-4 space-y-2 text-sm text-slate-600">
             <li v-for="feature in item.features" :key="feature">{{ feature }}</li>
           </ul>

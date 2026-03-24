@@ -27,6 +27,9 @@ onBeforeUnmount(() => {
     window.clearInterval(dashboardTimer)
   }
 })
+
+const formatCurrency = (value) =>
+  `₱${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 </script>
 
 <template>
@@ -56,7 +59,7 @@ onBeforeUnmount(() => {
             </div>
             <div class="rounded-3xl bg-white p-5">
               <p class="text-sm uppercase tracking-[0.2em] text-red-700">Extension hourly rate</p>
-              <p class="mt-2 text-3xl">${{ pricing.extension_hourly_rate }}</p>
+              <p class="mt-2 text-3xl">{{ formatCurrency(pricing.extension_hourly_rate) }}</p>
             </div>
           </div>
         </article>
