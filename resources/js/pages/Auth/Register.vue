@@ -101,12 +101,6 @@ const submit = () => {
           </div>
         </div>
 
-        <div class="auth-form__highlights">
-          <span>Book birthdays with menu bundles</span>
-          <span>Upload proof of payment</span>
-          <span>Track bookings from your dashboard</span>
-        </div>
-
         <PrimaryButton class="auth-form__submit" :class="{ 'opacity-25': form.processing }" :disabled="form.processing">
           Create account
         </PrimaryButton>
@@ -172,24 +166,6 @@ const submit = () => {
   border: 1px solid rgba(31, 31, 31, 0.12);
   background: rgba(255, 255, 255, 0.96);
   padding: 0.95rem 1rem;
-}
-
-.auth-form__highlights {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.7rem;
-  padding-top: 0.35rem;
-}
-
-.auth-form__highlights span {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.5rem 0.8rem;
-  border-radius: 999px;
-  background: rgba(255, 199, 44, 0.16);
-  color: #822014;
-  font-size: 0.82rem;
-  font-weight: 800;
 }
 
 .auth-form__submit {
