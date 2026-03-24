@@ -56,6 +56,6 @@ class Reservation extends Model
 
     public function assignedStaff(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'assigned_staff_id');
+        return $this->belongsTo(User::class, 'assigned_staff_id')
     }
 }
