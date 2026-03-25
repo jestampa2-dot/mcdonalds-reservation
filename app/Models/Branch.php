@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Branch extends Model
 {
@@ -25,4 +27,19 @@ class Branch extends Model
         'hosts' => 'array',
         'is_active' => 'boolean',
     ];
+
+    public function supportedEventTypes(): BelongsToMany
+    {
+        return $this->belongsToMany(EventType::class, 'branch_event_type');
+    }
+
+    public function inventoryItems(): HasMany
+    {
+        return $this->hasMany(BranchInventoryItem::class);
+    }
+
+    public function hostsList(): HasMany
+    {
+        return $this->hasMany(BranchHost::class);
+    }
 }

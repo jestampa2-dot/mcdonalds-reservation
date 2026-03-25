@@ -2,7 +2,14 @@
 
 namespace Database\Seeders;
 
+use App\Models\AddOn;
+use App\Models\BookingPackage;
 use App\Models\Branch;
+use App\Models\BranchHost;
+use App\Models\BranchInventoryItem;
+use App\Models\EventType;
+use App\Models\MenuBundle;
+use App\Models\PricingSetting;
 use App\Models\Reservation;
 use App\Models\User;
 use Illuminate\Database\Seeder;
@@ -12,6 +19,81 @@ class DatabaseSeeder extends Seeder
 {
     public function run()
     {
+        $eventTypes = collect(config('booking.event_types'));
+        $packages = collect(config('booking.packages'));
+        $menuBundles = collect(config('booking.menu_bundles'));
+        $addOns = collect(config('booking.add_ons'));
+        $pricing = config('booking.pricing');
+
+        $eventTypeModels = $eventTypes->values()->mapWithKeys(function (array $eventType, int $index) use ($eventTypes) {
+            $code = $eventTypes->keys()->get($index);
+            $model = EventType::updateOrCreate(
+                ['code' => $code],
+                [
+                    'label' => $eventType['label'],
+                    'description' => $eventType['description'],
+                    'icon' => $eventType['icon'] ?? null,
+                    'sort_order' => $index,
+                    'is_active' => true,
+                ]
+            );
+
+            return [$code => $model];
+        });
+
+        $packages->each(function (array $items, string $eventTypeCode) use ($eventTypeModels) {
+            collect($items)->each(function (array $package, int $index) use ($eventTypeModels, $eventTypeCode) {
+                BookingPackage::updateOrCreate(
+                    ['code' => $package['code']],
+                    [
+                        'event_type_id' => $eventTypeModels[$eventTypeCode]->id,
+                        'name' => $package['name'],
+                        'price' => $package['price'],
+                        'guest_range' => $package['guest_range'] ?? null,
+                        'features' => $package['features'] ?? [],
+                        'sort_order' => $index,
+                        'is_active' => true,
+                    ]
+                );
+            });
+        });
+
+        $menuBundles->each(function (array $bundle, int $index) {
+            MenuBundle::updateOrCreate(
+                ['code' => $bundle['code']],
+                [
+                    'name' => $bundle['name'],
+                    'price' => $bundle['price'],
+                    'prep_label' => $bundle['prep_label'] ?? null,
+                    'sort_order' => $index,
+                    'is_active' => true,
+                ]
+            );
+        });
+
+        $addOns->each(function (array $addOn, int $index) {
+            AddOn::updateOrCreate(
+                ['code' => $addOn['code']],
+                [
+                    'name' => $addOn['name'],
+                    'price' => $addOn['price'],
+                    'sort_order' => $index,
+                    'is_active' => true,
+                ]
+            );
+        });
+
+        PricingSetting::updateOrCreate(
+            ['id' => 1],
+            [
+                'weekend_multiplier' => $pricing['weekend_multiplier'],
+                'holiday_multiplier' => $pricing['holiday_multiplier'],
+                'extension_hourly_rate' => $pricing['extension_hourly_rate'],
+                'holidays' => $pricing['holidays'] ?? [],
+                'is_active' => true,
+            ]
+        );
+
         $admin = User::updateOrCreate(
             ['email' => 'admin@mcdbooker.test'],
             ['name' => 'Ava Admin', 'role' => 'admin', 'password' => Hash::make('password')]
@@ -38,7 +120,7 @@ class DatabaseSeeder extends Seeder
         );
 
         foreach (config('booking.branches') as $branch) {
-            Branch::updateOrCreate(
+            $branchModel = Branch::updateOrCreate(
                 ['code' => $branch['code']],
                 [
                     'name' => $branch['name'],
@@ -52,6 +134,51 @@ class DatabaseSeeder extends Seeder
                     'is_active' => true,
                 ]
             );
+
+            $branchModel->supportedEventTypes()->sync(
+                $eventTypeModels
+                    ->filter(fn ($eventTypeModel, $code) => $branch['supports'][$code] ?? false)
+                    ->pluck('id')
+                    ->all()
+            );
+
+            $inventoryItems = collect($branch['inventory'] ?? []);
+            BranchInventoryItem::query()
+                ->where('branch_id', $branchModel->id)
+                ->whereNotIn('item', $inventoryItems->pluck('item')->all())
+                ->delete();
+
+            $inventoryItems->each(function (array $item, int $index) use ($branchModel) {
+                BranchInventoryItem::updateOrCreate(
+                    [
+                        'branch_id' => $branchModel->id,
+                        'item' => $item['item'],
+                    ],
+                    [
+                        'stock' => $item['stock'] ?? 0,
+                        'threshold' => $item['threshold'] ?? 0,
+                        'sort_order' => $index,
+                    ]
+                );
+            });
+
+            $hosts = collect($branch['hosts'] ?? []);
+            BranchHost::query()
+                ->where('branch_id', $branchModel->id)
+                ->whereNotIn('name', $hosts->all())
+                ->delete();
+
+            $hosts->each(function (string $host, int $index) use ($branchModel) {
+                BranchHost::updateOrCreate(
+                    [
+                        'branch_id' => $branchModel->id,
+                        'name' => $host,
+                    ],
+                    [
+                        'sort_order' => $index,
+                    ]
+                );
+            });
         }
 
         $samples = [

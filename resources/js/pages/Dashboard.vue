@@ -67,7 +67,7 @@ const rescheduleBooking = (id) => {
 }
 
 const formatCurrency = (value) =>
-  `₱${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  `\u20B1${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 </script>
 
 <template>

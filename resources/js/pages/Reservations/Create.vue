@@ -71,7 +71,7 @@ const addHoursToTime = (time, hoursToAdd) => {
 const endTimeLabel = computed(() => formatTimeLabel(addHoursToTime(form.event_time, Number(form.duration_hours))))
 
 const formatCurrency = (value) =>
-  `₱${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  `\u20B1${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 const canStartAt = (time, dateAvailability = selectedDateAvailability.value) => {
   if (!dateAvailability) {

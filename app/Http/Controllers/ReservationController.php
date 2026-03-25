@@ -2,7 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AddOn;
+use App\Models\BookingPackage;
 use App\Models\Branch;
+use App\Models\EventType;
+use App\Models\MenuBundle;
+use App\Models\PricingSetting;
 use App\Models\Reservation;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -172,7 +177,7 @@ class ReservationController extends Controller
             'bookings' => $bookings->map(fn (Reservation $reservation) => $this->serializeReservation($reservation))->values(),
             'stats' => [
                 ['label' => 'Upcoming', 'value' => $bookings->whereIn('status', ['pending_review', 'confirmed', 'rescheduled', 'checked_in'])->count()],
-                ['label' => 'Confirmed spend', 'value' => '$'.number_format($bookings->whereIn('status', ['confirmed', 'checked_in'])->sum('total_amount'), 2)],
+                ['label' => 'Confirmed spend', 'value' => '₱'.number_format($bookings->whereIn('status', ['confirmed', 'checked_in'])->sum('total_amount'), 2)],
                 ['label' => 'Pending approvals', 'value' => $bookings->where('status', 'pending_review')->count()],
             ],
         ]);
@@ -447,7 +452,7 @@ class ReservationController extends Controller
             ->mapWithKeys(fn ($type) => [$type => in_array($type, $validated['supports'], true)])
             ->all();
 
-        Branch::create([
+        $branch = Branch::create([
             'name' => $validated['name'],
             'city' => $validated['city'],
             'code' => $validated['code'],
@@ -459,6 +464,15 @@ class ReservationController extends Controller
             'hosts' => [],
             'is_active' => true,
         ]);
+
+        if (Schema::hasTable('branch_event_type') && Schema::hasTable('event_types')) {
+            $branch->supportedEventTypes()->sync(
+                EventType::query()
+                    ->whereIn('code', $validated['supports'])
+                    ->pluck('id')
+                    ->all()
+            );
+        }
 
         return back()->with('success', 'New branch added.');
     }
@@ -597,18 +611,81 @@ class ReservationController extends Controller
 
     protected function catalog(): array
     {
+        if ($this->dbCatalogAvailable()) {
+            $eventTypes = EventType::query()
+                ->where('is_active', true)
+                ->orderBy('sort_order')
+                ->get();
+            $eventTypeCodes = $eventTypes->pluck('code')->all();
+            $pricing = PricingSetting::query()
+                ->where('is_active', true)
+                ->latest('id')
+                ->first();
+
+            return [
+                'eventTypes' => $eventTypes->mapWithKeys(fn (EventType $eventType) => [
+                    $eventType->code => [
+                        'label' => $eventType->label,
+                        'description' => $eventType->description,
+                        'icon' => $eventType->icon,
+                    ],
+                ])->all(),
+                'branches' => $this->branchCatalog($eventTypeCodes),
+                'packages' => BookingPackage::query()
+                    ->with('eventType:id,code')
+                    ->where('is_active', true)
+                    ->orderBy('sort_order')
+                    ->get()
+                    ->groupBy(fn (BookingPackage $package) => $package->eventType?->code)
+                    ->map(fn ($items) => $items->map(fn (BookingPackage $package) => [
+                        'code' => $package->code,
+                        'name' => $package->name,
+                        'price' => (float) $package->price,
+                        'guest_range' => $package->guest_range,
+                        'features' => $package->features ?? [],
+                    ])->values()->all())
+                    ->all(),
+                'menuBundles' => MenuBundle::query()
+                    ->where('is_active', true)
+                    ->orderBy('sort_order')
+                    ->get()
+                    ->map(fn (MenuBundle $bundle) => [
+                        'code' => $bundle->code,
+                        'name' => $bundle->name,
+                        'price' => (float) $bundle->price,
+                        'prep_label' => $bundle->prep_label,
+                    ])->values()->all(),
+                'addOns' => AddOn::query()
+                    ->where('is_active', true)
+                    ->orderBy('sort_order')
+                    ->get()
+                    ->map(fn (AddOn $addOn) => [
+                        'code' => $addOn->code,
+                        'name' => $addOn->name,
+                        'price' => (float) $addOn->price,
+                    ])->values()->all(),
+                'slotOptions' => $this->slotOptions(),
+                'pricing' => [
+                    'weekend_multiplier' => (float) ($pricing?->weekend_multiplier ?? 1.15),
+                    'holiday_multiplier' => (float) ($pricing?->holiday_multiplier ?? 1.25),
+                    'extension_hourly_rate' => (float) ($pricing?->extension_hourly_rate ?? 450),
+                    'holidays' => $pricing?->holidays ?? [],
+                ],
+            ];
+        }
+
         return [
             'eventTypes' => config('booking.event_types'),
             'branches' => $this->branchCatalog(),
             'packages' => config('booking.packages'),
             'menuBundles' => config('booking.menu_bundles'),
             'addOns' => config('booking.add_ons'),
-            'slotOptions' => config('booking.slot_options'),
+            'slotOptions' => $this->slotOptions(),
             'pricing' => config('booking.pricing'),
         ];
     }
 
-    protected function branchCatalog(): array
+    protected function branchCatalog(array $eventTypeCodes = []): array
     {
         if (! Schema::hasTable('branches')) {
             return config('booking.branches');
@@ -616,6 +693,11 @@ class ReservationController extends Controller
 
         $branches = Branch::query()
             ->where('is_active', true)
+            ->with([
+                'supportedEventTypes:id,code',
+                'inventoryItems:id,branch_id,item,stock,threshold,sort_order',
+                'hostsList:id,branch_id,name,sort_order',
+            ])
             ->orderBy('name')
             ->get();
 
@@ -628,14 +710,45 @@ class ReservationController extends Controller
                 'code' => $branch->code,
                 'name' => $branch->name,
                 'city' => $branch->city,
-                'supports' => $branch->supports ?? [],
+                'supports' => ! empty($eventTypeCodes)
+                    ? (
+                        $branch->supportedEventTypes->isNotEmpty()
+                            ? collect($eventTypeCodes)->mapWithKeys(fn ($code) => [$code => $branch->supportedEventTypes->contains('code', $code)])->all()
+                            : ($branch->supports ?? [])
+                    )
+                    : ($branch->supports ?? []),
                 'concurrent_limit' => $branch->concurrent_limit,
                 'max_guests' => $branch->max_guests,
                 'map_url' => $branch->map_url,
-                'inventory' => $branch->inventory ?? [],
-                'hosts' => $branch->hosts ?? [],
+                'inventory' => $branch->inventoryItems->isNotEmpty()
+                    ? $branch->inventoryItems->sortBy('sort_order')->map(fn ($item) => [
+                        'item' => $item->item,
+                        'stock' => $item->stock,
+                        'threshold' => $item->threshold,
+                    ])->values()->all()
+                    : ($branch->inventory ?? []),
+                'hosts' => $branch->hostsList->isNotEmpty()
+                    ? $branch->hostsList->sortBy('sort_order')->pluck('name')->values()->all()
+                    : ($branch->hosts ?? []),
             ],
         ])->all();
+    }
+
+    protected function dbCatalogAvailable(): bool
+    {
+        return Schema::hasTable('event_types')
+            && Schema::hasTable('booking_packages')
+            && Schema::hasTable('menu_bundles')
+            && Schema::hasTable('add_ons')
+            && EventType::query()->exists();
+    }
+
+    protected function slotOptions(): array
+    {
+        return array_map(
+            fn ($hour) => str_pad((string) $hour, 2, '0', STR_PAD_LEFT).':00',
+            range(0, 23)
+        );
     }
 
     protected function bookedSlots(): array
@@ -872,7 +985,7 @@ class ReservationController extends Controller
             'menu_bundles' => $reservation->menu_bundles ?? [],
             'add_ons' => $reservation->add_ons ?? [],
             'service_adjustments' => $serviceAdjustments,
-            'total_amount' => number_format((float) $reservation->total_amount, 2),
+            'total_amount' => (float) $reservation->total_amount,
             'receipt' => $receipt,
             'assigned_staff_id' => $reservation->assigned_staff_id,
             'assigned_staff_name' => $reservation->assignedStaff?->name,
@@ -890,7 +1003,7 @@ class ReservationController extends Controller
         $confirmed = $bookings->whereIn('status', ['confirmed', 'checked_in', 'completed']);
 
         return [
-            ['label' => 'Revenue pipeline', 'value' => '$'.number_format($bookings->sum('total_amount'), 2)],
+            ['label' => 'Revenue pipeline', 'value' => '₱'.number_format($bookings->sum('total_amount'), 2)],
             ['label' => 'Confirmed events', 'value' => $confirmed->count()],
             ['label' => 'Peak booking hour', 'value' => $this->formatTimeLabel($bookings->groupBy(fn ($booking) => substr($booking->event_time, 0, 5))->map->count()->sortDesc()->keys()->first() ?: '14:00')],
             ['label' => 'Weekend uplift', 'value' => '+15%'],
