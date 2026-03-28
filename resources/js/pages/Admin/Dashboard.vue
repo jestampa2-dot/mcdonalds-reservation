@@ -32,6 +32,12 @@ const adminCards = [
     button: 'Open availability',
   },
   {
+    title: 'Catalog',
+    copy: 'Edit event types, package details, prices, and availability from one page.',
+    href: route('admin.catalog'),
+    button: 'Open catalog',
+  },
+  {
     title: 'Branches',
     copy: 'Add and monitor store branches or supported reservation types from one page.',
     href: route('admin.branches'),

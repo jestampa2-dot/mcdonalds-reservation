@@ -16,19 +16,25 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response as InertiaResponse;
+use Throwable;
 
 class ReservationController extends Controller
 {
+    protected ?bool $databaseAvailable = null;
+
     public function home(): InertiaResponse
     {
         $catalog = $this->catalog();
-        $reservationCount = Schema::hasTable('reservations') ? Reservation::count() : 0;
+        $reservationCount = $this->hasTableSafely('reservations')
+            ? $this->runDatabaseCheck(fn () => Reservation::count(), 0)
+            : 0;
 
         return Inertia::render('Home', [
             'eventTypes' => array_values($catalog['eventTypes']),
@@ -177,7 +183,7 @@ class ReservationController extends Controller
             'bookings' => $bookings->map(fn (Reservation $reservation) => $this->serializeReservation($reservation))->values(),
             'stats' => [
                 ['label' => 'Upcoming', 'value' => $bookings->whereIn('status', ['pending_review', 'confirmed', 'rescheduled', 'checked_in'])->count()],
-                ['label' => 'Confirmed spend', 'value' => '₱'.number_format($bookings->whereIn('status', ['confirmed', 'checked_in'])->sum('total_amount'), 2)],
+                ['label' => 'Confirmed spend', 'value' => $this->currencySymbol().number_format($bookings->whereIn('status', ['confirmed', 'checked_in'])->sum('total_amount'), 2)],
                 ['label' => 'Pending approvals', 'value' => $bookings->where('status', 'pending_review')->count()],
             ],
         ]);
@@ -265,6 +271,39 @@ class ReservationController extends Controller
 
         return Inertia::render('Admin/Accounts', [
             'users' => $data['users'],
+        ]);
+    }
+
+    public function adminCatalog(Request $request): InertiaResponse
+    {
+        $this->authorizeRoles($request, ['admin', 'manager']);
+
+        return Inertia::render('Admin/Catalog', [
+            'eventTypes' => $this->runDatabaseCheck(
+                fn () => EventType::query()
+                    ->with(['packages' => fn ($query) => $query->orderBy('sort_order')->orderBy('name')])
+                    ->orderBy('sort_order')
+                    ->orderBy('label')
+                    ->get()
+                    ->map(fn (EventType $eventType) => [
+                        'id' => $eventType->id,
+                        'code' => $eventType->code,
+                        'label' => $eventType->label,
+                        'description' => $eventType->description,
+                        'icon' => $eventType->icon,
+                        'is_active' => $eventType->is_active,
+                        'packages' => $eventType->packages->map(fn (BookingPackage $package) => [
+                            'id' => $package->id,
+                            'code' => $package->code,
+                            'name' => $package->name,
+                            'price' => (float) $package->price,
+                            'guest_range' => $package->guest_range,
+                            'features' => $package->features ?? [],
+                            'is_active' => $package->is_active,
+                        ])->values(),
+                    ])->values(),
+                collect()
+            ),
         ]);
     }
 
@@ -394,10 +433,20 @@ class ReservationController extends Controller
             'status' => ['required', Rule::in(['pending_review', 'confirmed', 'checked_in', 'completed', 'cancelled'])],
         ]);
 
-        $reservation->update(['status' => $validated['status']]);
+        $updates = ['status' => $validated['status']];
+
+        if (in_array($validated['status'], ['completed', 'cancelled'], true)) {
+            $updates['service_status'] = 'available';
+        }
+
+        $reservation->update($updates);
 
         if ($validated['status'] === 'confirmed') {
             return back()->with('success', 'Ba-da-ba-ba-ba. The customer reservation is successful and officially confirmed.');
+        }
+
+        if ($validated['status'] === 'completed') {
+            return back()->with('success', 'Event marked as done and moved to history.');
         }
 
         return back()->with('success', 'Booking status updated.');
@@ -431,6 +480,49 @@ class ReservationController extends Controller
         ]);
 
         return back()->with('success', 'Account role updated.');
+    }
+
+    public function updateEventType(Request $request, EventType $eventType): RedirectResponse
+    {
+        $this->authorizeRoles($request, ['admin', 'manager']);
+
+        $validated = $request->validate([
+            'label' => ['required', 'string', 'max:255'],
+            'description' => ['required', 'string', 'max:1000'],
+            'icon' => ['nullable', 'string', 'max:100'],
+            'is_active' => ['required', 'boolean'],
+        ]);
+
+        $eventType->update($validated);
+
+        return back()->with('success', 'Event type updated.');
+    }
+
+    public function updatePackage(Request $request, BookingPackage $package): RedirectResponse
+    {
+        $this->authorizeRoles($request, ['admin', 'manager']);
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'price' => ['required', 'numeric', 'min:0'],
+            'guest_range' => ['nullable', 'string', 'max:255'],
+            'features' => ['nullable', 'string', 'max:2000'],
+            'is_active' => ['required', 'boolean'],
+        ]);
+
+        $package->update([
+            'name' => $validated['name'],
+            'price' => $validated['price'],
+            'guest_range' => $validated['guest_range'] ?? null,
+            'features' => collect(preg_split('/\r\n|\r|\n/', $validated['features'] ?? ''))
+                ->map(fn ($item) => trim((string) $item))
+                ->filter()
+                ->values()
+                ->all(),
+            'is_active' => $validated['is_active'],
+        ]);
+
+        return back()->with('success', 'Package updated.');
     }
 
     public function storeBranch(Request $request): RedirectResponse
@@ -612,66 +704,72 @@ class ReservationController extends Controller
     protected function catalog(): array
     {
         if ($this->dbCatalogAvailable()) {
-            $eventTypes = EventType::query()
-                ->where('is_active', true)
-                ->orderBy('sort_order')
-                ->get();
-            $eventTypeCodes = $eventTypes->pluck('code')->all();
-            $pricing = PricingSetting::query()
-                ->where('is_active', true)
-                ->latest('id')
-                ->first();
+            $databaseCatalog = $this->runDatabaseCheck(function () {
+                $eventTypes = EventType::query()
+                    ->where('is_active', true)
+                    ->orderBy('sort_order')
+                    ->get();
+                $eventTypeCodes = $eventTypes->pluck('code')->all();
+                $pricing = PricingSetting::query()
+                    ->where('is_active', true)
+                    ->latest('id')
+                    ->first();
 
-            return [
-                'eventTypes' => $eventTypes->mapWithKeys(fn (EventType $eventType) => [
-                    $eventType->code => [
-                        'label' => $eventType->label,
-                        'description' => $eventType->description,
-                        'icon' => $eventType->icon,
+                return [
+                    'eventTypes' => $eventTypes->mapWithKeys(fn (EventType $eventType) => [
+                        $eventType->code => [
+                            'label' => $eventType->label,
+                            'description' => $eventType->description,
+                            'icon' => $eventType->icon,
+                        ],
+                    ])->all(),
+                    'branches' => $this->branchCatalog($eventTypeCodes),
+                    'packages' => BookingPackage::query()
+                        ->with('eventType:id,code')
+                        ->where('is_active', true)
+                        ->orderBy('sort_order')
+                        ->get()
+                        ->groupBy(fn (BookingPackage $package) => $package->eventType?->code)
+                        ->map(fn ($items) => $items->map(fn (BookingPackage $package) => [
+                            'code' => $package->code,
+                            'name' => $package->name,
+                            'price' => (float) $package->price,
+                            'guest_range' => $package->guest_range,
+                            'features' => $package->features ?? [],
+                        ])->values()->all())
+                        ->all(),
+                    'menuBundles' => MenuBundle::query()
+                        ->where('is_active', true)
+                        ->orderBy('sort_order')
+                        ->get()
+                        ->map(fn (MenuBundle $bundle) => [
+                            'code' => $bundle->code,
+                            'name' => $bundle->name,
+                            'price' => (float) $bundle->price,
+                            'prep_label' => $bundle->prep_label,
+                        ])->values()->all(),
+                    'addOns' => AddOn::query()
+                        ->where('is_active', true)
+                        ->orderBy('sort_order')
+                        ->get()
+                        ->map(fn (AddOn $addOn) => [
+                            'code' => $addOn->code,
+                            'name' => $addOn->name,
+                            'price' => (float) $addOn->price,
+                        ])->values()->all(),
+                    'slotOptions' => $this->slotOptions(),
+                    'pricing' => [
+                        'weekend_multiplier' => (float) ($pricing?->weekend_multiplier ?? 1.15),
+                        'holiday_multiplier' => (float) ($pricing?->holiday_multiplier ?? 1.25),
+                        'extension_hourly_rate' => (float) ($pricing?->extension_hourly_rate ?? 450),
+                        'holidays' => $pricing?->holidays ?? [],
                     ],
-                ])->all(),
-                'branches' => $this->branchCatalog($eventTypeCodes),
-                'packages' => BookingPackage::query()
-                    ->with('eventType:id,code')
-                    ->where('is_active', true)
-                    ->orderBy('sort_order')
-                    ->get()
-                    ->groupBy(fn (BookingPackage $package) => $package->eventType?->code)
-                    ->map(fn ($items) => $items->map(fn (BookingPackage $package) => [
-                        'code' => $package->code,
-                        'name' => $package->name,
-                        'price' => (float) $package->price,
-                        'guest_range' => $package->guest_range,
-                        'features' => $package->features ?? [],
-                    ])->values()->all())
-                    ->all(),
-                'menuBundles' => MenuBundle::query()
-                    ->where('is_active', true)
-                    ->orderBy('sort_order')
-                    ->get()
-                    ->map(fn (MenuBundle $bundle) => [
-                        'code' => $bundle->code,
-                        'name' => $bundle->name,
-                        'price' => (float) $bundle->price,
-                        'prep_label' => $bundle->prep_label,
-                    ])->values()->all(),
-                'addOns' => AddOn::query()
-                    ->where('is_active', true)
-                    ->orderBy('sort_order')
-                    ->get()
-                    ->map(fn (AddOn $addOn) => [
-                        'code' => $addOn->code,
-                        'name' => $addOn->name,
-                        'price' => (float) $addOn->price,
-                    ])->values()->all(),
-                'slotOptions' => $this->slotOptions(),
-                'pricing' => [
-                    'weekend_multiplier' => (float) ($pricing?->weekend_multiplier ?? 1.15),
-                    'holiday_multiplier' => (float) ($pricing?->holiday_multiplier ?? 1.25),
-                    'extension_hourly_rate' => (float) ($pricing?->extension_hourly_rate ?? 450),
-                    'holidays' => $pricing?->holidays ?? [],
-                ],
-            ];
+                ];
+            }, null);
+
+            if ($databaseCatalog) {
+                return $databaseCatalog;
+            }
         }
 
         return [
@@ -687,11 +785,11 @@ class ReservationController extends Controller
 
     protected function branchCatalog(array $eventTypeCodes = []): array
     {
-        if (! Schema::hasTable('branches')) {
+        if (! $this->hasTableSafely('branches')) {
             return config('booking.branches');
         }
 
-        $branches = Branch::query()
+        $branches = $this->runDatabaseCheck(fn () => Branch::query()
             ->where('is_active', true)
             ->with([
                 'supportedEventTypes:id,code',
@@ -699,7 +797,7 @@ class ReservationController extends Controller
                 'hostsList:id,branch_id,name,sort_order',
             ])
             ->orderBy('name')
-            ->get();
+            ->get(), collect());
 
         if ($branches->isEmpty()) {
             return config('booking.branches');
@@ -736,11 +834,11 @@ class ReservationController extends Controller
 
     protected function dbCatalogAvailable(): bool
     {
-        return Schema::hasTable('event_types')
-            && Schema::hasTable('booking_packages')
-            && Schema::hasTable('menu_bundles')
-            && Schema::hasTable('add_ons')
-            && EventType::query()->exists();
+        return $this->hasTableSafely('event_types')
+            && $this->hasTableSafely('booking_packages')
+            && $this->hasTableSafely('menu_bundles')
+            && $this->hasTableSafely('add_ons')
+            && $this->runDatabaseCheck(fn () => EventType::query()->exists(), false);
     }
 
     protected function slotOptions(): array
@@ -753,7 +851,7 @@ class ReservationController extends Controller
 
     protected function bookedSlots(): array
     {
-        return Reservation::query()
+        return $this->runDatabaseCheck(fn () => Reservation::query()
             ->whereIn('status', ['pending_review', 'confirmed', 'rescheduled', 'checked_in'])
             ->get(['branch_code', 'event_date', 'event_time', 'duration_hours'])
             ->flatMap(function (Reservation $reservation) {
@@ -768,7 +866,40 @@ class ReservationController extends Controller
                 });
             })
             ->values()
-            ->all();
+            ->all(), []);
+    }
+
+    protected function databaseAvailable(): bool
+    {
+        if ($this->databaseAvailable !== null) {
+            return $this->databaseAvailable;
+        }
+
+        try {
+            DB::connection()->getPdo();
+
+            return $this->databaseAvailable = true;
+        } catch (Throwable) {
+            return $this->databaseAvailable = false;
+        }
+    }
+
+    protected function hasTableSafely(string $table): bool
+    {
+        return $this->runDatabaseCheck(fn () => Schema::hasTable($table), false);
+    }
+
+    protected function runDatabaseCheck(callable $callback, mixed $fallback)
+    {
+        if (! $this->databaseAvailable()) {
+            return $fallback;
+        }
+
+        try {
+            return $callback();
+        } catch (Throwable) {
+            return $fallback;
+        }
     }
 
     protected function availabilityPayload(array $catalog, int $days): array
@@ -1003,11 +1134,16 @@ class ReservationController extends Controller
         $confirmed = $bookings->whereIn('status', ['confirmed', 'checked_in', 'completed']);
 
         return [
-            ['label' => 'Revenue pipeline', 'value' => '₱'.number_format($bookings->sum('total_amount'), 2)],
+            ['label' => 'Revenue pipeline', 'value' => $this->currencySymbol().number_format($bookings->sum('total_amount'), 2)],
             ['label' => 'Confirmed events', 'value' => $confirmed->count()],
             ['label' => 'Peak booking hour', 'value' => $this->formatTimeLabel($bookings->groupBy(fn ($booking) => substr($booking->event_time, 0, 5))->map->count()->sortDesc()->keys()->first() ?: '14:00')],
             ['label' => 'Weekend uplift', 'value' => '+15%'],
         ];
+    }
+
+    protected function currencySymbol(): string
+    {
+        return "\u{20B1}";
     }
 
     protected function adminPageData(): array

@@ -62,6 +62,23 @@ const updateStatus = (id) => {
   router.post(route('admin.reservations.status', id), { status: statusState[id] }, { preserveScroll: true, preserveState: true })
 }
 
+const markAsDone = (id) => {
+  statusState[id] = 'completed'
+
+  router.post(route('admin.reservations.status', id), {
+    status: 'completed',
+  }, {
+    preserveScroll: true,
+    preserveState: false,
+    onSuccess: () => {
+      router.visit(route('admin.timeline'), {
+        preserveScroll: true,
+        preserveState: false,
+      })
+    },
+  })
+}
+
 const updateCrew = (id) => {
   router.post(route('admin.reservations.crew', id), { assigned_staff_id: crewState[id] || null }, { preserveScroll: true, preserveState: true })
 }
@@ -111,6 +128,7 @@ const updateServiceAdjustments = (id) => {
                   <option value="cancelled">cancelled</option>
                 </select>
                 <button type="button" class="mcd-button" @click="updateStatus(booking.id)">Save status</button>
+                <button type="button" class="mcd-button mcd-button--ghost" @click="markAsDone(booking.id)">Mark as done</button>
 
                 <select v-model="crewState[booking.id]" class="mcd-select">
                   <option value="">Unassigned</option>
