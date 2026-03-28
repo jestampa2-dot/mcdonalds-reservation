@@ -29,12 +29,16 @@ const adjustmentState = reactive(Object.fromEntries(pendingBookings.value.map((b
 
 onMounted(() => {
   dashboardTimer = window.setInterval(() => {
+    if (document.visibilityState !== 'visible') {
+      return
+    }
+
     router.reload({
       only: ['stats', 'groupedBookings', 'staffUsers'],
       preserveScroll: true,
       preserveState: true,
     })
-  }, 15000)
+  }, 60000)
 })
 
 watch(

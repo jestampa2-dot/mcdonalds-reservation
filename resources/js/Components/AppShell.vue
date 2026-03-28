@@ -58,6 +58,7 @@ const navLinks = computed(() => {
           v-for="link in navLinks"
           :key="link.href"
           :href="link.href"
+          prefetch
           class="mcd-nav__link"
         >
           {{ link.label }}

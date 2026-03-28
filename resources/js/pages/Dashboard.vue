@@ -1,6 +1,6 @@
 <script setup>
 import { onBeforeUnmount, onMounted, reactive, watch } from 'vue'
-import { router } from '@inertiajs/vue3'
+import { Link, router } from '@inertiajs/vue3'
 import AppShell from '@/Components/AppShell.vue'
 import StatusBadge from '@/Components/StatusBadge.vue'
 
@@ -32,12 +32,16 @@ const rescheduleState = reactive(
 
 onMounted(() => {
   dashboardTimer = window.setInterval(() => {
+    if (document.visibilityState !== 'visible') {
+      return
+    }
+
     router.reload({
       only: ['bookings', 'stats'],
       preserveScroll: true,
       preserveState: true,
     })
-  }, 15000)
+  }, 60000)
 })
 
 watch(
@@ -79,7 +83,7 @@ const formatCurrency = (value) =>
             <p class="mcd-chip">Customer dashboard</p>
             <h1 class="mt-4 text-4xl">Track your upcoming bookings, payment review, and check-in pass.</h1>
           </div>
-          <a :href="route('reservations.create')" class="mcd-button">Create another booking</a>
+          <Link :href="route('reservations.create')" prefetch class="mcd-button">Create another booking</Link>
         </div>
       </div>
 

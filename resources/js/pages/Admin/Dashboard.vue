@@ -1,6 +1,6 @@
 <script setup>
 import { onBeforeUnmount, onMounted } from 'vue'
-import { router } from '@inertiajs/vue3'
+import { Link, router } from '@inertiajs/vue3'
 import AppShell from '@/Components/AppShell.vue'
 import AdminQuickLinks from '@/Components/AdminQuickLinks.vue'
 
@@ -59,12 +59,16 @@ const adminCards = [
 
 onMounted(() => {
   dashboardTimer = window.setInterval(() => {
+    if (document.visibilityState !== 'visible') {
+      return
+    }
+
     router.reload({
       only: ['stats', 'notifications', 'history', 'branchSummaries'],
       preserveScroll: true,
       preserveState: true,
     })
-  }, 15000)
+  }, 60000)
 })
 
 onBeforeUnmount(() => {
@@ -102,7 +106,7 @@ onBeforeUnmount(() => {
           <p class="mcd-chip">{{ card.title }}</p>
           <p class="mt-4 text-2xl">{{ card.title }}</p>
           <p class="mt-3 text-sm text-slate-600">{{ card.copy }}</p>
-          <a :href="card.href" class="mcd-button mt-6">{{ card.button }}</a>
+          <Link :href="card.href" prefetch class="mcd-button mt-6">{{ card.button }}</Link>
         </article>
       </div>
     </section>
@@ -115,7 +119,7 @@ onBeforeUnmount(() => {
               <p class="mcd-chip">Upcoming alerts</p>
               <h2 class="mt-3 text-3xl">Next events to review</h2>
             </div>
-            <a :href="route('admin.timeline')" class="mcd-button mcd-button--ghost">Open timeline</a>
+            <Link :href="route('admin.timeline')" prefetch class="mcd-button mcd-button--ghost">Open timeline</Link>
           </div>
           <div v-if="notifications.length" class="mt-5 space-y-3">
             <div v-for="item in notifications.slice(0, 4)" :key="item.id" class="rounded-3xl bg-white p-4">

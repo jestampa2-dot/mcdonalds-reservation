@@ -55,12 +55,16 @@ const updateServiceAdjustments = (id) => {
 
 onMounted(() => {
   dashboardTimer = window.setInterval(() => {
+    if (document.visibilityState !== 'visible') {
+      return
+    }
+
     router.reload({
       only: ['prepList', 'todayBookings', 'notifications', 'history'],
       preserveScroll: true,
       preserveState: true,
     })
-  }, 15000)
+  }, 60000)
 })
 
 watch(
