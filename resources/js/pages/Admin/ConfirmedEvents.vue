@@ -117,6 +117,9 @@ const refreshConfirmed = () => {
                 <p class="mt-1 text-sm text-slate-500">Customer: {{ booking.customer_name }} | {{ booking.customer_phone }}</p>
                 <p class="mt-1 text-sm text-slate-500">Assigned crew: {{ booking.assigned_staff_name || 'Unassigned' }}</p>
                 <p class="mt-1 text-sm text-slate-500">Duration: {{ booking.duration_hours }} hours</p>
+                <p v-if="booking.manual_menu_items?.length" class="mt-1 text-sm text-slate-500">
+                  Manual tray: {{ booking.manual_menu_items.slice(0, 3).map((item) => `${item.quantity} x ${item.item_name}`).join(', ') }}<span v-if="booking.manual_menu_items.length > 3"> and {{ booking.manual_menu_items.length - 3 }} more</span>
+                </p>
                 <p class="mt-3 text-sm text-slate-600">{{ booking.notes || 'No special notes provided.' }}</p>
               </div>
 

@@ -208,6 +208,9 @@ const refreshStaffView = () => {
                 <p class="mt-2 text-sm text-slate-600">{{ booking.package_name }} | {{ booking.branch }}</p>
                 <p class="mt-1 text-sm text-slate-500">{{ booking.event_date }} | {{ booking.event_time }} | {{ booking.duration_hours }} hours</p>
                 <p class="mt-1 text-sm text-slate-500">Customer: {{ booking.customer_name }}</p>
+                <p v-if="booking.manual_menu_items?.length" class="mt-1 text-sm text-slate-500">
+                  Manual tray: {{ booking.manual_menu_items.slice(0, 3).map((item) => `${item.quantity} x ${item.item_name}`).join(', ') }}<span v-if="booking.manual_menu_items.length > 3"> and {{ booking.manual_menu_items.length - 3 }} more</span>
+                </p>
                 <p class="mt-3 text-sm text-slate-600">{{ booking.notes || 'No special notes provided.' }}</p>
               </div>
 

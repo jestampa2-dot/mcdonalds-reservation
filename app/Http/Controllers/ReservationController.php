@@ -6,7 +6,10 @@ use App\Models\AddOn;
 use App\Models\BookingPackage;
 use App\Models\Branch;
 use App\Models\EventType;
+use App\Models\MenuCategory;
 use App\Models\MenuBundle;
+use App\Models\MenuItem;
+use App\Models\MenuItemOption;
 use App\Models\PricingSetting;
 use App\Models\Reservation;
 use App\Models\User;
@@ -80,6 +83,9 @@ class ReservationController extends Controller
             'package_code' => ['required', 'string'],
             'menu_bundles' => ['array'],
             'menu_bundles.*' => ['string'],
+            'manual_menu_items' => ['array'],
+            'manual_menu_items.*.option_code' => ['required', 'string'],
+            'manual_menu_items.*.quantity' => ['required', 'integer', 'min:1', 'max:99'],
             'add_ons' => ['array'],
             'add_ons.*' => ['string'],
             'notes' => ['nullable', 'string', 'max:1000'],
@@ -123,6 +129,7 @@ class ReservationController extends Controller
             ->whereIn('code', $validated['add_ons'] ?? [])
             ->values()
             ->all();
+        $manualMenuItems = $this->resolveManualMenuSelections($catalog, $validated['manual_menu_items'] ?? []);
 
         $proofPath = $request->file('payment_proof')->store('payment-proofs', 'public');
         $bookingReference = strtoupper('MCR-'.Str::random(8));
@@ -131,6 +138,7 @@ class ReservationController extends Controller
             $validated['event_date'],
             $package,
             $menuBundles,
+            $manualMenuItems,
             $addOns,
             (int) $validated['duration_hours']
         );
@@ -145,8 +153,8 @@ class ReservationController extends Controller
             'package_name' => $package['name'],
             'package_code' => $package['code'],
             'room_choice' => $validated['event_type'] === 'business' ? 'McCafe meeting zone' : 'Celebration area',
-            'food_package' => collect($menuBundles)->pluck('name')->implode(', '),
-            'beverage_package' => 'Included in selected bundles',
+            'food_package' => $this->foodPackageSummary($menuBundles, $manualMenuItems),
+            'beverage_package' => $this->beveragePackageSummary($menuBundles, $manualMenuItems),
             'event_materials' => collect($addOns)->pluck('name')->implode(', '),
             'branch' => $branch['name'],
             'branch_code' => $branch['code'],
@@ -155,9 +163,11 @@ class ReservationController extends Controller
             'duration_hours' => (int) $validated['duration_hours'],
             'menu_bundles' => Arr::pluck($menuBundles, 'code'),
             'add_ons' => Arr::pluck($addOns, 'code'),
+            'manual_menu_items' => $manualMenuItems,
             'service_adjustments' => [
                 'extra_menu_bundles' => [],
                 'extra_add_ons' => [],
+                'extra_manual_menu_items' => [],
             ],
             'payment_proof_path' => $proofPath,
             'guests' => $validated['guests'],
@@ -615,9 +625,15 @@ class ReservationController extends Controller
         }
 
         $catalog = $this->catalog();
+        $currentServiceAdjustments = $reservation->service_adjustments ?? [];
         $package = collect($catalog['packages'][$reservation->reservation_type] ?? [])->firstWhere('code', $reservation->package_code)
             ?? ['name' => $reservation->package_name, 'price' => (float) $reservation->total_amount];
         $menuBundles = collect($catalog['menuBundles'])->whereIn('code', $reservation->menu_bundles ?? [])->values()->all();
+        $manualMenuItems = collect($reservation->manual_menu_items ?? [])
+            ->map(fn ($item) => $this->normalizeManualMenuSnapshot($item))
+            ->filter()
+            ->values()
+            ->all();
         $addOns = collect($catalog['addOns'])->whereIn('code', $reservation->add_ons ?? [])->values()->all();
         $serviceAdjustments = [
             'extra_menu_bundles' => collect($validated['extra_menu_bundles'] ?? [])
@@ -628,6 +644,7 @@ class ReservationController extends Controller
                 ->filter(fn ($code) => collect($catalog['addOns'])->pluck('code')->contains($code))
                 ->values()
                 ->all(),
+            'extra_manual_menu_items' => $currentServiceAdjustments['extra_manual_menu_items'] ?? [],
         ];
 
         $receipt = $this->buildReceipt(
@@ -635,6 +652,7 @@ class ReservationController extends Controller
             $reservation->event_date?->toDateString() ?? now()->toDateString(),
             $package,
             $menuBundles,
+            $manualMenuItems,
             $addOns,
             (int) $validated['duration_hours'],
             $serviceAdjustments
@@ -767,6 +785,7 @@ class ReservationController extends Controller
                             'name' => $addOn->name,
                             'price' => (float) $addOn->price,
                         ])->values()->all(),
+                    'menuCategories' => $this->menuCategoryCatalog(),
                     'slotOptions' => $this->slotOptions(),
                     'pricing' => [
                         'weekend_multiplier' => (float) ($pricing?->weekend_multiplier ?? 1.15),
@@ -788,9 +807,46 @@ class ReservationController extends Controller
             'packages' => config('booking.packages'),
             'menuBundles' => config('booking.menu_bundles'),
             'addOns' => config('booking.add_ons'),
+            'menuCategories' => [],
             'slotOptions' => $this->slotOptions(),
             'pricing' => config('booking.pricing'),
         ];
+    }
+
+    protected function menuCategoryCatalog(): array
+    {
+        if (! $this->hasTableSafely('menu_categories') || ! $this->hasTableSafely('menu_items') || ! $this->hasTableSafely('menu_item_options')) {
+            return [];
+        }
+
+        $categories = $this->runDatabaseCheck(fn () => MenuCategory::query()
+            ->where('is_active', true)
+            ->with([
+                'items' => fn ($query) => $query->where('is_active', true)->orderBy('sort_order'),
+                'items.options' => fn ($query) => $query->where('is_active', true)->orderBy('sort_order'),
+            ])
+            ->orderBy('sort_order')
+            ->get(), collect());
+
+        return $categories->map(fn (MenuCategory $category) => [
+            'code' => $category->code,
+            'name' => $category->name,
+            'icon' => $category->icon,
+            'description' => $category->description,
+            'items' => $category->items->map(fn (MenuItem $item) => [
+                'code' => $item->code,
+                'name' => $item->name,
+                'description' => $item->description,
+                'badge' => $item->badge,
+                'artwork' => $item->artwork,
+                'options' => $item->options->map(fn (MenuItemOption $option) => [
+                    'code' => $option->code,
+                    'label' => $option->label,
+                    'price' => (float) $option->price,
+                    'prep_label' => $option->prep_label,
+                ])->values()->all(),
+            ])->values()->all(),
+        ])->values()->all();
     }
 
     protected function branchCatalog(array $eventTypeCodes = []): array
@@ -979,7 +1035,7 @@ class ReservationController extends Controller
 
     protected function calculatePrice(string $eventDate, float $basePrice, array $menuBundles, array $addOns): float
     {
-        return $this->buildReceipt('unknown', $eventDate, ['price' => $basePrice, 'name' => 'Base Package'], $menuBundles, $addOns)['total_raw'];
+        return $this->buildReceipt('unknown', $eventDate, ['price' => $basePrice, 'name' => 'Base Package'], $menuBundles, [], $addOns)['total_raw'];
     }
 
     protected function buildReceipt(
@@ -987,6 +1043,7 @@ class ReservationController extends Controller
         string $eventDate,
         array $package,
         array $menuBundles,
+        array $manualMenuItems,
         array $addOns,
         int $durationHours = 4,
         array $serviceAdjustments = []
@@ -1017,6 +1074,11 @@ class ReservationController extends Controller
             ->whereIn('code', $serviceAdjustments['extra_add_ons'] ?? [])
             ->values()
             ->all();
+        $extraManualMenuItems = collect($serviceAdjustments['extra_manual_menu_items'] ?? [])
+            ->map(fn ($item) => $this->normalizeManualMenuSnapshot($item))
+            ->filter()
+            ->values()
+            ->all();
 
         $lineItems = collect([
             [
@@ -1031,6 +1093,12 @@ class ReservationController extends Controller
                 'type' => 'bundle',
                 'amount_raw' => (float) $item['price'],
                 'amount' => number_format((float) $item['price'], 2),
+            ]))
+            ->merge(collect($manualMenuItems)->map(fn ($item) => [
+                'label' => $item['quantity'].' x '.$item['item_name'].' ('.$item['option_label'].')',
+                'type' => 'manual_menu',
+                'amount_raw' => (float) $item['line_total'],
+                'amount' => number_format((float) $item['line_total'], 2),
             ]))
             ->merge(collect($addOns)->map(fn ($item) => [
                 'label' => $item['name'],
@@ -1056,14 +1124,22 @@ class ReservationController extends Controller
                 'amount_raw' => (float) $item['price'],
                 'amount' => number_format((float) $item['price'], 2),
             ]))
+            ->merge(collect($extraManualMenuItems)->map(fn ($item) => [
+                'label' => 'Extra food: '.$item['quantity'].' x '.$item['item_name'].' ('.$item['option_label'].')',
+                'type' => 'service_manual_menu',
+                'amount_raw' => (float) $item['line_total'],
+                'amount' => number_format((float) $item['line_total'], 2),
+            ]))
             ->values();
 
         $bundleTotal = collect($menuBundles)->sum('price');
+        $manualMenuTotal = collect($manualMenuItems)->sum('line_total');
         $addOnTotal = collect($addOns)->sum('price');
         $adjustmentBundleTotal = collect($extraMenuBundles)->sum('price');
         $adjustmentAddOnTotal = collect($extraAddOns)->sum('price');
+        $adjustmentManualMenuTotal = collect($extraManualMenuItems)->sum('line_total');
         $durationExtensionTotal = $extensionHours * $extensionHourlyRate;
-        $subtotal = (float) $package['price'] + $bundleTotal + $addOnTotal + $adjustmentBundleTotal + $adjustmentAddOnTotal + $durationExtensionTotal;
+        $subtotal = (float) $package['price'] + $bundleTotal + $manualMenuTotal + $addOnTotal + $adjustmentBundleTotal + $adjustmentAddOnTotal + $adjustmentManualMenuTotal + $durationExtensionTotal;
         $total = round($subtotal * $multiplier, 2);
 
         return [
@@ -1087,16 +1163,22 @@ class ReservationController extends Controller
     protected function serializeReservation(Reservation $reservation): array
     {
         $catalog = $this->catalog();
-        $serviceAdjustments = $reservation->service_adjustments ?? ['extra_menu_bundles' => [], 'extra_add_ons' => []];
+        $serviceAdjustments = $reservation->service_adjustments ?? ['extra_menu_bundles' => [], 'extra_add_ons' => [], 'extra_manual_menu_items' => []];
         $package = collect($catalog['packages'][$reservation->reservation_type] ?? [])->firstWhere('code', $reservation->package_code)
             ?? ['name' => $reservation->package_name, 'price' => (float) $reservation->total_amount];
         $menuBundles = collect($catalog['menuBundles'])->whereIn('code', $reservation->menu_bundles ?? [])->values()->all();
+        $manualMenuItems = collect($reservation->manual_menu_items ?? [])
+            ->map(fn ($item) => $this->normalizeManualMenuSnapshot($item))
+            ->filter()
+            ->values()
+            ->all();
         $addOns = collect($catalog['addOns'])->whereIn('code', $reservation->add_ons ?? [])->values()->all();
         $receipt = $this->buildReceipt(
             $reservation->reservation_type,
             $reservation->event_date?->toDateString() ?? now()->toDateString(),
             $package,
             $menuBundles,
+            $manualMenuItems,
             $addOns,
             (int) ($reservation->duration_hours ?? 4),
             $serviceAdjustments
@@ -1125,6 +1207,7 @@ class ReservationController extends Controller
             'notes' => $reservation->notes,
             'menu_bundles' => $reservation->menu_bundles ?? [],
             'add_ons' => $reservation->add_ons ?? [],
+            'manual_menu_items' => $manualMenuItems,
             'service_adjustments' => $serviceAdjustments,
             'total_amount' => (float) $reservation->total_amount,
             'receipt' => $receipt,
@@ -1137,6 +1220,124 @@ class ReservationController extends Controller
             'payment_proof_url' => route('reservations.payment-proof', $reservation),
             'payment_proof_preview_url' => $reservation->payment_proof_path ? asset('storage/'.$reservation->payment_proof_path) : null,
         ];
+    }
+
+    protected function manualMenuOptionIndex(array $catalog): array
+    {
+        return collect($catalog['menuCategories'] ?? [])
+            ->flatMap(function (array $category) {
+                return collect($category['items'] ?? [])->flatMap(function (array $item) use ($category) {
+                    return collect($item['options'] ?? [])->mapWithKeys(fn (array $option) => [
+                        $option['code'] => [
+                            'option_code' => $option['code'],
+                            'item_code' => $item['code'],
+                            'item_name' => $item['name'],
+                            'option_label' => $option['label'],
+                            'unit_price' => (float) $option['price'],
+                            'prep_label' => $option['prep_label'] ?? $item['name'].' '.$option['label'],
+                            'category_code' => $category['code'],
+                            'category_name' => $category['name'],
+                        ],
+                    ]);
+                });
+            })
+            ->all();
+    }
+
+    protected function resolveManualMenuSelections(array $catalog, array $requestedItems): array
+    {
+        $optionIndex = $this->manualMenuOptionIndex($catalog);
+
+        return collect($requestedItems)
+            ->groupBy('option_code')
+            ->map(function ($items, $optionCode) use ($optionIndex) {
+                if (! isset($optionIndex[$optionCode])) {
+                    return null;
+                }
+
+                $quantity = (int) $items->sum(fn ($item) => (int) ($item['quantity'] ?? 0));
+
+                if ($quantity < 1) {
+                    return null;
+                }
+
+                $option = $optionIndex[$optionCode];
+
+                return $this->normalizeManualMenuSnapshot(array_merge(
+                    $option,
+                    ['quantity' => min($quantity, 99)]
+                ));
+            })
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    protected function normalizeManualMenuSnapshot(array $item): ?array
+    {
+        $quantity = max(1, min((int) ($item['quantity'] ?? 1), 99));
+        $itemName = $item['item_name'] ?? $item['name'] ?? null;
+        $optionLabel = $item['option_label'] ?? $item['label'] ?? null;
+        $unitPrice = (float) ($item['unit_price'] ?? $item['price'] ?? 0);
+        $itemCode = $item['item_code'] ?? null;
+        $optionCode = $item['option_code'] ?? null;
+
+        if (! $itemName || ! $optionLabel || ! $itemCode || ! $optionCode) {
+            return null;
+        }
+
+        $lineTotal = round((float) ($item['line_total'] ?? ($unitPrice * $quantity)), 2);
+
+        return [
+            'option_code' => $optionCode,
+            'item_code' => $itemCode,
+            'item_name' => $itemName,
+            'option_label' => $optionLabel,
+            'quantity' => $quantity,
+            'unit_price' => $unitPrice,
+            'line_total' => $lineTotal,
+            'prep_label' => $item['prep_label'] ?? ($quantity.' x '.$itemName.' '.$optionLabel),
+            'category_code' => $item['category_code'] ?? null,
+            'category_name' => $item['category_name'] ?? null,
+        ];
+    }
+
+    protected function foodPackageSummary(array $menuBundles, array $manualMenuItems): string
+    {
+        $bundleNames = collect($menuBundles)->pluck('name');
+        $manualItems = collect($manualMenuItems)
+            ->map(fn ($item) => $item['quantity'].' x '.$item['item_name'].' ('.$item['option_label'].')');
+
+        return $bundleNames
+            ->merge($manualItems)
+            ->filter()
+            ->take(6)
+            ->implode(', ') ?: 'Package inclusions only';
+    }
+
+    protected function beveragePackageSummary(array $menuBundles, array $manualMenuItems): string
+    {
+        $drinkKeywords = ['mcfloat', 'coke', 'sprite', 'royal', 'juice', 'tea', 'drink'];
+
+        $bundleDrinks = collect($menuBundles)
+            ->pluck('name')
+            ->filter(fn ($name) => Str::contains(Str::lower($name), $drinkKeywords));
+
+        $manualDrinks = collect($manualMenuItems)
+            ->filter(function (array $item) use ($drinkKeywords) {
+                $category = Str::lower((string) ($item['category_code'] ?? ''));
+                $name = Str::lower($item['item_name']);
+
+                return in_array($category, ['mcfloat', 'desserts-drinks'], true)
+                    || Str::contains($name, $drinkKeywords);
+            })
+            ->map(fn ($item) => $item['quantity'].' x '.$item['item_name'].' ('.$item['option_label'].')');
+
+        return $bundleDrinks
+            ->merge($manualDrinks)
+            ->filter()
+            ->take(5)
+            ->implode(', ') ?: 'Custom drink items can be added in the menu board';
     }
 
     protected function adminStats($bookings): array
@@ -1403,7 +1604,7 @@ class ReservationController extends Controller
     protected function prepList(array $catalog, $bookings): array
     {
         return $bookings->map(function (Reservation $reservation) use ($catalog) {
-            $serviceAdjustments = $reservation->service_adjustments ?? ['extra_menu_bundles' => [], 'extra_add_ons' => []];
+            $serviceAdjustments = $reservation->service_adjustments ?? ['extra_menu_bundles' => [], 'extra_add_ons' => [], 'extra_manual_menu_items' => []];
             $bundleLabels = collect($catalog['menuBundles'])
                 ->whereIn('code', $reservation->menu_bundles ?? [])
                 ->pluck('prep_label')
@@ -1421,6 +1622,18 @@ class ReservationController extends Controller
                 ->map(fn ($label) => 'Materials/service: '.$label)
                 ->values()
                 ->all();
+            $manualMenuLabels = collect($reservation->manual_menu_items ?? [])
+                ->map(fn ($item) => $this->normalizeManualMenuSnapshot($item))
+                ->filter()
+                ->map(fn ($item) => 'Manual order: '.$item['quantity'].' x '.$item['item_name'].' ('.$item['option_label'].')')
+                ->values()
+                ->all();
+            $extraManualMenuLabels = collect($serviceAdjustments['extra_manual_menu_items'] ?? [])
+                ->map(fn ($item) => $this->normalizeManualMenuSnapshot($item))
+                ->filter()
+                ->map(fn ($item) => 'Extra order: '.$item['quantity'].' x '.$item['item_name'].' ('.$item['option_label'].')')
+                ->values()
+                ->all();
             $prepAt = Carbon::parse(($reservation->event_date?->toDateString() ?? now()->toDateString()).' '.substr($reservation->event_time, 0, 5))->subHour();
 
             return [
@@ -1428,7 +1641,7 @@ class ReservationController extends Controller
                 'time' => $this->formatTimeRange(substr($reservation->event_time, 0, 5), (int) ($reservation->duration_hours ?? 4)),
                 'branch' => $reservation->branch,
                 'package_name' => $reservation->package_name,
-                'items' => array_values(array_filter(array_merge($bundleLabels ?: ['Welcome tray and seating prep'], $extraBundleLabels, $materialItems))),
+                'items' => array_values(array_filter(array_merge($bundleLabels ?: ['Welcome tray and seating prep'], $manualMenuLabels, $extraBundleLabels, $extraManualMenuLabels, $materialItems))),
                 'guest_name' => $reservation->name,
                 'prep_deadline' => $prepAt->format('M d, Y h:i A'),
                 'reminder' => 'Prepare all meals, products, and event materials at least 1 hour before the event starts.',

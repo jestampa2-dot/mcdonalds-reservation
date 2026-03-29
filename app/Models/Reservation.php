@@ -28,6 +28,7 @@ class Reservation extends Model
         'duration_hours',
         'menu_bundles',
         'add_ons',
+        'manual_menu_items',
         'service_adjustments',
         'payment_proof_path',
         'guests',
@@ -43,6 +44,7 @@ class Reservation extends Model
     protected $casts = [
         'menu_bundles' => 'array',
         'add_ons' => 'array',
+        'manual_menu_items' => 'array',
         'service_adjustments' => 'array',
         'checked_in_at' => 'datetime',
         'event_date' => 'date',

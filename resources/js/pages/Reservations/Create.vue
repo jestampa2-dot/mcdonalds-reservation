@@ -3,6 +3,7 @@ import axios from 'axios'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useForm } from '@inertiajs/vue3'
 import AppShell from '@/Components/AppShell.vue'
+import ManualMenuBoard from '@/Components/ManualMenuBoard.vue'
 
 const props = defineProps({
   catalog: Object,
@@ -28,6 +29,7 @@ const form = useForm({
   guests: 10,
   package_code: props.catalog.packages[eventTypeKeys[0]][0].code,
   menu_bundles: ['burger-10'],
+  manual_menu_items: [],
   add_ons: [],
   notes: '',
   payment_proof: null,
@@ -41,6 +43,45 @@ const branch = computed(() => props.catalog.branches[form.branch_code])
 const packages = computed(() => props.catalog.packages[form.event_type] ?? [])
 const selectedPackage = computed(() => packages.value.find((item) => item.code === form.package_code))
 const selectedBundles = computed(() => props.catalog.menuBundles.filter((item) => form.menu_bundles.includes(item.code)))
+const menuOptionIndex = computed(() =>
+  (props.catalog.menuCategories ?? []).flatMap((category) =>
+    (category.items ?? []).flatMap((item) =>
+      (item.options ?? []).map((option) => ({
+        ...option,
+        item_name: item.name,
+        item_code: item.code,
+        category_code: category.code,
+      })),
+    ),
+  ).reduce((carry, option) => {
+    carry[option.code] = option
+    return carry
+  }, {}),
+)
+const selectedManualMenuItems = computed(() =>
+  (form.manual_menu_items ?? [])
+    .map((selection) => {
+      const option = menuOptionIndex.value[selection.option_code]
+
+      if (!option) {
+        return null
+      }
+
+      const quantity = Number(selection.quantity)
+
+      return {
+        ...selection,
+        item_name: option.item_name,
+        item_code: option.item_code,
+        option_label: option.label,
+        price: Number(option.price),
+        quantity,
+        line_total: Number(option.price) * quantity,
+        category_code: option.category_code,
+      }
+    })
+    .filter(Boolean),
+)
 const selectedAddOns = computed(() => props.catalog.addOns.filter((item) => form.add_ons.includes(item.code)))
 
 const branchAvailability = computed(() =>
@@ -179,6 +220,7 @@ const receiptPreview = computed(() => {
   const lineItems = [
     ...(selectedPackage.value ? [{ label: `${selectedPackage.value.name} (includes 4 hours)`, amount: selectedPackage.value.price }] : []),
     ...selectedBundles.value.map((item) => ({ label: item.name, amount: item.price })),
+    ...selectedManualMenuItems.value.map((item) => ({ label: `${item.quantity} x ${item.item_name} (${item.option_label})`, amount: item.line_total })),
     ...selectedAddOns.value.map((item) => ({ label: item.name, amount: item.price })),
   ]
   const extensionHours = Math.max(Number(form.duration_hours) - 4, 0)
@@ -326,9 +368,10 @@ const submit = () => {
         </div>
       </div>
 
-      <form class="mcd-grid mcd-grid--2" @submit.prevent="submit">
-        <div class="space-y-5">
-          <section class="mcd-panel p-6">
+      <form class="space-y-5" @submit.prevent="submit">
+        <div class="mcd-grid mcd-grid--2">
+          <div class="space-y-5">
+            <section class="mcd-panel p-6">
             <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">1. Event type</p>
             <div class="mt-5 grid gap-3">
               <label
@@ -342,9 +385,9 @@ const submit = () => {
                 <p class="mt-2 text-sm text-slate-600">{{ type.description }}</p>
               </label>
             </div>
-          </section>
+            </section>
 
-          <section class="mcd-panel p-6">
+            <section class="mcd-panel p-6">
             <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">2. Date, time, and branch</p>
 
             <div class="mt-5 grid gap-4">
@@ -488,9 +531,9 @@ const submit = () => {
                 </div>
               </div>
             </div>
-          </section>
+            </section>
 
-          <section class="mcd-panel p-6">
+            <section class="mcd-panel p-6">
             <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">3. Your details</p>
             <div class="mt-5 grid gap-4">
               <div class="mcd-field">
@@ -515,83 +558,97 @@ const submit = () => {
                 <textarea v-model="form.notes" rows="4" class="mcd-textarea"></textarea>
               </div>
             </div>
-          </section>
-        </div>
+            </section>
+          </div>
 
-        <div class="space-y-5">
-          <section class="mcd-panel p-6">
-            <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">4. Package and customization</p>
-            <div class="mt-5 grid gap-3">
-              <label
-                v-for="item in packages"
-                :key="item.code"
-                class="rounded-3xl border p-4 transition"
-                :class="form.package_code === item.code ? 'border-red-500 bg-red-50' : 'border-slate-200 bg-white'"
-              >
-                <input v-model="form.package_code" type="radio" :value="item.code" class="hidden" />
-                <div class="flex items-start justify-between gap-4">
+          <div class="space-y-5">
+            <section class="mcd-panel p-6">
+              <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">4. Package and bundle plan</p>
+              <div class="mt-5 grid gap-3">
+                <label
+                  v-for="item in packages"
+                  :key="item.code"
+                  class="rounded-3xl border p-4 transition"
+                  :class="form.package_code === item.code ? 'border-red-500 bg-red-50' : 'border-slate-200 bg-white'"
+                >
+                  <input v-model="form.package_code" type="radio" :value="item.code" class="hidden" />
+                  <div class="flex items-start justify-between gap-4">
+                    <div>
+                      <p class="text-lg">{{ item.name }}</p>
+                      <p class="mt-1 text-sm text-slate-500">{{ item.guest_range }}</p>
+                      <p class="mt-1 text-xs font-bold uppercase tracking-[0.12em] text-red-700">Includes 4 hours | extendable up to 8 hours</p>
+                    </div>
+                    <strong class="text-red-700">{{ formatCurrency(item.price) }}</strong>
+                  </div>
+                  <ul class="mt-3 space-y-1 text-sm text-slate-600">
+                    <li v-for="feature in item.features" :key="feature">{{ feature }}</li>
+                  </ul>
+                </label>
+              </div>
+            </section>
+
+            <section class="mcd-panel p-6">
+              <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">Bundle add-ons</p>
+              <div class="mt-5 grid gap-3">
+                <label
+                  v-for="item in catalog.menuBundles"
+                  :key="item.code"
+                  class="flex items-center justify-between rounded-3xl border border-slate-200 bg-white p-4"
+                >
                   <div>
                     <p class="text-lg">{{ item.name }}</p>
-                    <p class="mt-1 text-sm text-slate-500">{{ item.guest_range }}</p>
-                    <p class="mt-1 text-xs font-bold uppercase tracking-[0.12em] text-red-700">Includes 4 hours | extendable up to 8 hours</p>
+                    <p class="mt-1 text-sm text-slate-500">{{ item.prep_label }}</p>
                   </div>
-                  <strong class="text-red-700">{{ formatCurrency(item.price) }}</strong>
-                </div>
-                <ul class="mt-3 space-y-1 text-sm text-slate-600">
-                  <li v-for="feature in item.features" :key="feature">{{ feature }}</li>
-                </ul>
-              </label>
-            </div>
-          </section>
-
-          <section class="mcd-panel p-6">
-            <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">Menu bundles</p>
-            <div class="mt-5 grid gap-3">
-              <label
-                v-for="item in catalog.menuBundles"
-                :key="item.code"
-                class="flex items-center justify-between rounded-3xl border border-slate-200 bg-white p-4"
-              >
-                <div>
-                  <p class="text-lg">{{ item.name }}</p>
-                  <p class="mt-1 text-sm text-slate-500">{{ item.prep_label }}</p>
-                </div>
-                <div class="flex items-center gap-3">
-                  <span class="font-bold text-red-700">{{ formatCurrency(item.price) }}</span>
-                  <input v-model="form.menu_bundles" :value="item.code" type="checkbox" class="h-5 w-5 rounded border-slate-300 text-red-600" />
-                </div>
-              </label>
-            </div>
-          </section>
-
-          <section class="mcd-panel p-6">
-            <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">Add-ons and payment</p>
-            <div class="mt-5 grid gap-3">
-              <label
-                v-for="item in catalog.addOns"
-                :key="item.code"
-                class="flex items-center justify-between rounded-3xl border border-slate-200 bg-white p-4"
-              >
-                <div>
-                  <p class="text-lg">{{ item.name }}</p>
-                </div>
-                <div class="flex items-center gap-3">
-                  <span class="font-bold text-red-700">{{ formatCurrency(item.price) }}</span>
-                  <input v-model="form.add_ons" :value="item.code" type="checkbox" class="h-5 w-5 rounded border-slate-300 text-red-600" />
-                </div>
-              </label>
-
-              <div class="mcd-field mt-2">
-                <label>Upload proof of payment</label>
-                <input type="file" accept="image/*" class="mcd-input" @input="form.payment_proof = $event.target.files[0]" />
-                <p v-if="form.errors.payment_proof" class="text-sm text-red-700">{{ form.errors.payment_proof }}</p>
+                  <div class="flex items-center gap-3">
+                    <span class="font-bold text-red-700">{{ formatCurrency(item.price) }}</span>
+                    <input v-model="form.menu_bundles" :value="item.code" type="checkbox" class="h-5 w-5 rounded border-slate-300 text-red-600" />
+                  </div>
+                </label>
               </div>
-            </div>
-          </section>
+            </section>
 
-          <section class="mcd-panel mcd-panel--dark p-6">
-            <p class="text-sm font-black uppercase tracking-[0.2em] text-amber-300">Booking receipt</p>
-            <div class="mt-5 space-y-3 text-sm text-white/80">
+            <section class="mcd-panel p-6">
+              <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">6. Add-ons and payment</p>
+              <div class="mt-5 grid gap-3">
+                <label
+                  v-for="item in catalog.addOns"
+                  :key="item.code"
+                  class="flex items-center justify-between rounded-3xl border border-slate-200 bg-white p-4"
+                >
+                  <div>
+                    <p class="text-lg">{{ item.name }}</p>
+                  </div>
+                  <div class="flex items-center gap-3">
+                    <span class="font-bold text-red-700">{{ formatCurrency(item.price) }}</span>
+                    <input v-model="form.add_ons" :value="item.code" type="checkbox" class="h-5 w-5 rounded border-slate-300 text-red-600" />
+                  </div>
+                </label>
+
+                <div class="mcd-field mt-2">
+                  <label>Upload proof of payment</label>
+                  <input type="file" accept="image/*" class="mcd-input" @input="form.payment_proof = $event.target.files[0]" />
+                  <p v-if="form.errors.payment_proof" class="text-sm text-red-700">{{ form.errors.payment_proof }}</p>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <ManualMenuBoard
+          v-if="catalog.menuCategories?.length"
+          v-model="form.manual_menu_items"
+          :categories="catalog.menuCategories"
+        />
+
+        <section v-else class="mcd-panel p-6">
+          <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">5. Manual foods and drinks</p>
+          <p class="mt-3 text-sm text-slate-500">The manual menu board will appear here after the menu catalog is loaded into the database.</p>
+        </section>
+
+        <section class="mcd-panel mcd-panel--dark p-6">
+          <p class="text-sm font-black uppercase tracking-[0.2em] text-amber-300">Booking receipt</p>
+          <div class="mt-5 grid gap-6 xl:grid-cols-[0.85fr,1.15fr]">
+            <div class="space-y-3 text-sm text-white/80">
               <div class="flex items-center justify-between">
                 <span>Event type</span>
                 <strong class="text-white">{{ catalog.eventTypes[form.event_type].label }}</strong>
@@ -608,7 +665,20 @@ const submit = () => {
                 <span>Duration</span>
                 <strong class="text-white">{{ form.duration_hours }} hours</strong>
               </div>
-              <div class="mt-4 rounded-3xl bg-white/5 p-4">
+              <div class="rounded-3xl bg-white/5 p-4">
+                <p class="text-sm uppercase tracking-[0.2em] text-amber-200">Manual tray</p>
+                <div v-if="selectedManualMenuItems.length" class="mt-4 space-y-3">
+                  <div v-for="item in selectedManualMenuItems" :key="item.option_code" class="flex items-center justify-between gap-4">
+                    <span>{{ item.quantity }} x {{ item.item_name }} ({{ item.option_label }})</span>
+                    <strong class="text-white">{{ formatCurrency(item.line_total) }}</strong>
+                  </div>
+                </div>
+                <p v-else class="mt-3 text-sm text-white/65">No manual foods or drinks added yet.</p>
+              </div>
+            </div>
+
+            <div class="space-y-3 text-sm text-white/80">
+              <div class="rounded-3xl bg-white/5 p-4">
                 <p class="text-sm uppercase tracking-[0.2em] text-amber-200">Receipt preview</p>
                 <div class="mt-4 space-y-3">
                   <div v-for="item in receiptPreview.lineItems" :key="item.label" class="flex items-center justify-between gap-4">
@@ -627,17 +697,17 @@ const submit = () => {
                   </div>
                 </div>
               </div>
-              <div class="mt-4 border-t border-white/10 pt-4">
+              <div class="border-t border-white/10 pt-4">
                 <p class="text-sm uppercase tracking-[0.2em] text-amber-200">Total before confirmation</p>
                 <p class="mt-2 text-4xl text-white">{{ formatCurrency(receiptPreview.total) }}</p>
                 <p class="mt-2 text-xs text-white/65">This receipt updates in real time as dates and slots become unavailable.</p>
               </div>
-              <button type="submit" class="mcd-button mt-6 w-full" :disabled="form.processing || !selectedDateCard || selectedDateCard.computed_status === 'full' || !canStartAt(form.event_time)">
+              <button type="submit" class="mcd-button mt-2 w-full" :disabled="form.processing || !selectedDateCard || selectedDateCard.computed_status === 'full' || !canStartAt(form.event_time)">
                 {{ form.processing ? 'Submitting...' : 'Confirm reservation' }}
               </button>
             </div>
-          </section>
-        </div>
+          </div>
+        </section>
       </form>
     </section>
   </AppShell>
