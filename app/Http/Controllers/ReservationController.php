@@ -57,11 +57,13 @@ class ReservationController extends Controller
 
         return Inertia::render('Reservations/Create', [
             'catalog' => $catalog,
+            'roomChoices' => $this->roomChoices(),
             'availability' => $this->availabilityPayload($catalog, 366),
             'defaults' => [
                 'event_date' => now()->addDays(3)->toDateString(),
                 'event_time' => '08:00',
                 'duration_hours' => 4,
+                'room_choice' => $this->defaultRoomChoice('birthday'),
             ],
         ]);
     }
@@ -79,6 +81,7 @@ class ReservationController extends Controller
             'event_date' => ['required', 'date', 'after_or_equal:today'],
             'event_time' => ['required', Rule::in($catalog['slotOptions'])],
             'duration_hours' => ['required', 'integer', 'min:4', 'max:8'],
+            'room_choice' => ['required', Rule::in(collect($this->roomChoices())->pluck('code')->all())],
             'guests' => ['required', 'integer', 'min:2', 'max:60'],
             'package_code' => ['required', 'string'],
             'menu_bundles' => ['array'],
@@ -152,7 +155,7 @@ class ReservationController extends Controller
             'reservation_type' => $validated['event_type'],
             'package_name' => $package['name'],
             'package_code' => $package['code'],
-            'room_choice' => $validated['event_type'] === 'business' ? 'McCafe meeting zone' : 'Celebration area',
+            'room_choice' => collect($this->roomChoices())->firstWhere('code', $validated['room_choice'])['label'] ?? $validated['room_choice'],
             'food_package' => $this->foodPackageSummary($menuBundles, $manualMenuItems),
             'beverage_package' => $this->beveragePackageSummary($menuBundles, $manualMenuItems),
             'event_materials' => collect($addOns)->pluck('name')->implode(', '),
@@ -1192,6 +1195,7 @@ class ReservationController extends Controller
             'customer_phone' => $reservation->phone,
             'event_type' => $reservation->reservation_type,
             'package_name' => $reservation->package_name,
+            'room_choice' => $reservation->room_choice,
             'branch' => $reservation->branch,
             'branch_code' => $reservation->branch_code,
             'event_date' => $reservation->event_date?->toDateString(),
@@ -1338,6 +1342,36 @@ class ReservationController extends Controller
             ->filter()
             ->take(5)
             ->implode(', ') ?: 'Custom drink items can be added in the menu board';
+    }
+
+    protected function roomChoices(): array
+    {
+        return [
+            [
+                'code' => 'birthday-party-room',
+                'label' => 'Birthday Party Room',
+                'description' => 'A decorated party room for birthday celebrations and family events.',
+            ],
+            [
+                'code' => 'function-room',
+                'label' => 'Function Room',
+                'description' => 'A flexible function room for meetings, gatherings, and reserved events.',
+            ],
+            [
+                'code' => 'whole-mcdonalds-room',
+                'label' => 'Whole McDonald\'s Room',
+                'description' => 'A full-space rental setup for bigger private events and store takeovers.',
+            ],
+        ];
+    }
+
+    protected function defaultRoomChoice(string $eventType): string
+    {
+        return match ($eventType) {
+            'business' => 'function-room',
+            'table' => 'function-room',
+            default => 'birthday-party-room',
+        };
     }
 
     protected function adminStats($bookings): array
