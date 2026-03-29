@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, watch } from 'vue'
+import { computed, reactive, watch } from 'vue'
 import { router } from '@inertiajs/vue3'
 import AppShell from '@/Components/AppShell.vue'
 import AdminQuickLinks from '@/Components/AdminQuickLinks.vue'
@@ -13,7 +13,6 @@ const props = defineProps({
   addOns: Array,
   durationOptions: Array,
 })
-let dashboardTimer = null
 
 const pendingBookings = computed(() => props.groupedBookings.flatMap((group) =>
   group.types.flatMap((typeGroup) => typeGroup.bookings),
@@ -26,20 +25,6 @@ const adjustmentState = reactive(Object.fromEntries(pendingBookings.value.map((b
   extra_menu_bundles: booking.service_adjustments?.extra_menu_bundles ?? [],
   extra_add_ons: booking.service_adjustments?.extra_add_ons ?? [],
 }])))
-
-onMounted(() => {
-  dashboardTimer = window.setInterval(() => {
-    if (document.visibilityState !== 'visible') {
-      return
-    }
-
-    router.reload({
-      only: ['stats', 'groupedBookings', 'staffUsers'],
-      preserveScroll: true,
-      preserveState: true,
-    })
-  }, 60000)
-})
 
 watch(
   () => props.groupedBookings,
@@ -56,12 +41,6 @@ watch(
   },
 )
 
-onBeforeUnmount(() => {
-  if (dashboardTimer) {
-    window.clearInterval(dashboardTimer)
-  }
-})
-
 const updateStatus = (id) => {
   router.post(route('admin.reservations.status', id), { status: statusState[id] }, { preserveScroll: true, preserveState: true })
 }
@@ -73,23 +52,45 @@ const updateCrew = (id) => {
 const updateServiceAdjustments = (id) => {
   router.post(route('staff.reservations.adjustments', id), adjustmentState[id], { preserveScroll: true, preserveState: true })
 }
+
+const refreshBookings = () => {
+  router.reload({
+    only: ['stats', 'groupedBookings', 'staffUsers'],
+    preserveScroll: true,
+    preserveState: true,
+  })
+}
 </script>
 
 <template>
   <AppShell title="Admin Pending Bookings">
     <section class="mcd-section">
       <div class="mcd-panel p-8">
-        <p class="mcd-chip">Pending bookings</p>
-        <h1 class="mt-4 text-4xl">Review new reservations before they move into confirmed events.</h1>
+        <div class="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p class="mcd-chip">Pending bookings</p>
+            <h1 class="mt-4 text-4xl">Review new reservations before they move into confirmed events.</h1>
+          </div>
+          <button type="button" class="mcd-button mcd-button--ghost" @click="refreshBookings">Refresh list</button>
+        </div>
         <div class="mt-6">
           <AdminQuickLinks current="pending" />
         </div>
+      </div>
+
+      <div class="mcd-metric-grid">
+        <article v-for="item in stats" :key="item.label" class="mcd-metric-card">
+          <p class="mcd-metric-card__label">{{ item.label }}</p>
+          <p class="mcd-metric-card__value">{{ item.value }}</p>
+        </article>
       </div>
     </section>
 
     <section class="mcd-section">
       <article class="mcd-panel p-6">
-        <p class="mcd-chip">Pending approvals by branch and type</p>
+        <div class="mcd-info-strip">
+          <p class="text-sm font-bold text-slate-500">{{ pendingBookings.length }} pending booking{{ pendingBookings.length === 1 ? '' : 's' }}</p>
+        </div>
         <div class="mt-5 space-y-6">
           <section v-for="group in groupedBookings" :key="group.branch_code" class="rounded-3xl bg-white p-5">
             <div>

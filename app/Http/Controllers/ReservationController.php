@@ -104,14 +104,14 @@ class ReservationController extends Controller
 
         if (! $this->isDurationWindowValid($validated['event_time'], (int) $validated['duration_hours'])) {
             return back()->withErrors([
-                'event_time' => 'Choose a Philippine-time start and end window that fits within the same day.',
-            ])->withInput();
+                'event_time' => 'Reservations must fit within the morning booking window of 7:00 AM to 12:00 PM.',
+            ])->with('error', 'Reservations are only available from 7:00 AM to 12:00 PM.')->withInput();
         }
 
         if (! $this->isSlotAvailable($validated['branch_code'], $validated['event_date'], $validated['event_time'], (int) $validated['duration_hours'])) {
             return back()->withErrors([
-                'event_time' => 'That time range is already full for the selected branch.',
-            ])->withInput();
+                'event_time' => 'The chosen date and time are unavailable or already reserved.',
+            ])->with('error', 'The chosen date and time are unavailable or already reserved. Please choose another morning slot.')->withInput();
         }
 
         $menuBundles = collect($catalog['menuBundles'])
@@ -173,6 +173,8 @@ class ReservationController extends Controller
 
     public function dashboard(Request $request): InertiaResponse
     {
+        $catalog = $this->catalog();
+
         $bookings = Reservation::query()
             ->where('user_id', $request->user()->id)
             ->orderBy('event_date')
@@ -181,6 +183,7 @@ class ReservationController extends Controller
 
         return Inertia::render('Dashboard', [
             'bookings' => $bookings->map(fn (Reservation $reservation) => $this->serializeReservation($reservation))->values(),
+            'slotOptions' => $catalog['slotOptions'],
             'stats' => [
                 ['label' => 'Upcoming', 'value' => $bookings->whereIn('status', ['pending_review', 'confirmed', 'rescheduled', 'checked_in'])->count()],
                 ['label' => 'Confirmed spend', 'value' => $this->currencySymbol().number_format($bookings->whereIn('status', ['confirmed', 'checked_in'])->sum('total_amount'), 2)],
@@ -333,6 +336,13 @@ class ReservationController extends Controller
         ]);
     }
 
+    public function adminNotificationBar(Request $request): JsonResponse
+    {
+        $this->authorizeRoles($request, ['admin', 'manager']);
+
+        return response()->json($this->pendingReservationAlerts());
+    }
+
     public function staffDashboard(Request $request): InertiaResponse
     {
         $this->authorizeRoles($request, ['admin', 'manager', 'staff']);
@@ -403,14 +413,14 @@ class ReservationController extends Controller
 
         if (! $this->isDurationWindowValid($validated['event_time'], $durationHours)) {
             return back()->withErrors([
-                'event_time' => 'Choose a Philippine-time start and end window that fits within the same day.',
-            ]);
+                'event_time' => 'Reservations must fit within the morning booking window of 7:00 AM to 12:00 PM.',
+            ])->with('error', 'Reservations are only available from 7:00 AM to 12:00 PM.');
         }
 
         if (! $this->isSlotAvailable($reservation->branch_code, $validated['event_date'], $validated['event_time'], $durationHours, $reservation->id)) {
             return back()->withErrors([
-                'event_time' => 'That new time range is already full.',
-            ]);
+                'event_time' => 'The chosen date and time are unavailable or already reserved.',
+            ])->with('error', 'The chosen date and time are unavailable or already reserved. Please choose another morning slot.');
         }
 
         $reservation->update([
@@ -601,7 +611,7 @@ class ReservationController extends Controller
         }
 
         if (! $this->isDurationWindowValid($reservation->event_time, (int) $validated['duration_hours'])) {
-            return back()->with('error', 'The updated duration must still end within the same Philippine day.');
+            return back()->with('error', 'The updated duration must stay within the 7:00 AM to 12:00 PM booking window.');
         }
 
         $catalog = $this->catalog();
@@ -845,7 +855,7 @@ class ReservationController extends Controller
     {
         return array_map(
             fn ($hour) => str_pad((string) $hour, 2, '0', STR_PAD_LEFT).':00',
-            range(0, 23)
+            range(7, 12)
         );
     }
 
@@ -916,7 +926,7 @@ class ReservationController extends Controller
                     $slots = collect($catalog['slotOptions'])->map(function ($time) use ($branch, $date, $bookedSlots) {
                         $key = $branch['code'].'|'.$date.'|'.$time;
                         $booked = $bookedSlots->get($key, collect())->count();
-                        $remaining = max(($branch['concurrent_limit'] ?? 1) - $booked, 0);
+                        $remaining = $booked > 0 ? 0 : 1;
 
                         return [
                             'time' => $time,
@@ -964,7 +974,7 @@ class ReservationController extends Controller
                 $time,
                 $durationHours
             ))
-            ->count() < ($this->catalog()['branches'][$branchCode]['concurrent_limit'] ?? 1);
+            ->isEmpty();
     }
 
     protected function calculatePrice(string $eventDate, float $basePrice, array $menuBundles, array $addOns): float
@@ -1192,6 +1202,28 @@ class ReservationController extends Controller
         ];
     }
 
+    protected function pendingReservationAlerts(int $limit = 4): array
+    {
+        $pending = Reservation::query()
+            ->where('status', 'pending_review')
+            ->orderByDesc('created_at')
+            ->limit($limit)
+            ->get();
+
+        return [
+            'count' => Reservation::query()->where('status', 'pending_review')->count(),
+            'items' => $pending->map(fn (Reservation $reservation) => [
+                'id' => $reservation->id,
+                'booking_reference' => $reservation->booking_reference,
+                'customer_name' => $reservation->name,
+                'branch' => $reservation->branch,
+                'event_date' => $reservation->event_date?->format('M d, Y'),
+                'event_time' => $this->formatTimeRange(substr($reservation->event_time, 0, 5), (int) ($reservation->duration_hours ?? 4)),
+                'message' => 'New reservation waiting for admin review.',
+            ])->values()->all(),
+        ];
+    }
+
     protected function inventorySnapshot(array $catalog, $bookings): array
     {
         return collect($catalog['branches'])->map(function ($branch) use ($bookings) {
@@ -1223,14 +1255,20 @@ class ReservationController extends Controller
             ->whereIn('status', ['pending_review', 'confirmed', 'rescheduled'])
             ->values()
             ->map(function (Reservation $reservation, int $index) use ($catalog) {
-                $hosts = $catalog['branches'][$reservation->branch_code]['hosts'] ?? ['Floor Team'];
+                $hosts = collect($catalog['branches'][$reservation->branch_code]['hosts'] ?? [])
+                    ->filter(fn ($host) => filled($host))
+                    ->values()
+                    ->all();
                 $assigned = $reservation->assignedStaff?->name;
+                $fallbackHost = $hosts !== []
+                    ? $hosts[$index % count($hosts)]
+                    : 'Floor Team';
 
                 return [
                     'booking_reference' => $reservation->booking_reference,
                     'branch' => $reservation->branch,
                     'slot' => $reservation->event_date?->format('M d').', '.$this->formatTimeRange(substr($reservation->event_time, 0, 5), (int) ($reservation->duration_hours ?? 4)),
-                    'host' => $assigned ?: $hosts[$index % count($hosts)],
+                    'host' => $assigned ?: $fallbackHost,
                     'event_type' => $reservation->reservation_type,
                 ];
             })
@@ -1496,8 +1534,11 @@ SVG;
     protected function isDurationWindowValid(string $time, int $durationHours): bool
     {
         $startMinutes = ((int) substr($time, 0, 2) * 60) + (int) substr($time, 3, 2);
+        $openingMinutes = 7 * 60;
+        $closingMinutes = 12 * 60;
+        $endMinutes = $startMinutes + ($durationHours * 60);
 
-        return ($startMinutes + ($durationHours * 60)) <= 1440;
+        return $startMinutes >= $openingMinutes && $endMinutes <= $closingMinutes;
     }
 
     protected function timeRangesOverlap(string $existingStart, int $existingDuration, string $requestedStart, int $requestedDuration): bool

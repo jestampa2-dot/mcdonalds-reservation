@@ -17,6 +17,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/availability', [ReservationController::class, 'availability'])->name('availability.index');
 
     Route::get('/admin/dashboard', [ReservationController::class, 'adminDashboard'])->name('admin.dashboard');
+    Route::get('/admin/notifications/bar', [ReservationController::class, 'adminNotificationBar'])->name('admin.notifications.bar');
     Route::get('/admin/bookings', [ReservationController::class, 'adminBookings'])->name('admin.bookings');
     Route::get('/admin/confirmed-events', [ReservationController::class, 'adminConfirmedEvents'])->name('admin.confirmed');
     Route::get('/admin/availability', [ReservationController::class, 'adminAvailability'])->name('admin.availability');

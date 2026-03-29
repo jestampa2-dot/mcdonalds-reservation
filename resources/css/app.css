@@ -9,6 +9,12 @@
     --mcd-gold: #ffc72c;
     --mcd-cream: #fff7e6;
     --mcd-charcoal: #1f1f1f;
+    --mcd-ink: #241714;
+    --mcd-surface: rgba(255, 255, 255, 0.84);
+    --mcd-surface-strong: rgba(255, 255, 255, 0.96);
+    --mcd-line: rgba(36, 23, 20, 0.09);
+    --mcd-shadow: 0 22px 44px rgba(89, 54, 20, 0.11);
+    --mcd-sidebar: linear-gradient(180deg, rgba(28, 18, 16, 0.98), rgba(49, 28, 20, 0.96));
   }
 
   html {
@@ -17,8 +23,9 @@
 
   body {
     background:
-      radial-gradient(circle at top, rgba(255, 199, 44, 0.35), transparent 35%),
-      linear-gradient(180deg, #fff7e6 0%, #fff2d1 100%);
+      radial-gradient(circle at top right, rgba(255, 199, 44, 0.32), transparent 30%),
+      radial-gradient(circle at 20% 0%, rgba(218, 41, 28, 0.14), transparent 28%),
+      linear-gradient(180deg, #fff9ef 0%, #fff2d7 100%);
     color: var(--mcd-charcoal);
     font-family: "Trebuchet MS", "Segoe UI", sans-serif;
   }
@@ -36,35 +43,53 @@
   .mcd-shell {
     position: relative;
     min-height: 100vh;
-    overflow: hidden;
+    overflow: visible;
+    padding: 1rem;
   }
 
   .mcd-shell__backdrop {
     position: absolute;
     inset: 0;
     background:
-      linear-gradient(135deg, rgba(218, 41, 28, 0.12), transparent 42%),
-      linear-gradient(315deg, rgba(255, 199, 44, 0.22), transparent 40%);
+      radial-gradient(circle at top right, rgba(255, 199, 44, 0.18), transparent 28%),
+      linear-gradient(135deg, rgba(218, 41, 28, 0.1), transparent 42%),
+      linear-gradient(315deg, rgba(255, 199, 44, 0.18), transparent 40%);
     pointer-events: none;
   }
 
-  .mcd-topbar {
+  .mcd-shell__layout {
     position: relative;
     z-index: 2;
+    display: grid;
+    grid-template-columns: 300px minmax(0, 1fr);
+    align-items: start;
+    gap: 1.25rem;
+    width: min(1480px, 100%);
+    margin: 0 auto;
+  }
+
+  .mcd-sidebar {
+    position: sticky;
+    top: 1rem;
+    align-self: start;
     display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    gap: 1rem;
-    padding: 1.25rem 1.5rem;
-    background: rgba(31, 31, 31, 0.92);
+    flex-direction: column;
+    gap: 0.9rem;
+    height: calc(100vh - 2rem);
+    padding: 1.15rem;
+    border-radius: 2rem;
+    background: var(--mcd-sidebar);
     color: white;
-    border-bottom: 4px solid var(--mcd-gold);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    box-shadow: 0 25px 70px rgba(22, 8, 6, 0.22);
+    overflow: hidden;
   }
 
   .mcd-brand {
     display: flex;
-    gap: 0.9rem;
     align-items: center;
+    gap: 0.9rem;
+    padding: 0.5rem 0.35rem 1rem;
     color: inherit;
     text-decoration: none;
   }
@@ -93,74 +118,243 @@
     font-size: 1.6rem;
   }
 
-  .mcd-nav {
+  .mcd-sidebar__meta {
+    padding: 1.1rem;
+    border-radius: 1.6rem;
+    background:
+      linear-gradient(145deg, rgba(255, 199, 44, 0.18), rgba(255, 255, 255, 0.06)),
+      rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .mcd-sidebar__meta h2 {
+    margin-top: 0.9rem;
+    font-size: 1.6rem;
+    line-height: 1.1;
+  }
+
+  .mcd-sidebar__subtitle {
+    margin-top: 0.85rem;
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 0.92rem;
+    line-height: 1.65;
+  }
+
+  .mcd-sidebar__nav {
+    display: grid;
+    gap: 0.65rem;
+    margin-top: 0.25rem;
+    overflow: auto;
+    padding-right: 0.25rem;
+  }
+
+  .mcd-sidebar__link {
+    display: grid;
+    gap: 0.2rem;
+    padding: 0.95rem 1rem;
+    border-radius: 1.35rem;
+    color: rgba(255, 255, 255, 0.9);
+    text-decoration: none;
+    border: 1px solid transparent;
+    background: rgba(255, 255, 255, 0.04);
+    transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+  }
+
+  .mcd-sidebar__link span {
+    font-size: 0.98rem;
+    font-weight: 800;
+  }
+
+  .mcd-sidebar__link small {
+    color: rgba(255, 255, 255, 0.64);
+    line-height: 1.45;
+  }
+
+  .mcd-sidebar__link:hover,
+  .mcd-sidebar__link.is-active {
+    transform: translateY(-1px);
+    border-color: rgba(255, 199, 44, 0.35);
+    background: linear-gradient(135deg, rgba(255, 199, 44, 0.16), rgba(255, 255, 255, 0.08));
+  }
+
+  .mcd-sidebar__link.is-active small {
+    color: rgba(255, 255, 255, 0.82);
+  }
+
+  .mcd-sidebar__footer {
+    margin-top: auto;
+    padding: 1rem 1.05rem;
+    border-radius: 1.5rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .mcd-sidebar__footer-label {
+    color: #ffd96c;
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+
+  .mcd-sidebar__footer-copy {
+    margin-top: 0.7rem;
+    color: rgba(255, 255, 255, 0.74);
+    line-height: 1.7;
+    font-size: 0.92rem;
+  }
+
+  .mcd-main {
+    min-width: 0;
+  }
+
+  .mcd-toolbar {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.1rem;
+    border-radius: 1.85rem;
+    background: rgba(255, 255, 255, 0.76);
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    box-shadow: 0 14px 30px rgba(89, 54, 20, 0.08);
+    backdrop-filter: blur(20px);
+  }
+
+  .mcd-toolbar__copy {
+    max-width: 48rem;
+  }
+
+  .mcd-toolbar__eyebrow {
+    color: #985600;
+    font-size: 0.76rem;
+    font-weight: 800;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+
+  .mcd-toolbar__title {
+    margin-top: 0.5rem;
+    font-family: "Arial Black", "Franklin Gothic Heavy", sans-serif;
+    font-size: clamp(1.8rem, 2vw, 2.5rem);
+    line-height: 1.05;
+    color: var(--mcd-ink);
+  }
+
+  .mcd-toolbar__subtitle {
+    margin-top: 0.6rem;
+    color: rgba(36, 23, 20, 0.72);
+    line-height: 1.7;
+  }
+
+  .mcd-toolbar__actions {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
+    justify-content: flex-end;
     gap: 0.75rem;
   }
 
-  .mcd-nav__link,
+  .mcd-toolbar__pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.72rem 1rem;
+    border-radius: 999px;
+    background: linear-gradient(135deg, rgba(255, 199, 44, 0.22), rgba(255, 199, 44, 0.06));
+    color: #8b4e00;
+    font-size: 0.82rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+  }
+
+  .mcd-toolbar__profile {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 0.9rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.88);
+    border: 1px solid rgba(36, 23, 20, 0.08);
+  }
+
+  .mcd-toolbar__profile strong,
+  .mcd-toolbar__profile small {
+    display: block;
+  }
+
+  .mcd-toolbar__profile small {
+    color: rgba(36, 23, 20, 0.56);
+    font-size: 0.78rem;
+  }
+
+  .mcd-toolbar__avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 999px;
+    background: linear-gradient(135deg, var(--mcd-red), #f06a2e);
+    color: white;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+  }
+
   .mcd-nav__button {
-    padding: 0.7rem 1rem;
+    padding: 0.78rem 1rem;
     border-radius: 999px;
     font-size: 0.92rem;
     font-weight: 700;
     text-decoration: none;
-    color: white;
-    transition: transform 0.2s ease, background 0.2s ease;
+    color: var(--mcd-charcoal);
+    background: rgba(255, 255, 255, 0.88);
+    border: 1px solid rgba(36, 23, 20, 0.08);
+    transition: transform 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
   }
 
-  .mcd-nav__link:hover,
   .mcd-nav__button:hover {
-    background: rgba(255, 255, 255, 0.12);
+    background: white;
     transform: translateY(-1px);
-  }
-
-  .mcd-nav__button {
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    background: transparent;
+    box-shadow: 0 10px 20px rgba(89, 54, 20, 0.08);
   }
 
   .mcd-content {
-    position: relative;
-    z-index: 1;
-    width: min(1180px, calc(100% - 2rem));
-    margin: 0 auto;
-    padding: 1.5rem 0 3rem;
+    width: 100%;
+    padding: 1.1rem 0 3rem;
   }
 
   .mcd-hero {
     display: grid;
     gap: 1.5rem;
-    grid-template-columns: 1.3fr 0.9fr;
-    padding: 2rem;
+    grid-template-columns: 1.25fr 0.9fr;
+    padding: 2.15rem;
     border-radius: 2rem;
     background:
+      radial-gradient(circle at top right, rgba(255, 199, 44, 0.2), transparent 30%),
       linear-gradient(135deg, rgba(218, 41, 28, 0.98), rgba(247, 120, 45, 0.96)),
       linear-gradient(120deg, rgba(255, 255, 255, 0.16), transparent);
     color: white;
-    box-shadow: 0 28px 60px rgba(159, 25, 20, 0.24);
+    box-shadow: 0 28px 60px rgba(159, 25, 20, 0.2);
   }
 
   .mcd-panel {
     border-radius: 1.5rem;
-    background: rgba(255, 255, 255, 0.84);
-    border: 1px solid rgba(255, 255, 255, 0.6);
-    box-shadow: 0 18px 36px rgba(89, 54, 20, 0.08);
-    backdrop-filter: blur(16px);
+    background: var(--mcd-surface);
+    border: 1px solid rgba(255, 255, 255, 0.65);
+    box-shadow: var(--mcd-shadow);
+    backdrop-filter: blur(18px);
   }
 
   .mcd-panel--dark {
-    background: rgba(31, 31, 31, 0.92);
+    background: linear-gradient(180deg, rgba(31, 31, 31, 0.96), rgba(39, 32, 28, 0.96));
     color: white;
     border-color: rgba(255, 255, 255, 0.08);
   }
 
   .mcd-section {
     display: grid;
-    gap: 1.25rem;
-    margin-top: 1.5rem;
+    gap: 1rem;
+    margin-top: 1rem;
   }
 
   .mcd-grid {
@@ -174,6 +368,52 @@
 
   .mcd-grid--3 {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .mcd-metric-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  }
+
+  .mcd-metric-card {
+    padding: 1.35rem;
+    border-radius: 1.5rem;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(255, 248, 236, 0.88));
+    border: 1px solid rgba(255, 255, 255, 0.72);
+    box-shadow: 0 16px 26px rgba(89, 54, 20, 0.08);
+  }
+
+  .mcd-metric-card__label {
+    color: rgba(36, 23, 20, 0.45);
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    font-size: 0.74rem;
+    font-weight: 800;
+  }
+
+  .mcd-metric-card__value {
+    margin-top: 0.8rem;
+    color: var(--mcd-red);
+    font-size: clamp(1.9rem, 2.1vw, 2.5rem);
+    line-height: 1;
+    font-family: "Arial Black", "Franklin Gothic Heavy", sans-serif;
+  }
+
+  .mcd-command-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  }
+
+  .mcd-command-card {
+    display: grid;
+    gap: 0.8rem;
+    padding: 1.5rem;
+    border-radius: 1.7rem;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(255, 251, 244, 0.88));
+    border: 1px solid rgba(255, 255, 255, 0.72);
+    box-shadow: 0 18px 26px rgba(89, 54, 20, 0.08);
   }
 
   .mcd-button {
@@ -198,8 +438,8 @@
   }
 
   .mcd-button--secondary {
-    background: white;
-    color: var(--mcd-red);
+    background: linear-gradient(135deg, #ffe08a, #ffc72c);
+    color: #702e00;
   }
 
   .mcd-button--ghost {
@@ -212,7 +452,8 @@
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
-    padding: 0.45rem 0.8rem;
+    width: fit-content;
+    padding: 0.46rem 0.82rem;
     border-radius: 999px;
     background: rgba(255, 199, 44, 0.18);
     color: var(--mcd-red-deep);
@@ -268,8 +509,8 @@
     width: 100%;
     padding: 0.9rem 1rem;
     border-radius: 1rem;
-    border: 1px solid rgba(31, 31, 31, 0.12);
-    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid var(--mcd-line);
+    background: rgba(255, 255, 255, 0.96);
     color: var(--mcd-charcoal);
   }
 
@@ -319,6 +560,33 @@
     background: rgba(255, 255, 255, 0.72);
     text-align: center;
     color: rgba(31, 31, 31, 0.7);
+  }
+
+  .mcd-inline-note {
+    padding: 0.9rem 1rem;
+    border-radius: 1rem;
+    background: rgba(255, 199, 44, 0.14);
+    color: #915400;
+    font-size: 0.88rem;
+    line-height: 1.6;
+  }
+
+  .mcd-info-strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.9rem 1rem;
+    border-radius: 1.2rem;
+    background: rgba(255, 255, 255, 0.72);
+    border: 1px solid rgba(255, 255, 255, 0.76);
+  }
+
+  .mcd-quiet-link {
+    color: var(--mcd-red);
+    font-weight: 800;
+    text-decoration: none;
   }
 
   .auth-shell {
@@ -503,15 +771,46 @@
   }
 }
 
-@media (max-width: 960px) {
-  .mcd-hero,
-  .mcd-grid--2,
-  .mcd-grid--3 {
+@media (max-width: 1200px) {
+  .mcd-shell__layout {
     grid-template-columns: 1fr;
   }
 
+  .mcd-sidebar {
+    position: sticky;
+    top: 1rem;
+    height: calc(100vh - 2rem);
+  }
+
+  .mcd-sidebar__nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 960px) {
+  .mcd-hero,
+  .mcd-grid--2,
+  .mcd-grid--3,
+  .mcd-metric-grid,
+  .mcd-command-grid,
+  .mcd-sidebar__nav {
+    grid-template-columns: 1fr;
+  }
+
+  .mcd-shell {
+    padding: 0.75rem;
+  }
+
+  .mcd-toolbar {
+    flex-direction: column;
+  }
+
+  .mcd-toolbar__actions {
+    justify-content: flex-start;
+  }
+
   .mcd-content {
-    width: min(100% - 1rem, 1180px);
+    width: 100%;
   }
 
   .auth-shell {

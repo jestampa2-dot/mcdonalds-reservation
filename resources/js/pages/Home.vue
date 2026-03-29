@@ -47,7 +47,7 @@ const formatCurrency = (value) =>
       </div>
 
       <div class="mcd-panel p-6 text-slate-900">
-        <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">What&apos;s included</p>
+        <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">McDonald&apos;s-style booking stack</p>
         <div class="mt-4 space-y-4">
           <div class="rounded-3xl bg-red-50 p-4">
             <h2 class="text-xl">Customer-Facing Booking Wizard</h2>
@@ -72,10 +72,10 @@ const formatCurrency = (value) =>
     </section>
 
     <section class="mcd-section">
-      <div class="mcd-grid mcd-grid--3">
-        <article v-for="item in stats" :key="item.label" class="mcd-panel p-6">
-          <p class="text-sm uppercase tracking-[0.25em] text-slate-500">{{ item.label }}</p>
-          <p class="mt-3 text-4xl text-red-700">{{ item.value }}</p>
+      <div class="mcd-metric-grid">
+        <article v-for="item in stats" :key="item.label" class="mcd-metric-card">
+          <p class="mcd-metric-card__label">{{ item.label }}</p>
+          <p class="mcd-metric-card__value">{{ item.value }}</p>
         </article>
       </div>
     </section>
@@ -86,8 +86,8 @@ const formatCurrency = (value) =>
         <h2 class="mt-3 text-3xl">Choose the event flow that fits the guest</h2>
       </div>
 
-      <div class="mcd-grid mcd-grid--3">
-        <article v-for="type in eventTypes" :key="type.label" class="mcd-panel p-6">
+      <div class="mcd-command-grid">
+        <article v-for="type in eventTypes" :key="type.label" class="mcd-command-card">
           <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">{{ type.icon }}</p>
           <h3 class="mt-3 text-2xl">{{ type.label }}</h3>
           <p class="mt-3 text-sm leading-6 text-slate-600">{{ type.description }}</p>
@@ -135,8 +135,8 @@ const formatCurrency = (value) =>
         <h2 class="mt-3 text-3xl">Fast picks for birthdays, meetings, and group meals</h2>
       </div>
 
-      <div class="mcd-grid mcd-grid--3">
-        <article v-for="item in featuredPackages" :key="item.code" class="mcd-panel p-6">
+      <div class="mcd-command-grid">
+        <article v-for="item in featuredPackages" :key="item.code" class="mcd-command-card">
           <p class="text-sm uppercase tracking-[0.25em] text-slate-500">{{ item.guest_range }}</p>
           <h3 class="mt-2 text-2xl">{{ item.name }}</h3>
           <p class="mt-4 text-3xl text-red-700">{{ formatCurrency(item.price) }}</p>

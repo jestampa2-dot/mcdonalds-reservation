@@ -1,5 +1,4 @@
 <script setup>
-import { onBeforeUnmount, onMounted } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
 import AppShell from '@/Components/AppShell.vue'
 import AdminQuickLinks from '@/Components/AdminQuickLinks.vue'
@@ -10,7 +9,6 @@ defineProps({
   history: Array,
   branchSummaries: Array,
 })
-let dashboardTimer = null
 
 const adminCards = [
   {
@@ -63,55 +61,45 @@ const adminCards = [
   },
 ]
 
-onMounted(() => {
-  dashboardTimer = window.setInterval(() => {
-    if (document.visibilityState !== 'visible') {
-      return
-    }
-
-    router.reload({
-      only: ['stats', 'notifications', 'history', 'branchSummaries'],
-      preserveScroll: true,
-      preserveState: true,
-    })
-  }, 60000)
-})
-
-onBeforeUnmount(() => {
-  if (dashboardTimer) {
-    window.clearInterval(dashboardTimer)
-  }
-})
+const refreshDashboard = () => {
+  router.reload({
+    only: ['stats', 'notifications', 'history', 'branchSummaries'],
+    preserveScroll: true,
+    preserveState: true,
+  })
+}
 </script>
 
 <template>
   <AppShell title="Admin Hub">
     <section class="mcd-section">
       <div class="mcd-panel p-8">
-        <p class="mcd-chip">Admin hub</p>
-        <h1 class="mt-4 text-4xl">Open each admin function on its own page so the workflow stays clean and organized.</h1>
-        <p class="mt-4 max-w-3xl text-sm text-slate-600">
-          Use the quick buttons below to move between bookings, confirmed events, branches, accounts, reports, and the timeline.
-        </p>
+        <div class="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p class="mcd-chip">Admin hub</p>
+            <h1 class="mt-4 max-w-4xl text-4xl">A cleaner command center for approvals, branches, reporting, and live event control.</h1>
+          </div>
+          <button type="button" class="mcd-button mcd-button--ghost" @click="refreshDashboard">Refresh hub</button>
+        </div>
         <div class="mt-6">
           <AdminQuickLinks current="hub" />
         </div>
       </div>
 
-      <div class="mcd-grid mcd-grid--3">
-        <article v-for="item in stats" :key="item.label" class="mcd-panel p-6">
-          <p class="text-sm uppercase tracking-[0.25em] text-slate-500">{{ item.label }}</p>
-          <p class="mt-3 text-4xl text-red-700">{{ item.value }}</p>
+      <div class="mcd-metric-grid">
+        <article v-for="item in stats" :key="item.label" class="mcd-metric-card">
+          <p class="mcd-metric-card__label">{{ item.label }}</p>
+          <p class="mcd-metric-card__value">{{ item.value }}</p>
         </article>
       </div>
     </section>
 
     <section class="mcd-section">
-      <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <article v-for="card in adminCards" :key="card.title" class="mcd-panel p-6">
+      <div class="mcd-command-grid">
+        <article v-for="card in adminCards" :key="card.title" class="mcd-command-card">
           <p class="mcd-chip">{{ card.title }}</p>
-          <p class="mt-4 text-2xl">{{ card.title }}</p>
-          <p class="mt-3 text-sm text-slate-600">{{ card.copy }}</p>
+          <p class="text-2xl">{{ card.title }}</p>
+          <p class="text-sm leading-6 text-slate-600">{{ card.copy }}</p>
           <Link :href="card.href" prefetch class="mcd-button mt-6">{{ card.button }}</Link>
         </article>
       </div>

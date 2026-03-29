@@ -1,5 +1,4 @@
 <script setup>
-import { onBeforeUnmount, onMounted } from 'vue'
 import { router } from '@inertiajs/vue3'
 import AppShell from '@/Components/AppShell.vue'
 import AdminQuickLinks from '@/Components/AdminQuickLinks.vue'
@@ -9,35 +8,27 @@ defineProps({
   notifications: Array,
   history: Array,
 })
-let dashboardTimer = null
 
-onMounted(() => {
-  dashboardTimer = window.setInterval(() => {
-    if (document.visibilityState !== 'visible') {
-      return
-    }
-
-    router.reload({
-      only: ['notifications', 'history'],
-      preserveScroll: true,
-      preserveState: true,
-    })
-  }, 60000)
-})
-
-onBeforeUnmount(() => {
-  if (dashboardTimer) {
-    window.clearInterval(dashboardTimer)
-  }
-})
+const refreshTimeline = () => {
+  router.reload({
+    only: ['notifications', 'history'],
+    preserveScroll: true,
+    preserveState: true,
+  })
+}
 </script>
 
 <template>
   <AppShell title="Admin Timeline">
     <section class="mcd-section">
       <div class="mcd-panel p-8">
-        <p class="mcd-chip">Timeline</p>
-        <h1 class="mt-4 text-4xl">Upcoming events and previous-event history are grouped on their own page.</h1>
+        <div class="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p class="mcd-chip">Timeline</p>
+            <h1 class="mt-4 text-4xl">Upcoming events and previous-event history are grouped on their own page.</h1>
+          </div>
+          <button type="button" class="mcd-button mcd-button--ghost" @click="refreshTimeline">Refresh timeline</button>
+        </div>
         <div class="mt-6">
           <AdminQuickLinks current="timeline" />
         </div>

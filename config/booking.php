@@ -20,7 +20,7 @@ return [
     ],
     'slot_options' => array_map(
         fn ($hour) => str_pad((string) $hour, 2, '0', STR_PAD_LEFT).':00',
-        range(0, 23)
+        range(7, 12)
     ),
     'pricing' => [
         'weekend_multiplier' => 1.15,

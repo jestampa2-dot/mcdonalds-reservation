@@ -1,5 +1,5 @@
 <script setup>
-import { onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import { useForm, router } from '@inertiajs/vue3'
 import AppShell from '@/Components/AppShell.vue'
 import StatusBadge from '@/Components/StatusBadge.vue'
@@ -27,7 +27,6 @@ const adjustmentState = reactive(Object.fromEntries(props.todayBookings.map((boo
 }])))
 const notificationItems = ref(props.notifications)
 const historyItems = ref(props.history)
-let dashboardTimer = null
 
 const checkIn = () => {
   checkInForm.post(route('staff.check-in'), {
@@ -52,20 +51,6 @@ const updateServiceAdjustments = (id) => {
     preserveState: true,
   })
 }
-
-onMounted(() => {
-  dashboardTimer = window.setInterval(() => {
-    if (document.visibilityState !== 'visible') {
-      return
-    }
-
-    router.reload({
-      only: ['prepList', 'todayBookings', 'notifications', 'history'],
-      preserveScroll: true,
-      preserveState: true,
-    })
-  }, 60000)
-})
 
 watch(
   () => props.todayBookings,
@@ -95,11 +80,13 @@ watch(
   },
 )
 
-onBeforeUnmount(() => {
-  if (dashboardTimer) {
-    window.clearInterval(dashboardTimer)
-  }
-})
+const refreshStaffView = () => {
+  router.reload({
+    only: ['prepList', 'todayBookings', 'notifications', 'history'],
+    preserveScroll: true,
+    preserveState: true,
+  })
+}
 </script>
 
 <template>
@@ -109,7 +96,7 @@ onBeforeUnmount(() => {
         <article class="mcd-panel p-8">
           <p class="mcd-chip">Crew view</p>
           <h1 class="mt-4 text-4xl">Prep confirmed events, check in arrivals, and update the floor in real time.</h1>
-          <p class="mt-4 text-sm text-slate-600">Only admin-confirmed bookings can be checked in and moved into active service.</p>
+          <button type="button" class="mcd-button mcd-button--ghost mt-6" @click="refreshStaffView">Refresh staff view</button>
         </article>
 
         <article class="mcd-panel p-6">

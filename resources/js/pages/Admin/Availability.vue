@@ -9,7 +9,7 @@ const props = defineProps({
 })
 
 const availabilityState = ref(props.availability)
-let timer = null
+let availabilityTimer = null
 
 const refreshAvailability = async () => {
   const { data } = await axios.get(route('availability.index'))
@@ -17,11 +17,19 @@ const refreshAvailability = async () => {
 }
 
 onMounted(() => {
-  timer = window.setInterval(refreshAvailability, 15000)
+  availabilityTimer = window.setInterval(() => {
+    if (document.visibilityState !== 'visible') {
+      return
+    }
+
+    refreshAvailability()
+  }, 12000)
 })
 
 onBeforeUnmount(() => {
-  if (timer) window.clearInterval(timer)
+  if (availabilityTimer) {
+    window.clearInterval(availabilityTimer)
+  }
 })
 </script>
 

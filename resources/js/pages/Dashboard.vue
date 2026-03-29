@@ -1,5 +1,5 @@
 <script setup>
-import { onBeforeUnmount, onMounted, reactive, watch } from 'vue'
+import { reactive, watch } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
 import AppShell from '@/Components/AppShell.vue'
 import StatusBadge from '@/Components/StatusBadge.vue'
@@ -7,17 +7,17 @@ import StatusBadge from '@/Components/StatusBadge.vue'
 const props = defineProps({
   bookings: Array,
   stats: Array,
+  slotOptions: Array,
 })
-let dashboardTimer = null
 
-const timeOptions = Array.from({ length: 24 }, (_, hour) => {
-  const value = `${String(hour).padStart(2, '0')}:00`
-  const meridian = hour >= 12 ? 'PM' : 'AM'
-  const hour12 = hour % 12 || 12
+const timeOptions = props.slotOptions.map((value) => {
+  const [hours, minutes] = value.split(':').map(Number)
+  const meridian = hours >= 12 ? 'PM' : 'AM'
+  const hour12 = hours % 12 || 12
 
   return {
     value,
-    label: `${hour12}:00 ${meridian}`,
+    label: `${hour12}:${String(minutes).padStart(2, '0')} ${meridian}`,
   }
 })
 
@@ -29,20 +29,6 @@ const rescheduleState = reactive(
     ]),
   ),
 )
-
-onMounted(() => {
-  dashboardTimer = window.setInterval(() => {
-    if (document.visibilityState !== 'visible') {
-      return
-    }
-
-    router.reload({
-      only: ['bookings', 'stats'],
-      preserveScroll: true,
-      preserveState: true,
-    })
-  }, 60000)
-})
 
 watch(
   () => props.bookings,
@@ -56,12 +42,6 @@ watch(
   },
 )
 
-onBeforeUnmount(() => {
-  if (dashboardTimer) {
-    window.clearInterval(dashboardTimer)
-  }
-})
-
 const cancelBooking = (id) => {
   router.post(route('reservations.cancel', id), {}, { preserveScroll: true, preserveState: true })
 }
@@ -72,6 +52,14 @@ const rescheduleBooking = (id) => {
 
 const formatCurrency = (value) =>
   `\u20B1${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+const refreshDashboard = () => {
+  router.reload({
+    only: ['bookings', 'stats'],
+    preserveScroll: true,
+    preserveState: true,
+  })
+}
 </script>
 
 <template>
@@ -83,14 +71,17 @@ const formatCurrency = (value) =>
             <p class="mcd-chip">Customer dashboard</p>
             <h1 class="mt-4 text-4xl">Track your upcoming bookings, payment review, and check-in pass.</h1>
           </div>
-          <Link :href="route('reservations.create')" prefetch class="mcd-button">Create another booking</Link>
+          <div class="flex flex-wrap gap-3">
+            <button type="button" class="mcd-button mcd-button--ghost" @click="refreshDashboard">Refresh dashboard</button>
+            <Link :href="route('reservations.create')" prefetch class="mcd-button">Create another booking</Link>
+          </div>
         </div>
       </div>
 
-      <div class="mcd-grid mcd-grid--3">
-        <article v-for="item in stats" :key="item.label" class="mcd-panel p-6">
-          <p class="text-sm uppercase tracking-[0.25em] text-slate-500">{{ item.label }}</p>
-          <p class="mt-3 text-4xl text-red-700">{{ item.value }}</p>
+      <div class="mcd-metric-grid">
+        <article v-for="item in stats" :key="item.label" class="mcd-metric-card">
+          <p class="mcd-metric-card__label">{{ item.label }}</p>
+          <p class="mcd-metric-card__value">{{ item.value }}</p>
         </article>
       </div>
     </section>
@@ -135,6 +126,7 @@ const formatCurrency = (value) =>
 
             <div class="rounded-3xl bg-amber-50 p-5">
               <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">Reschedule</p>
+              <p class="mt-2 text-xs text-slate-500">Morning schedule only: 7:00 AM to 12:00 PM.</p>
               <div class="mt-4 grid gap-3">
                 <input v-model="rescheduleState[booking.id].event_date" type="date" class="mcd-input" />
                 <select v-model="rescheduleState[booking.id].event_time" class="mcd-select">

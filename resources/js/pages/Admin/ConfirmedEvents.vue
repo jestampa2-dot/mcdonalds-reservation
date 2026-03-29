@@ -1,5 +1,5 @@
 <script setup>
-import { onBeforeUnmount, onMounted, reactive, watch } from 'vue'
+import { reactive, watch } from 'vue'
 import { router } from '@inertiajs/vue3'
 import AppShell from '@/Components/AppShell.vue'
 import AdminQuickLinks from '@/Components/AdminQuickLinks.vue'
@@ -13,7 +13,6 @@ const props = defineProps({
   addOns: Array,
   durationOptions: Array,
 })
-let dashboardTimer = null
 
 const statusState = reactive(Object.fromEntries(props.confirmedEvents.map((booking) => [booking.id, booking.status])))
 const crewState = reactive(Object.fromEntries(props.confirmedEvents.map((booking) => [booking.id, booking.assigned_staff_id ?? ''])))
@@ -22,20 +21,6 @@ const adjustmentState = reactive(Object.fromEntries(props.confirmedEvents.map((b
   extra_menu_bundles: booking.service_adjustments?.extra_menu_bundles ?? [],
   extra_add_ons: booking.service_adjustments?.extra_add_ons ?? [],
 }])))
-
-onMounted(() => {
-  dashboardTimer = window.setInterval(() => {
-    if (document.visibilityState !== 'visible') {
-      return
-    }
-
-    router.reload({
-      only: ['stats', 'confirmedEvents', 'staffUsers'],
-      preserveScroll: true,
-      preserveState: true,
-    })
-  }, 60000)
-})
 
 watch(
   () => props.confirmedEvents,
@@ -51,12 +36,6 @@ watch(
     })
   },
 )
-
-onBeforeUnmount(() => {
-  if (dashboardTimer) {
-    window.clearInterval(dashboardTimer)
-  }
-})
 
 const updateStatus = (id) => {
   router.post(route('admin.reservations.status', id), { status: statusState[id] }, { preserveScroll: true, preserveState: true })
@@ -86,22 +65,45 @@ const updateCrew = (id) => {
 const updateServiceAdjustments = (id) => {
   router.post(route('staff.reservations.adjustments', id), adjustmentState[id], { preserveScroll: true, preserveState: true })
 }
+
+const refreshConfirmed = () => {
+  router.reload({
+    only: ['stats', 'confirmedEvents', 'staffUsers'],
+    preserveScroll: true,
+    preserveState: true,
+  })
+}
 </script>
 
 <template>
   <AppShell title="Admin Confirmed Events">
     <section class="mcd-section">
       <div class="mcd-panel p-8">
-        <p class="mcd-chip">Confirmed events</p>
-        <h1 class="mt-4 text-4xl">Edit confirmed bookings without mixing them into pending approvals.</h1>
+        <div class="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p class="mcd-chip">Confirmed events</p>
+            <h1 class="mt-4 text-4xl">Edit confirmed bookings without mixing them into pending approvals.</h1>
+          </div>
+          <button type="button" class="mcd-button mcd-button--ghost" @click="refreshConfirmed">Refresh events</button>
+        </div>
         <div class="mt-6">
           <AdminQuickLinks current="confirmed" />
         </div>
+      </div>
+
+      <div class="mcd-metric-grid">
+        <article v-for="item in stats" :key="item.label" class="mcd-metric-card">
+          <p class="mcd-metric-card__label">{{ item.label }}</p>
+          <p class="mcd-metric-card__value">{{ item.value }}</p>
+        </article>
       </div>
     </section>
 
     <section class="mcd-section">
       <article class="mcd-panel p-6">
+        <div class="mcd-info-strip">
+          <p class="text-sm font-bold text-slate-500">{{ confirmedEvents.length }} confirmed event{{ confirmedEvents.length === 1 ? '' : 's' }}</p>
+        </div>
         <div v-if="confirmedEvents.length" class="space-y-4">
           <div v-for="booking in confirmedEvents" :key="booking.id" class="rounded-2xl bg-amber-50 p-4">
             <div class="grid gap-4 md:grid-cols-[1.1fr,0.8fr,0.8fr]">

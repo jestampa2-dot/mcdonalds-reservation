@@ -12,6 +12,7 @@ const props = defineProps({
 
 const availabilityState = ref(props.availability)
 const eventTypeKeys = Object.keys(props.catalog.eventTypes)
+const availabilityNotice = ref('')
 let availabilityTimer = null
 let manilaTimer = null
 
@@ -201,7 +202,7 @@ const receiptPreview = computed(() => {
   }
 })
 
-const syncSelectionToAvailability = () => {
+const ensureCatalogSelection = () => {
   const fallbackBranch = supportedBranches.value[0]
 
   if (!supportedBranches.value.some((item) => item.code === form.branch_code)) {
@@ -211,6 +212,10 @@ const syncSelectionToAvailability = () => {
   if (!packages.value.some((item) => item.code === form.package_code)) {
     form.package_code = packages.value[0]?.code ?? ''
   }
+}
+
+const initializeAvailabilitySelection = () => {
+  ensureCatalogSelection()
 
   if (!dateCardsView.value.some((item) => item.date === form.event_date && item.computed_status !== 'full')) {
     form.event_date = dateCardsView.value.find((item) => item.computed_status !== 'full')?.date ?? props.defaults.event_date
@@ -219,45 +224,74 @@ const syncSelectionToAvailability = () => {
   if (!canStartAt(form.event_time)) {
     form.event_time = selectableStartSlots.value.find((item) => item.startable)?.time ?? props.defaults.event_time
   }
+
+  availabilityNotice.value = ''
+}
+
+const updateAvailabilityNotice = () => {
+  availabilityNotice.value = ''
+
+  if (!selectedDateCard.value) {
+    return
+  }
+
+  if (selectedDateCard.value.computed_status === 'full') {
+    availabilityNotice.value = 'The chosen date is unavailable or already reserved. Please choose another morning date.'
+    return
+  }
+
+  if (!canStartAt(form.event_time)) {
+    availabilityNotice.value = 'The chosen date and time are unavailable or already reserved. Please choose another morning slot.'
+  }
 }
 
 watch(
   () => [form.event_type, form.branch_code],
   () => {
     weekIndex.value = 0
-    syncSelectionToAvailability()
+    initializeAvailabilitySelection()
   },
 )
 
 watch(
   () => form.event_date,
   () => {
-    if (!canStartAt(form.event_time)) {
-      form.event_time = selectableStartSlots.value.find((item) => item.startable)?.time ?? props.defaults.event_time
-    }
+    updateAvailabilityNotice()
   },
 )
 
 watch(
   () => form.duration_hours,
   () => {
-    if (!canStartAt(form.event_time)) {
-      form.event_time = selectableStartSlots.value.find((item) => item.startable)?.time ?? props.defaults.event_time
-    }
+    updateAvailabilityNotice()
+  },
+)
+
+watch(
+  () => form.event_time,
+  () => {
+    updateAvailabilityNotice()
   },
 )
 
 const refreshAvailability = async () => {
   const { data } = await axios.get(route('availability.index'))
   availabilityState.value = data
-  syncSelectionToAvailability()
+  ensureCatalogSelection()
+  updateAvailabilityNotice()
 }
 
 onMounted(() => {
-  availabilityTimer = window.setInterval(refreshAvailability, 15000)
+  availabilityTimer = window.setInterval(() => {
+    if (document.visibilityState !== 'visible') {
+      return
+    }
+
+    refreshAvailability()
+  }, 30000)
   manilaTimer = window.setInterval(updateManilaNow, 60000)
   updateManilaNow()
-  syncSelectionToAvailability()
+  initializeAvailabilitySelection()
 })
 
 onBeforeUnmount(() => {
@@ -287,7 +321,7 @@ const submit = () => {
             <h1 class="mt-4 text-4xl">Plan your party, meeting, or reserved table in one fast flow.</h1>
           </div>
           <div class="rounded-3xl bg-red-50 px-5 py-4 text-sm text-red-800">
-            Live availability refreshes every 15 seconds for customers and admins.
+            Morning booking window only: 7:00 AM to 12:00 PM.
           </div>
         </div>
       </div>
@@ -334,6 +368,7 @@ const submit = () => {
                   </option>
                 </select>
                 <p class="mt-2 text-xs text-slate-500">All packages include 4 hours. Extra hours up to 8 total are charged at {{ formatCurrency(catalog.pricing.extension_hourly_rate) }}/hour.</p>
+                <p class="mt-1 text-xs text-slate-500">Only schedules that fit between 7:00 AM and 12:00 PM will be available.</p>
                 <p v-if="form.errors.duration_hours" class="text-sm text-red-700">{{ form.errors.duration_hours }}</p>
               </div>
 
@@ -412,6 +447,10 @@ const submit = () => {
                       </p>
                     </div>
                     <button type="button" class="mcd-button mcd-button--ghost" @click="refreshAvailability">Refresh now</button>
+                  </div>
+
+                  <div v-if="availabilityNotice" class="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+                    {{ availabilityNotice }}
                   </div>
 
                   <div class="mt-5 grid gap-3 md:grid-cols-2">

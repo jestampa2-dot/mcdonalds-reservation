@@ -66,7 +66,7 @@ const createBranch = () => {
         <article class="mcd-panel p-6">
           <p class="mcd-chip">Existing branches</p>
           <div class="mt-5 space-y-3">
-            <div v-for="branch in branches" :key="branch.code" class="rounded-2xl bg-white p-4">
+            <div v-for="branch in branches" :key="branch.code" class="rounded-3xl bg-white p-5">
               <p class="font-bold">{{ branch.name }}</p>
               <p class="mt-1 text-sm text-slate-500">{{ branch.city }} | {{ branch.code }}</p>
             </div>

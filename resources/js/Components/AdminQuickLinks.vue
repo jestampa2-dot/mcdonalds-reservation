@@ -1,5 +1,6 @@
 <script setup>
 import { Link } from '@inertiajs/vue3'
+import AdminNotificationBar from '@/Components/AdminNotificationBar.vue'
 
 defineProps({
   current: {
@@ -22,15 +23,22 @@ const links = [
 </script>
 
 <template>
-  <div class="flex flex-wrap gap-3">
-    <Link
-      v-for="link in links"
-      :key="link.key"
-      :href="link.href"
-      class="mcd-button"
-      :class="current === link.key ? '' : 'mcd-button--ghost'"
-    >
-      {{ link.label }}
-    </Link>
+  <div class="grid gap-4">
+    <AdminNotificationBar />
+
+    <div class="mcd-info-strip">
+      <div class="flex flex-wrap gap-3">
+        <Link
+          v-for="link in links"
+          :key="link.key"
+          :href="link.href"
+          prefetch
+          class="mcd-button"
+          :class="current === link.key ? '' : 'mcd-button--ghost'"
+        >
+          {{ link.label }}
+        </Link>
+      </div>
+    </div>
   </div>
 </template>

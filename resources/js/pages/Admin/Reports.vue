@@ -1,5 +1,4 @@
 <script setup>
-import { onBeforeUnmount, onMounted } from 'vue'
 import { router } from '@inertiajs/vue3'
 import AppShell from '@/Components/AppShell.vue'
 import AdminQuickLinks from '@/Components/AdminQuickLinks.vue'
@@ -10,38 +9,30 @@ defineProps({
   inventory: Array,
   staffAssignments: Array,
 })
-let dashboardTimer = null
-
-onMounted(() => {
-  dashboardTimer = window.setInterval(() => {
-    if (document.visibilityState !== 'visible') {
-      return
-    }
-
-    router.reload({
-      only: ['pricing', 'report', 'inventory', 'staffAssignments'],
-      preserveScroll: true,
-      preserveState: true,
-    })
-  }, 60000)
-})
-
-onBeforeUnmount(() => {
-  if (dashboardTimer) {
-    window.clearInterval(dashboardTimer)
-  }
-})
 
 const formatCurrency = (value) =>
   `\u20B1${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+const refreshReports = () => {
+  router.reload({
+    only: ['pricing', 'report', 'inventory', 'staffAssignments'],
+    preserveScroll: true,
+    preserveState: true,
+  })
+}
 </script>
 
 <template>
   <AppShell title="Admin Reports">
     <section class="mcd-section">
       <div class="mcd-panel p-8">
-        <p class="mcd-chip">Reports</p>
-        <h1 class="mt-4 text-4xl">Analytics, inventory, and staffing are now separated from the booking workflow.</h1>
+        <div class="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p class="mcd-chip">Reports</p>
+            <h1 class="mt-4 text-4xl">Analytics, inventory, and staffing are now separated from the booking workflow.</h1>
+          </div>
+          <button type="button" class="mcd-button mcd-button--ghost" @click="refreshReports">Refresh reports</button>
+        </div>
         <div class="mt-6">
           <AdminQuickLinks current="reports" />
         </div>

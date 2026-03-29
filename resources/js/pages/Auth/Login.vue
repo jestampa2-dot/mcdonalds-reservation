@@ -12,12 +12,6 @@ defineProps({
   status: String,
 })
 
-const stats = [
-  { label: 'Party-ready branches', value: '3' },
-  { label: 'Fastest approval', value: '15 min' },
-  { label: 'Roles supported', value: '4' },
-]
-
 const form = useForm({
   email: '',
   password: '',
@@ -37,7 +31,6 @@ const submit = () => {
     eyebrow="Operator-ready access"
     heading="Jump back into bookings, approvals, and check-ins from one desktop workspace."
     description="Sign in to manage customer reservations, review schedules, and keep the service floor moving."
-    :stats="stats"
   >
     <Head title="Login" />
 
