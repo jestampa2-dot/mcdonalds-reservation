@@ -30,6 +30,8 @@ Route::middleware('auth')->group(function () {
     Route::post('/admin/reservations/{reservation}/crew', [ReservationController::class, 'assignCrew'])->name('admin.reservations.crew');
     Route::post('/admin/users/{user}/role', [ReservationController::class, 'updateUserRole'])->name('admin.users.role');
     Route::post('/admin/branches', [ReservationController::class, 'storeBranch'])->name('admin.branches.store');
+    Route::post('/admin/branches/{branch}/inventory', [ReservationController::class, 'storeInventoryItem'])->name('admin.branches.inventory.store');
+    Route::post('/admin/inventory-items/{inventoryItem}', [ReservationController::class, 'updateInventoryItem'])->name('admin.inventory-items.update');
     Route::post('/admin/event-types/{eventType}', [ReservationController::class, 'updateEventType'])->name('admin.event-types.update');
     Route::post('/admin/packages/{package}', [ReservationController::class, 'updatePackage'])->name('admin.packages.update');
 

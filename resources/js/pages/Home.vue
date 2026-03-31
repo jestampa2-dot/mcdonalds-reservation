@@ -33,12 +33,14 @@ const formatCurrency = (value) =>
         <div class="flex flex-wrap gap-3">
           <Link
             :href="page.props.auth?.user ? route('reservations.create') : route('register')"
+            prefetch
             class="mcd-button mcd-button--secondary"
           >
             Check Availability
           </Link>
           <Link
             :href="page.props.auth?.user ? route('dashboard') : route('login')"
+            prefetch
             class="mcd-button"
           >
             Open Dashboard

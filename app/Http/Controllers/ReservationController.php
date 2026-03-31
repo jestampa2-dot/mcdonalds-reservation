@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\AddOn;
 use App\Models\BookingPackage;
 use App\Models\Branch;
+use App\Models\BranchInventoryItem;
 use App\Models\EventType;
 use App\Models\MenuCategory;
 use App\Models\MenuBundle;
@@ -61,7 +62,7 @@ class ReservationController extends Controller
             'availability' => $this->availabilityPayload($catalog, 366),
             'defaults' => [
                 'event_date' => now()->addDays(3)->toDateString(),
-                'event_time' => '08:00',
+                'event_time' => '10:00',
                 'duration_hours' => 4,
                 'room_choice' => $this->defaultRoomChoice('birthday'),
             ],
@@ -80,7 +81,8 @@ class ReservationController extends Controller
             'branch_code' => ['required', Rule::in(array_keys($catalog['branches']))],
             'event_date' => ['required', 'date', 'after_or_equal:today'],
             'event_time' => ['required', Rule::in($catalog['slotOptions'])],
-            'duration_hours' => ['required', 'integer', 'min:4', 'max:8'],
+            'event_end_time' => ['nullable', 'date_format:H:i'],
+            'duration_hours' => ['required', 'integer', 'min:1'],
             'room_choice' => ['required', Rule::in(collect($this->roomChoices())->pluck('code')->all())],
             'guests' => ['required', 'integer', 'min:2', 'max:60'],
             'package_code' => ['required', 'string'],
@@ -96,6 +98,18 @@ class ReservationController extends Controller
         ]);
 
         $branch = $catalog['branches'][$validated['branch_code']];
+
+        if (! empty($validated['event_end_time'])) {
+            $selectedDuration = $this->durationBetweenTimes($validated['event_time'], $validated['event_end_time']);
+
+            if (! is_int($selectedDuration) || $selectedDuration < 1) {
+                return back()->withErrors([
+                    'event_end_time' => 'Choose an end time that comes after the selected start time.',
+                ])->withInput();
+            }
+
+            $validated['duration_hours'] = $selectedDuration;
+        }
 
         if (! ($branch['supports'][$validated['event_type']] ?? false)) {
             return back()->withErrors([
@@ -113,14 +127,14 @@ class ReservationController extends Controller
 
         if (! $this->isDurationWindowValid($validated['event_time'], (int) $validated['duration_hours'])) {
             return back()->withErrors([
-                'event_time' => 'Reservations must fit within the morning booking window of 7:00 AM to 12:00 PM.',
-            ])->with('error', 'Reservations are only available from 7:00 AM to 12:00 PM.')->withInput();
+                'event_time' => 'Reservations must fit within the event booking window of 7:00 AM to 11:00 PM.',
+            ])->with('error', 'Choose a start and end time that stays between 7:00 AM and 11:00 PM.')->withInput();
         }
 
         if (! $this->isSlotAvailable($validated['branch_code'], $validated['event_date'], $validated['event_time'], (int) $validated['duration_hours'])) {
             return back()->withErrors([
                 'event_time' => 'The chosen date and time are unavailable or already reserved.',
-            ])->with('error', 'The chosen date and time are unavailable or already reserved. Please choose another morning slot.')->withInput();
+            ])->with('error', 'The chosen date and time are unavailable or already reserved. Please choose another schedule.')->withInput();
         }
 
         $menuBundles = collect($catalog['menuBundles'])
@@ -393,7 +407,7 @@ class ReservationController extends Controller
             'statusOptions' => ['available', 'cleaning', 'in_progress'],
             'menuBundles' => $catalog['menuBundles'],
             'addOns' => $catalog['addOns'],
-            'durationOptions' => range(4, 8),
+            'durationOptions' => range(1, 16),
         ]);
     }
 
@@ -426,14 +440,14 @@ class ReservationController extends Controller
 
         if (! $this->isDurationWindowValid($validated['event_time'], $durationHours)) {
             return back()->withErrors([
-                'event_time' => 'Reservations must fit within the morning booking window of 7:00 AM to 12:00 PM.',
-            ])->with('error', 'Reservations are only available from 7:00 AM to 12:00 PM.');
+                'event_time' => 'Reservations must fit within the event booking window of 7:00 AM to 11:00 PM.',
+            ])->with('error', 'Choose a start and end time that stays between 7:00 AM and 11:00 PM.');
         }
 
         if (! $this->isSlotAvailable($reservation->branch_code, $validated['event_date'], $validated['event_time'], $durationHours, $reservation->id)) {
             return back()->withErrors([
                 'event_time' => 'The chosen date and time are unavailable or already reserved.',
-            ])->with('error', 'The chosen date and time are unavailable or already reserved. Please choose another morning slot.');
+            ])->with('error', 'The chosen date and time are unavailable or already reserved. Please choose another schedule.');
         }
 
         $reservation->update([
@@ -592,6 +606,44 @@ class ReservationController extends Controller
         return back()->with('success', 'New branch added.');
     }
 
+    public function storeInventoryItem(Request $request, Branch $branch): RedirectResponse
+    {
+        $this->authorizeRoles($request, ['admin', 'manager']);
+
+        $validated = $request->validate([
+            'item' => ['required', 'string', 'max:255'],
+            'stock' => ['required', 'integer', 'min:0'],
+            'threshold' => ['required', 'integer', 'min:0'],
+        ]);
+
+        $nextSortOrder = (int) ($branch->inventoryItems()->max('sort_order') ?? -1) + 1;
+
+        BranchInventoryItem::create([
+            'branch_id' => $branch->id,
+            'item' => $validated['item'],
+            'stock' => $validated['stock'],
+            'threshold' => $validated['threshold'],
+            'sort_order' => $nextSortOrder,
+        ]);
+
+        return back()->with('success', 'Inventory item added.');
+    }
+
+    public function updateInventoryItem(Request $request, BranchInventoryItem $inventoryItem): RedirectResponse
+    {
+        $this->authorizeRoles($request, ['admin', 'manager']);
+
+        $validated = $request->validate([
+            'item' => ['required', 'string', 'max:255'],
+            'stock' => ['required', 'integer', 'min:0'],
+            'threshold' => ['required', 'integer', 'min:0'],
+        ]);
+
+        $inventoryItem->update($validated);
+
+        return back()->with('success', 'Inventory item updated.');
+    }
+
     public function updateServiceStatus(Request $request, Reservation $reservation): RedirectResponse
     {
         $this->authorizeRoles($request, ['admin', 'manager', 'staff']);
@@ -612,7 +664,7 @@ class ReservationController extends Controller
         $this->authorizeRoles($request, ['admin', 'manager', 'staff']);
 
         $validated = $request->validate([
-            'duration_hours' => ['required', 'integer', 'min:4', 'max:8'],
+            'duration_hours' => ['required', 'integer', 'min:1'],
             'extra_menu_bundles' => ['array'],
             'extra_menu_bundles.*' => ['string'],
             'extra_add_ons' => ['array'],
@@ -624,7 +676,7 @@ class ReservationController extends Controller
         }
 
         if (! $this->isDurationWindowValid($reservation->event_time, (int) $validated['duration_hours'])) {
-            return back()->with('error', 'The updated duration must stay within the 7:00 AM to 12:00 PM booking window.');
+            return back()->with('error', 'The updated duration must stay within the 7:00 AM to 11:00 PM booking window.');
         }
 
         $catalog = $this->catalog();
@@ -914,7 +966,7 @@ class ReservationController extends Controller
     {
         return array_map(
             fn ($hour) => str_pad((string) $hour, 2, '0', STR_PAD_LEFT).':00',
-            range(7, 12)
+            range(7, 22)
         );
     }
 
@@ -997,7 +1049,9 @@ class ReservationController extends Controller
                     })->values();
 
                     $availableSlots = $slots
-                        ->filter(fn ($slot) => $this->isStartSlotOpen($slot['time'], 4, $slots))
+                        ->filter(fn ($slot) => collect(range(1, 16))->contains(
+                            fn ($duration) => $this->isStartSlotOpen($slot['time'], $duration, $slots)
+                        ))
                         ->count();
 
                     return [
@@ -1065,7 +1119,7 @@ class ReservationController extends Controller
             $multiplierLabel = 'Weekend rate';
         }
 
-        $durationHours = max(4, min(8, $durationHours));
+        $durationHours = max(1, $durationHours);
         $includedHours = 4;
         $extensionHours = max($durationHours - $includedHours, 0);
         $extensionHourlyRate = (float) ($catalog['pricing']['extension_hourly_rate'] ?? 450);
@@ -1413,7 +1467,7 @@ class ReservationController extends Controller
             'report' => $this->analyticsReport($bookings),
             'menuBundles' => $catalog['menuBundles'],
             'addOns' => $catalog['addOns'],
-            'durationOptions' => range(4, 8),
+            'durationOptions' => range(1, 16),
             'users' => User::query()
                 ->orderByRaw("CASE role WHEN 'admin' THEN 1 WHEN 'manager' THEN 2 WHEN 'staff' THEN 3 ELSE 4 END")
                 ->orderBy('name')
@@ -1461,6 +1515,42 @@ class ReservationController extends Controller
 
     protected function inventorySnapshot(array $catalog, $bookings): array
     {
+        if ($this->hasTableSafely('branches') && $this->hasTableSafely('branch_inventory_items')) {
+            $branches = $this->runDatabaseCheck(fn () => Branch::query()
+                ->where('is_active', true)
+                ->with(['inventoryItems' => fn ($query) => $query->orderBy('sort_order')->orderBy('item')])
+                ->orderBy('name')
+                ->get(), collect());
+
+            if ($branches->isNotEmpty()) {
+                return $branches->map(function (Branch $branch) use ($bookings) {
+                    $upcomingCount = $bookings
+                        ->where('branch_code', $branch->code)
+                        ->whereIn('status', ['pending_review', 'confirmed', 'rescheduled'])
+                        ->count();
+
+                    return [
+                        'branch' => $branch->name,
+                        'branch_id' => $branch->id,
+                        'branch_code' => $branch->code,
+                        'alerts' => $branch->inventoryItems->map(function (BranchInventoryItem $item) use ($upcomingCount) {
+                            $projected = max($item->stock - ($upcomingCount * 3), 0);
+
+                            return [
+                                'id' => $item->id,
+                                'item' => $item->item,
+                                'stock' => $item->stock,
+                                'projected' => $projected,
+                                'threshold' => $item->threshold,
+                                'sort_order' => $item->sort_order,
+                                'low' => $projected <= $item->threshold,
+                            ];
+                        })->values(),
+                    ];
+                })->values()->all();
+            }
+        }
+
         return collect($catalog['branches'])->map(function ($branch) use ($bookings) {
             $upcomingCount = $bookings
                 ->where('branch_code', $branch['code'])
@@ -1469,14 +1559,18 @@ class ReservationController extends Controller
 
             return [
                 'branch' => $branch['name'],
+                'branch_id' => null,
+                'branch_code' => $branch['code'],
                 'alerts' => collect($branch['inventory'])->map(function ($item) use ($upcomingCount) {
                     $projected = max($item['stock'] - ($upcomingCount * 3), 0);
 
                     return [
+                        'id' => null,
                         'item' => $item['item'],
                         'stock' => $item['stock'],
                         'projected' => $projected,
                         'threshold' => $item['threshold'],
+                        'sort_order' => 0,
                         'low' => $projected <= $item['threshold'],
                     ];
                 })->values(),
@@ -1782,7 +1876,7 @@ SVG;
     {
         $startMinutes = ((int) substr($time, 0, 2) * 60) + (int) substr($time, 3, 2);
         $openingMinutes = 7 * 60;
-        $closingMinutes = 12 * 60;
+        $closingMinutes = 23 * 60;
         $endMinutes = $startMinutes + ($durationHours * 60);
 
         return $startMinutes >= $openingMinutes && $endMinutes <= $closingMinutes;
@@ -1796,6 +1890,19 @@ SVG;
         $requestedEndMinutes = $requestedStartMinutes + ($requestedDuration * 60);
 
         return $requestedStartMinutes < $existingEndMinutes && $existingStartMinutes < $requestedEndMinutes;
+    }
+
+    protected function durationBetweenTimes(string $startTime, string $endTime): ?int
+    {
+        $startMinutes = ((int) substr($startTime, 0, 2) * 60) + (int) substr($startTime, 3, 2);
+        $endMinutes = ((int) substr($endTime, 0, 2) * 60) + (int) substr($endTime, 3, 2);
+        $difference = $endMinutes - $startMinutes;
+
+        if ($difference <= 0 || $difference % 60 !== 0) {
+            return null;
+        }
+
+        return (int) ($difference / 60);
     }
 
     protected function isStartSlotOpen(string $time, int $durationHours, $slots): bool

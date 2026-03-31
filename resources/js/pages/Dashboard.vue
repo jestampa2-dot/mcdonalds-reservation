@@ -126,7 +126,7 @@ const refreshDashboard = () => {
 
             <div class="rounded-3xl bg-amber-50 p-5">
               <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">Reschedule</p>
-              <p class="mt-2 text-xs text-slate-500">Morning schedule only: 7:00 AM to 12:00 PM.</p>
+              <p class="mt-2 text-xs text-slate-500">Choose a new reservation time between 7:00 AM and 11:00 PM.</p>
               <div class="mt-4 grid gap-3">
                 <input v-model="rescheduleState[booking.id].event_date" type="date" class="mcd-input" />
                 <select v-model="rescheduleState[booking.id].event_time" class="mcd-select">

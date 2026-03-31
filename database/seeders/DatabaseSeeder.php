@@ -102,27 +102,82 @@ class DatabaseSeeder extends Seeder
 
         $admin = User::updateOrCreate(
             ['email' => 'admin@mcdbooker.test'],
-            ['name' => 'Ava Admin', 'role' => 'admin', 'password' => Hash::make('password')]
+            [
+                'name' => 'Ava Admin',
+                'phone' => '+63 917 555 0201',
+                'birth_date' => '1991-02-14',
+                'gender' => 'female',
+                'address_line' => '32 High Street Drive',
+                'city' => 'Taguig',
+                'province' => 'Metro Manila',
+                'postal_code' => '1630',
+                'role' => 'admin',
+                'password' => Hash::make('password'),
+            ]
         );
 
         $manager = User::updateOrCreate(
             ['email' => 'manager@mcdbooker.test'],
-            ['name' => 'Milo Manager', 'role' => 'manager', 'password' => Hash::make('password')]
+            [
+                'name' => 'Milo Manager',
+                'phone' => '+63 917 555 0202',
+                'birth_date' => '1990-07-09',
+                'gender' => 'male',
+                'address_line' => '88 Seaside Avenue',
+                'city' => 'Pasay',
+                'province' => 'Metro Manila',
+                'postal_code' => '1300',
+                'role' => 'manager',
+                'password' => Hash::make('password'),
+            ]
         );
 
         $staff = User::updateOrCreate(
             ['email' => 'staff@mcdbooker.test'],
-            ['name' => 'Sky Staff', 'role' => 'staff', 'password' => Hash::make('password')]
+            [
+                'name' => 'Sky Staff',
+                'phone' => '+63 917 555 0203',
+                'birth_date' => '1998-04-21',
+                'gender' => 'female',
+                'address_line' => '14 Service Crew Street',
+                'city' => 'Mandaluyong',
+                'province' => 'Metro Manila',
+                'postal_code' => '1550',
+                'role' => 'staff',
+                'password' => Hash::make('password'),
+            ]
         );
 
         $staffTwo = User::updateOrCreate(
             ['email' => 'crewlead@mcdbooker.test'],
-            ['name' => 'Riley Crew Lead', 'role' => 'staff', 'password' => Hash::make('password')]
+            [
+                'name' => 'Riley Crew Lead',
+                'phone' => '+63 917 555 0204',
+                'birth_date' => '1996-11-03',
+                'gender' => 'non_binary',
+                'address_line' => '45 Pioneer Center',
+                'city' => 'Pasig',
+                'province' => 'Metro Manila',
+                'postal_code' => '1600',
+                'role' => 'staff',
+                'password' => Hash::make('password'),
+            ]
         );
 
         $customer = User::updateOrCreate(
             ['email' => 'guest@mcdbooker.test'],
-            ['name' => 'Casey Customer', 'role' => 'customer', 'password' => Hash::make('password')]
+            [
+                'name' => 'Casey Customer',
+                'phone' => '+63 917 555 0205',
+                'birth_date' => '1999-06-18',
+                'gender' => 'prefer_not_to_say',
+                'address_line' => '21 Celebration Lane',
+                'city' => 'Quezon City',
+                'province' => 'Metro Manila',
+                'postal_code' => '1100',
+                'role' => 'customer',
+                'password' => Hash::make('password'),
+            ]
         );
 
         foreach (config('booking.branches') as $branch) {

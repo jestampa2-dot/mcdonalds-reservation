@@ -27,9 +27,9 @@ const submit = () => {
     <nav class="navbar">
       <div class="logo">McDonald's Reservations</div>
       <div class="nav-links">
-        <Link href="/">Home</Link>
-        <Link href="/reservations/birthday">Birthday</Link>
-        <Link href="/reservations/business">Business</Link>
+        <Link href="/" prefetch>Home</Link>
+        <Link href="/reservations/birthday" prefetch>Birthday</Link>
+        <Link href="/reservations/business" prefetch>Business</Link>
       </div>
     </nav>
 

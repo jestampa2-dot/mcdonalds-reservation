@@ -64,7 +64,7 @@ onBeforeUnmount(() => {
             >
               <p class="font-bold">{{ dateItem.date }}</p>
               <p class="mt-1 text-sm capitalize">{{ dateItem.status }}</p>
-              <p class="mt-1 text-xs">Open 4-hour start times: {{ dateItem.available_slots }}</p>
+              <p class="mt-1 text-xs">Open reservation start times: {{ dateItem.available_slots }}</p>
             </div>
           </div>
         </article>

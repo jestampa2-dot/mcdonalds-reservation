@@ -46,6 +46,11 @@ const navLinks = computed(() => {
     href: route('dashboard'),
     current: 'dashboard',
   })
+  links.push({
+    label: 'My Account',
+    href: route('profile.edit'),
+    current: 'profile.*',
+  })
 
   if (['admin', 'manager'].includes(user.value.role)) {
     links.push({
@@ -100,7 +105,7 @@ const isLinkActive = (link) => {
 
     <div class="mcd-shell__layout">
       <aside class="mcd-sidebar">
-        <Link :href="route('home')" class="mcd-brand">
+        <Link :href="route('home')" prefetch class="mcd-brand">
           <span class="mcd-brand__arches">M</span>
           <span>
             <strong>McDonald's Reservations</strong>

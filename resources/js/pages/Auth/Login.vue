@@ -82,6 +82,7 @@ const submit = () => {
           <Link
             v-if="canResetPassword"
             :href="route('password.request')"
+            prefetch
             class="auth-form__link"
           >
             Forgot password?
@@ -95,7 +96,7 @@ const submit = () => {
 
       <div class="auth-form__footer">
         <p>New here? Build your reservation workspace in a minute.</p>
-        <Link :href="route('register')" class="auth-form__secondary-link">Create account</Link>
+        <Link :href="route('register')" prefetch class="auth-form__secondary-link">Create account</Link>
       </div>
     </div>
   </GuestLayout>

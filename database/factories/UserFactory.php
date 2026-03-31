@@ -20,6 +20,13 @@ class UserFactory extends Factory
         return [
             'name' => fake()->name(),
             'email' => fake()->unique()->safeEmail(),
+            'phone' => fake()->numerify('+63 9## ### ####'),
+            'birth_date' => fake()->dateTimeBetween('-45 years', '-18 years')->format('Y-m-d'),
+            'gender' => fake()->randomElement(['male', 'female', 'non_binary', 'prefer_not_to_say']),
+            'address_line' => fake()->streetAddress(),
+            'city' => fake()->city(),
+            'province' => fake()->state(),
+            'postal_code' => fake()->postcode(),
             'email_verified_at' => now(),
             'password' => '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', // password
             'remember_token' => Str::random(10),

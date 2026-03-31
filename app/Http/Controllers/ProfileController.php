@@ -21,6 +21,18 @@ class ProfileController extends Controller
         return Inertia::render('Profile/Edit', [
             'mustVerifyEmail' => $request->user() instanceof MustVerifyEmail,
             'status' => session('status'),
+            'profile' => [
+                'name' => $request->user()->name,
+                'email' => $request->user()->email,
+                'phone' => $request->user()->phone,
+                'birth_date' => optional($request->user()->birth_date)->format('Y-m-d'),
+                'gender' => $request->user()->gender,
+                'address_line' => $request->user()->address_line,
+                'city' => $request->user()->city,
+                'province' => $request->user()->province,
+                'postal_code' => $request->user()->postal_code,
+                'email_verified_at' => $request->user()->email_verified_at,
+            ],
         ]);
     }
 
@@ -37,7 +49,7 @@ class ProfileController extends Controller
 
         $request->user()->save();
 
-        return Redirect::route('profile.edit');
+        return Redirect::route('profile.edit')->with('success', 'Personal information updated successfully.');
     }
 
     /**

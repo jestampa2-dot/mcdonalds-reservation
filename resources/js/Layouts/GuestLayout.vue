@@ -30,7 +30,7 @@ defineProps({
 
     <div class="auth-shell__frame">
       <section class="auth-shell__hero">
-        <Link href="/" class="auth-shell__brand">
+        <Link href="/" prefetch class="auth-shell__brand">
           <span class="auth-shell__brand-mark">M</span>
           <span>
             <strong>McDonald's Reservations</strong>

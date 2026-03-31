@@ -20,6 +20,13 @@ class User extends Authenticatable
     protected $fillable = [
         'name',
         'email',
+        'phone',
+        'birth_date',
+        'gender',
+        'address_line',
+        'city',
+        'province',
+        'postal_code',
         'role',
         'password',
     ];
@@ -41,6 +48,7 @@ class User extends Authenticatable
      */
     protected $casts = [
         'email_verified_at' => 'datetime',
+        'birth_date' => 'date',
     ];
 
     public function reservations()

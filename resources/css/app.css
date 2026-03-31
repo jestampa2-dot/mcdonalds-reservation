@@ -644,6 +644,256 @@
     box-shadow: var(--mcd-shadow);
   }
 
+  .mcd-schedule-planner {
+    display: grid;
+    gap: 1.5rem;
+    padding: 1.6rem;
+    border-radius: 2rem;
+    background:
+      radial-gradient(circle at top left, rgba(108, 92, 255, 0.08), transparent 22%),
+      linear-gradient(180deg, rgba(244, 250, 248, 0.96), rgba(255, 255, 255, 0.92));
+    border: 1px solid rgba(185, 219, 227, 0.45);
+    box-shadow: 0 22px 46px rgba(56, 73, 93, 0.08);
+  }
+
+  .mcd-schedule-planner__surface {
+    display: grid;
+    gap: 1.5rem;
+    align-items: start;
+  }
+
+  .mcd-schedule-planner__details {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .mcd-schedule-planner__orb {
+    width: min(100%, 34rem);
+    margin: 0 auto;
+    padding: 2rem 2rem 1.8rem;
+    border-radius: 999px;
+    background:
+      radial-gradient(circle at 50% 24%, rgba(255, 255, 255, 1), rgba(247, 249, 252, 0.98)),
+      linear-gradient(180deg, rgba(249, 251, 255, 0.96), rgba(241, 245, 251, 0.96));
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.95),
+      0 24px 54px rgba(35, 41, 70, 0.16);
+  }
+
+  .mcd-schedule-planner__month-button {
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.92);
+    color: #6b5cff;
+    font-weight: 800;
+    box-shadow: 0 10px 18px rgba(31, 31, 31, 0.08);
+  }
+
+  .mcd-schedule-planner__month-button:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+
+  .mcd-schedule-planner__day {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.65rem;
+    border-radius: 999px;
+    font-weight: 800;
+    color: #687387;
+    transition: transform 0.18s ease, background 0.18s ease, color 0.18s ease;
+  }
+
+  .mcd-schedule-planner__day:hover:not(.is-empty):not(.is-unavailable) {
+    transform: translateY(-1px);
+    background: rgba(107, 92, 255, 0.08);
+    color: #6b5cff;
+  }
+
+  .mcd-schedule-planner__day.is-selected {
+    background: #6b5cff;
+    color: white;
+    box-shadow: 0 12px 20px rgba(107, 92, 255, 0.22);
+  }
+
+  .mcd-schedule-planner__day.is-limited {
+    background: rgba(255, 199, 44, 0.18);
+    color: #915400;
+  }
+
+  .mcd-schedule-planner__day.is-unavailable {
+    color: #c0c6d2;
+    cursor: not-allowed;
+  }
+
+  .mcd-schedule-planner__day.is-empty {
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  .mcd-schedule-planner__switches {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 1.5rem;
+    margin-top: 1.4rem;
+    padding-top: 1.2rem;
+    border-top: 1px solid rgba(103, 112, 130, 0.12);
+    color: #69758a;
+    font-size: 0.98rem;
+    font-weight: 700;
+  }
+
+  .mcd-schedule-planner__switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .mcd-schedule-planner__switch-box {
+    width: 1rem;
+    height: 1rem;
+    border-radius: 0.35rem;
+    border: 2px solid rgba(161, 172, 188, 0.7);
+    background: white;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  }
+
+  .mcd-schedule-planner__switch.is-active .mcd-schedule-planner__switch-box {
+    border-color: #6b5cff;
+    background: #6b5cff;
+    box-shadow: 0 0 0 3px rgba(107, 92, 255, 0.12);
+  }
+
+  .mcd-schedule-planner__time-cards {
+    display: grid;
+    gap: 0.9rem;
+    margin-top: 1.35rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mcd-schedule-planner__time-card {
+    display: grid;
+    gap: 0.35rem;
+    padding: 1rem;
+    border-radius: 1.2rem;
+    background: rgba(255, 255, 255, 0.86);
+    border: 1px solid rgba(184, 194, 210, 0.44);
+    box-shadow: 0 10px 18px rgba(36, 44, 66, 0.08);
+    text-align: left;
+    transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+  }
+
+  .mcd-schedule-planner__time-card.is-active {
+    border-color: rgba(107, 92, 255, 0.48);
+    box-shadow: 0 14px 24px rgba(107, 92, 255, 0.16);
+    transform: translateY(-1px);
+  }
+
+  .mcd-schedule-planner__time-card span {
+    color: #5b667a;
+    font-size: 0.84rem;
+    font-weight: 700;
+  }
+
+  .mcd-schedule-planner__time-card strong {
+    color: var(--mcd-ink);
+    font-size: 1.2rem;
+    font-weight: 900;
+    letter-spacing: 0.02em;
+  }
+
+  .mcd-schedule-planner__time-card small {
+    color: #8a96aa;
+    font-size: 0.82rem;
+    font-weight: 700;
+  }
+
+  .mcd-schedule-planner__time-panel {
+    display: grid;
+    gap: 1rem;
+    margin-top: 1.25rem;
+    padding: 1rem 0 0.25rem;
+  }
+
+  .mcd-schedule-planner__time-title {
+    color: var(--mcd-ink);
+    font-size: 1.05rem;
+    font-weight: 900;
+    letter-spacing: 0.02em;
+  }
+
+  .mcd-schedule-planner__time-grid {
+    display: grid;
+    gap: 0.8rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mcd-schedule-planner__time-option {
+    display: grid;
+    gap: 0.25rem;
+    padding: 0.9rem 1rem;
+    border-radius: 1rem;
+    border: 1px solid rgba(184, 194, 210, 0.44);
+    background: rgba(255, 255, 255, 0.86);
+    box-shadow: 0 10px 18px rgba(36, 44, 66, 0.06);
+    text-align: left;
+    transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+  }
+
+  .mcd-schedule-planner__time-option:hover {
+    transform: translateY(-1px);
+    border-color: rgba(107, 92, 255, 0.32);
+  }
+
+  .mcd-schedule-planner__time-option.is-selected {
+    border-color: rgba(107, 92, 255, 0.52);
+    background: rgba(107, 92, 255, 0.08);
+    box-shadow: 0 14px 24px rgba(107, 92, 255, 0.14);
+  }
+
+  .mcd-schedule-planner__time-option strong {
+    color: var(--mcd-ink);
+    font-size: 1rem;
+    font-weight: 900;
+  }
+
+  .mcd-schedule-planner__time-option small {
+    color: #7f8ba0;
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+
+  .mcd-schedule-planner__fields {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+
+  .mcd-schedule-planner__input {
+    width: 100%;
+    min-height: 3.35rem;
+    padding: 0.9rem 1rem;
+    border-radius: 1rem;
+    border: 2px solid rgba(137, 225, 229, 0.54);
+    background: rgba(255, 255, 255, 0.96);
+    color: #435066;
+    box-shadow: 0 10px 18px rgba(63, 90, 120, 0.06);
+    outline: none;
+    transition: border-color 0.18s ease, box-shadow 0.18s ease;
+  }
+
+  .mcd-schedule-planner__input:focus {
+    border-color: #69cbd8;
+    box-shadow: 0 0 0 4px rgba(105, 203, 216, 0.14);
+  }
+
   .mcd-badge {
     display: inline-flex;
     padding: 0.35rem 0.7rem;
@@ -954,6 +1204,12 @@
   }
 }
 
+@media (min-width: 1100px) {
+  .mcd-schedule-planner__surface {
+    grid-template-columns: minmax(0, 34rem) minmax(0, 1fr);
+  }
+}
+
 @media (max-width: 1200px) {
   .mcd-shell__layout {
     grid-template-columns: 1fr;
@@ -1026,5 +1282,22 @@
 
   .auth-shell__panel-inner {
     width: 100%;
+  }
+
+  .mcd-schedule-planner {
+    padding: 1rem;
+    border-radius: 1.6rem;
+  }
+
+  .mcd-schedule-planner__orb {
+    width: 100%;
+    padding: 1.35rem 1.15rem 1.25rem;
+    border-radius: 2rem;
+  }
+
+  .mcd-schedule-planner__time-cards,
+  .mcd-schedule-planner__fields,
+  .mcd-schedule-planner__time-grid {
+    grid-template-columns: 1fr;
   }
 }
