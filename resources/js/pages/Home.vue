@@ -11,6 +11,12 @@ defineProps({
 
 const page = usePage()
 
+const heroPillars = [
+  'Live branch availability',
+  'Manual food and drink ordering',
+  'Admin approvals and staff prep flow',
+]
+
 const formatCurrency = (value) =>
   `\u20B1${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 </script>
@@ -22,12 +28,22 @@ const formatCurrency = (value) =>
         <span class="mcd-chip">Fast-food quick booking for parties, meetings, and table reservations</span>
         <div class="space-y-4">
           <h1 class="max-w-3xl text-4xl leading-tight md:text-6xl">
-            Make every McDonald&apos;s event feel organized before guests even arrive.
+            Turn every McDonald&apos;s event into a polished, branch-ready experience before guests arrive.
           </h1>
           <p class="max-w-2xl text-lg text-white/90">
             Launch a polished reservation experience with live slot visibility, menu pre-orders, proof-of-payment upload,
             customer QR passes, branch operations dashboards, and staff-ready prep lists.
           </p>
+        </div>
+
+        <div class="grid gap-3 md:grid-cols-3">
+          <div
+            v-for="pillar in heroPillars"
+            :key="pillar"
+            class="rounded-[1.4rem] border border-white/15 bg-white/10 px-4 py-3 text-sm font-bold text-white/90 backdrop-blur"
+          >
+            {{ pillar }}
+          </div>
         </div>
 
         <div class="flex flex-wrap gap-3">
@@ -50,24 +66,23 @@ const formatCurrency = (value) =>
 
       <div class="mcd-panel p-6 text-slate-900">
         <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">McDonald&apos;s-style booking stack</p>
-        <div class="mt-4 space-y-4">
-          <div class="rounded-3xl bg-red-50 p-4">
-            <h2 class="text-xl">Customer-Facing Booking Wizard</h2>
+        <div class="mt-4 grid gap-4">
+          <div class="rounded-[1.8rem] bg-red-50 p-5">
+            <p class="text-xs font-black uppercase tracking-[0.18em] text-red-700">Customer flow</p>
+            <h2 class="mt-3 text-2xl">Fast booking with cleaner choices</h2>
             <p class="mt-2 text-sm leading-6 text-slate-700">
-              Guided event selection, branch finder, menu and add-on customization, live slot checks, and proof-of-payment upload.
+              Guided event selection, room rentals, live schedule checks, menu ordering, and proof-of-payment upload.
             </p>
           </div>
-          <div class="rounded-3xl bg-amber-50 p-4">
-            <h2 class="text-xl">Admin Command Center</h2>
-            <p class="mt-2 text-sm leading-6 text-slate-700">
-              Weekly booking visibility, inventory alerts, host assignments, weekend pricing rules, and quick analytics.
-            </p>
-          </div>
-          <div class="rounded-3xl bg-white p-4">
-            <h2 class="text-xl">Crew Floor View</h2>
-            <p class="mt-2 text-sm leading-6 text-slate-700">
-              Daily prep queue, check-in lookup, and real-time room/table status toggles for active events.
-            </p>
+          <div class="grid gap-4 md:grid-cols-2">
+            <div class="rounded-[1.7rem] bg-amber-50 p-5">
+              <p class="text-xs font-black uppercase tracking-[0.18em] text-amber-700">Admin</p>
+              <p class="mt-3 text-lg font-black text-slate-900">Database-managed catalog, approvals, inventory, and branch control.</p>
+            </div>
+            <div class="rounded-[1.7rem] bg-white p-5">
+              <p class="text-xs font-black uppercase tracking-[0.18em] text-slate-400">Crew</p>
+              <p class="mt-3 text-lg font-black text-slate-900">Prep lists, check-in control, and event-floor updates in one view.</p>
+            </div>
           </div>
         </div>
       </div>

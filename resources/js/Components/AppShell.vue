@@ -79,6 +79,22 @@ const roleLabel = computed(() => {
   return `${String(user.value.role).charAt(0).toUpperCase()}${String(user.value.role).slice(1)} workspace`
 })
 
+const workspaceSubtitle = computed(() => {
+  if (!user.value) {
+    return 'Browse event packages, compare branches, and sign in when you are ready to book.'
+  }
+
+  if (['admin', 'manager'].includes(user.value.role)) {
+    return 'Coordinate bookings, catalog data, branches, inventory, and event execution from one command center.'
+  }
+
+  if (user.value.role === 'staff') {
+    return 'Handle check-ins, preparation lists, and active event operations with a cleaner floor view.'
+  }
+
+  return 'Track reservations, payment review, schedule updates, and event details from your personal dashboard.'
+})
+
 const userInitials = computed(() => {
   const name = user.value?.name ?? 'Guest'
 
@@ -116,6 +132,7 @@ const isLinkActive = (link) => {
         <div class="mcd-sidebar__meta">
           <p class="mcd-chip">Reservation OS</p>
           <h2>McDonald&apos;s event booking platform.</h2>
+          <p class="mcd-sidebar__subtitle">Premium guest booking, cleaner branch operations, and one connected reservation workflow.</p>
         </div>
 
         <nav class="mcd-sidebar__nav">
@@ -130,6 +147,13 @@ const isLinkActive = (link) => {
             <span>{{ link.label }}</span>
           </Link>
         </nav>
+
+        <div class="mcd-sidebar__footer">
+          <p class="mcd-sidebar__footer-label">Signature Service</p>
+          <p class="mcd-sidebar__footer-copy">
+            Database-backed bookings, clean approvals, and fast-moving crew execution styled in a McDonald&apos;s-inspired workspace.
+          </p>
+        </div>
       </aside>
 
       <div class="mcd-main">
@@ -137,6 +161,7 @@ const isLinkActive = (link) => {
           <div class="mcd-toolbar__copy">
             <p class="mcd-toolbar__eyebrow">{{ roleLabel }}</p>
             <p class="mcd-toolbar__title">{{ props.title }}</p>
+            <p class="mcd-toolbar__subtitle">{{ workspaceSubtitle }}</p>
           </div>
 
           <div class="mcd-toolbar__actions">

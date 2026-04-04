@@ -7,6 +7,10 @@ defineProps({
     type: String,
     default: 'Welcome',
   },
+  panelSize: {
+    type: String,
+    default: 'default',
+  },
   eyebrow: {
     type: String,
     default: 'McDonald\'s Reservations',
@@ -30,23 +34,25 @@ defineProps({
 
     <div class="auth-shell__frame">
       <section class="auth-shell__hero">
-        <Link href="/" prefetch class="auth-shell__brand">
-          <span class="auth-shell__brand-mark">M</span>
-          <span>
-            <strong>McDonald's Reservations</strong>
-            <small>Fast bookings for guests, managers, and crew</small>
-          </span>
-        </Link>
+        <div class="auth-shell__hero-stack">
+          <Link href="/" prefetch class="auth-shell__brand">
+            <span class="auth-shell__brand-mark">M</span>
+            <span>
+              <strong>McDonald's Reservations</strong>
+              <small>Fast bookings for guests, managers, and crew</small>
+            </span>
+          </Link>
 
-        <div class="auth-shell__copy">
-          <p class="auth-shell__eyebrow">{{ eyebrow }}</p>
-          <h1>{{ heading }}</h1>
-          <p class="auth-shell__description">{{ description }}</p>
+          <div class="auth-shell__copy">
+            <p class="auth-shell__eyebrow">{{ eyebrow }}</p>
+            <h1>{{ heading }}</h1>
+            <p class="auth-shell__description">{{ description }}</p>
+          </div>
         </div>
       </section>
 
       <section class="auth-shell__panel">
-        <div class="auth-shell__panel-inner">
+        <div class="auth-shell__panel-inner" :class="{ 'auth-shell__panel-inner--wide': panelSize === 'wide' }">
           <slot />
         </div>
       </section>

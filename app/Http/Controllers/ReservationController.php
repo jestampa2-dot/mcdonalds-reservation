@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\AddOn;
 use App\Models\BookingPackage;
+use App\Models\BookingSetting;
 use App\Models\Branch;
 use App\Models\BranchInventoryItem;
 use App\Models\EventType;
@@ -13,6 +14,7 @@ use App\Models\MenuItem;
 use App\Models\MenuItemOption;
 use App\Models\PricingSetting;
 use App\Models\Reservation;
+use App\Models\RoomOption;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -58,12 +60,12 @@ class ReservationController extends Controller
 
         return Inertia::render('Reservations/Create', [
             'catalog' => $catalog,
-            'roomChoices' => $this->roomChoices(),
+            'roomChoices' => $catalog['roomChoices'],
             'availability' => $this->availabilityPayload($catalog, 366),
             'defaults' => [
                 'event_date' => now()->addDays(3)->toDateString(),
                 'event_time' => '10:00',
-                'duration_hours' => 4,
+                'duration_hours' => (int) ($catalog['bookingWindow']['default_duration_hours'] ?? 4),
                 'room_choice' => $this->defaultRoomChoice('birthday'),
             ],
         ]);
@@ -83,7 +85,7 @@ class ReservationController extends Controller
             'event_time' => ['required', Rule::in($catalog['slotOptions'])],
             'event_end_time' => ['nullable', 'date_format:H:i'],
             'duration_hours' => ['required', 'integer', 'min:1'],
-            'room_choice' => ['required', Rule::in(collect($this->roomChoices())->pluck('code')->all())],
+            'room_choice' => ['required', Rule::in(collect($catalog['roomChoices'])->pluck('code')->all())],
             'guests' => ['required', 'integer', 'min:2', 'max:60'],
             'package_code' => ['required', 'string'],
             'menu_bundles' => ['array'],
@@ -127,8 +129,8 @@ class ReservationController extends Controller
 
         if (! $this->isDurationWindowValid($validated['event_time'], (int) $validated['duration_hours'])) {
             return back()->withErrors([
-                'event_time' => 'Reservations must fit within the event booking window of 7:00 AM to 11:00 PM.',
-            ])->with('error', 'Choose a start and end time that stays between 7:00 AM and 11:00 PM.')->withInput();
+                'event_time' => 'Reservations must fit within the event booking window of '.$this->bookingWindowLabel().'.',
+            ])->with('error', 'Choose a start and end time that stays between '.$this->bookingWindowLabel().'.')->withInput();
         }
 
         if (! $this->isSlotAvailable($validated['branch_code'], $validated['event_date'], $validated['event_time'], (int) $validated['duration_hours'])) {
@@ -169,7 +171,7 @@ class ReservationController extends Controller
             'reservation_type' => $validated['event_type'],
             'package_name' => $package['name'],
             'package_code' => $package['code'],
-            'room_choice' => collect($this->roomChoices())->firstWhere('code', $validated['room_choice'])['label'] ?? $validated['room_choice'],
+            'room_choice' => collect($catalog['roomChoices'])->firstWhere('code', $validated['room_choice'])['label'] ?? $validated['room_choice'],
             'food_package' => $this->foodPackageSummary($menuBundles, $manualMenuItems),
             'beverage_package' => $this->beveragePackageSummary($menuBundles, $manualMenuItems),
             'event_materials' => collect($addOns)->pluck('name')->implode(', '),
@@ -334,6 +336,8 @@ class ReservationController extends Controller
                     ])->values(),
                 collect()
             ),
+            'roomOptions' => $this->roomChoices(true),
+            'bookingSettings' => $this->bookingWindowSettings(),
         ]);
     }
 
@@ -440,8 +444,8 @@ class ReservationController extends Controller
 
         if (! $this->isDurationWindowValid($validated['event_time'], $durationHours)) {
             return back()->withErrors([
-                'event_time' => 'Reservations must fit within the event booking window of 7:00 AM to 11:00 PM.',
-            ])->with('error', 'Choose a start and end time that stays between 7:00 AM and 11:00 PM.');
+                'event_time' => 'Reservations must fit within the event booking window of '.$this->bookingWindowLabel().'.',
+            ])->with('error', 'Choose a start and end time that stays between '.$this->bookingWindowLabel().'.');
         }
 
         if (! $this->isSlotAvailable($reservation->branch_code, $validated['event_date'], $validated['event_time'], $durationHours, $reservation->id)) {
@@ -562,6 +566,72 @@ class ReservationController extends Controller
         return back()->with('success', 'Package updated.');
     }
 
+    public function storeRoomOption(Request $request): RedirectResponse
+    {
+        $this->authorizeRoles($request, ['admin', 'manager']);
+
+        $validated = $request->validate([
+            'label' => ['required', 'string', 'max:255'],
+            'description' => ['required', 'string', 'max:1000'],
+            'preferred_event_type' => ['nullable', Rule::in(array_keys($this->catalog()['eventTypes']))],
+        ]);
+
+        RoomOption::create([
+            'code' => Str::slug($validated['label']),
+            'label' => $validated['label'],
+            'description' => $validated['description'],
+            'preferred_event_type' => $validated['preferred_event_type'] ?? null,
+            'sort_order' => ((int) RoomOption::query()->max('sort_order')) + 1,
+            'is_active' => true,
+        ]);
+
+        return back()->with('success', 'Room option added.');
+    }
+
+    public function updateRoomOption(Request $request, RoomOption $roomOption): RedirectResponse
+    {
+        $this->authorizeRoles($request, ['admin', 'manager']);
+
+        $validated = $request->validate([
+            'label' => ['required', 'string', 'max:255'],
+            'description' => ['required', 'string', 'max:1000'],
+            'preferred_event_type' => ['nullable', Rule::in(array_keys($this->catalog()['eventTypes']))],
+            'is_active' => ['required', 'boolean'],
+        ]);
+
+        $roomOption->update([
+            'label' => $validated['label'],
+            'description' => $validated['description'],
+            'preferred_event_type' => $validated['preferred_event_type'] ?? null,
+            'is_active' => $validated['is_active'],
+        ]);
+
+        return back()->with('success', 'Room option updated.');
+    }
+
+    public function updateBookingSettings(Request $request): RedirectResponse
+    {
+        $this->authorizeRoles($request, ['admin', 'manager']);
+
+        $validated = $request->validate([
+            'opening_hour' => ['required', 'integer', 'min:0', 'max:22'],
+            'closing_hour' => ['required', 'integer', 'min:1', 'max:23', 'gt:opening_hour'],
+            'default_duration_hours' => ['required', 'integer', 'min:1', 'max:16'],
+        ]);
+
+        BookingSetting::updateOrCreate(
+            ['id' => 1],
+            [
+                'opening_hour' => $validated['opening_hour'],
+                'closing_hour' => $validated['closing_hour'],
+                'default_duration_hours' => $validated['default_duration_hours'],
+                'is_active' => true,
+            ]
+        );
+
+        return back()->with('success', 'Booking hours updated.');
+    }
+
     public function storeBranch(Request $request): RedirectResponse
     {
         $this->authorizeRoles($request, ['admin', 'manager']);
@@ -676,7 +746,7 @@ class ReservationController extends Controller
         }
 
         if (! $this->isDurationWindowValid($reservation->event_time, (int) $validated['duration_hours'])) {
-            return back()->with('error', 'The updated duration must stay within the 7:00 AM to 11:00 PM booking window.');
+            return back()->with('error', 'The updated duration must stay within the '.$this->bookingWindowLabel().' booking window.');
         }
 
         $catalog = $this->catalog();
@@ -841,6 +911,8 @@ class ReservationController extends Controller
                             'price' => (float) $addOn->price,
                         ])->values()->all(),
                     'menuCategories' => $this->menuCategoryCatalog(),
+                    'roomChoices' => $this->roomChoices(),
+                    'bookingWindow' => $this->bookingWindowSettings(),
                     'slotOptions' => $this->slotOptions(),
                     'pricing' => [
                         'weekend_multiplier' => (float) ($pricing?->weekend_multiplier ?? 1.15),
@@ -863,6 +935,8 @@ class ReservationController extends Controller
             'menuBundles' => config('booking.menu_bundles'),
             'addOns' => config('booking.add_ons'),
             'menuCategories' => [],
+            'roomChoices' => $this->roomChoices(),
+            'bookingWindow' => $this->bookingWindowSettings(),
             'slotOptions' => $this->slotOptions(),
             'pricing' => config('booking.pricing'),
         ];
@@ -962,11 +1036,37 @@ class ReservationController extends Controller
             && $this->runDatabaseCheck(fn () => EventType::query()->exists(), false);
     }
 
+    protected function bookingWindowSettings(): array
+    {
+        if ($this->hasTableSafely('booking_settings')) {
+            $setting = $this->runDatabaseCheck(
+                fn () => BookingSetting::query()->where('is_active', true)->latest('id')->first(),
+                null
+            );
+
+            if ($setting) {
+                return [
+                    'opening_hour' => (int) $setting->opening_hour,
+                    'closing_hour' => (int) $setting->closing_hour,
+                    'default_duration_hours' => (int) $setting->default_duration_hours,
+                ];
+            }
+        }
+
+        return [
+            'opening_hour' => 7,
+            'closing_hour' => 23,
+            'default_duration_hours' => 4,
+        ];
+    }
+
     protected function slotOptions(): array
     {
+        $settings = $this->bookingWindowSettings();
+
         return array_map(
             fn ($hour) => str_pad((string) $hour, 2, '0', STR_PAD_LEFT).':00',
-            range(7, 22)
+            range($settings['opening_hour'], max($settings['opening_hour'], $settings['closing_hour'] - 1))
         );
     }
 
@@ -1398,34 +1498,71 @@ class ReservationController extends Controller
             ->implode(', ') ?: 'Custom drink items can be added in the menu board';
     }
 
-    protected function roomChoices(): array
+    protected function roomChoices(bool $includeInactive = false): array
     {
+        if ($this->hasTableSafely('room_options')) {
+            $roomOptions = $this->runDatabaseCheck(
+                fn () => RoomOption::query()
+                    ->when(! $includeInactive, fn ($query) => $query->where('is_active', true))
+                    ->orderBy('sort_order')
+                    ->orderBy('label')
+                    ->get(),
+                collect()
+            );
+
+            if ($roomOptions->isNotEmpty()) {
+                return $roomOptions->map(fn (RoomOption $roomOption) => [
+                    'id' => $roomOption->id,
+                    'code' => $roomOption->code,
+                    'label' => $roomOption->label,
+                    'description' => $roomOption->description,
+                    'preferred_event_type' => $roomOption->preferred_event_type,
+                    'is_active' => $roomOption->is_active,
+                ])->values()->all();
+            }
+        }
+
         return [
             [
                 'code' => 'birthday-party-room',
                 'label' => 'Birthday Party Room',
                 'description' => 'A decorated party room for birthday celebrations and family events.',
+                'preferred_event_type' => 'birthday',
+                'is_active' => true,
             ],
             [
                 'code' => 'function-room',
                 'label' => 'Function Room',
                 'description' => 'A flexible function room for meetings, gatherings, and reserved events.',
+                'preferred_event_type' => 'business',
+                'is_active' => true,
             ],
             [
                 'code' => 'whole-mcdonalds-room',
                 'label' => 'Whole McDonald\'s Room',
                 'description' => 'A full-space rental setup for bigger private events and store takeovers.',
+                'preferred_event_type' => 'table',
+                'is_active' => true,
             ],
         ];
     }
 
     protected function defaultRoomChoice(string $eventType): string
     {
-        return match ($eventType) {
-            'business' => 'function-room',
-            'table' => 'function-room',
-            default => 'birthday-party-room',
-        };
+        $roomOptions = collect($this->roomChoices());
+
+        return $roomOptions->firstWhere('preferred_event_type', $eventType)['code']
+            ?? $roomOptions->first()['code']
+            ?? 'birthday-party-room';
+    }
+
+    protected function bookingWindowLabel(): string
+    {
+        $settings = $this->bookingWindowSettings();
+
+        return $this->formatTimeLabel(str_pad((string) $settings['opening_hour'], 2, '0', STR_PAD_LEFT).':00')
+            .' to '
+            .$this->formatTimeLabel(str_pad((string) $settings['closing_hour'], 2, '0', STR_PAD_LEFT).':00');
     }
 
     protected function adminStats($bookings): array
@@ -1874,9 +2011,10 @@ SVG;
 
     protected function isDurationWindowValid(string $time, int $durationHours): bool
     {
+        $settings = $this->bookingWindowSettings();
         $startMinutes = ((int) substr($time, 0, 2) * 60) + (int) substr($time, 3, 2);
-        $openingMinutes = 7 * 60;
-        $closingMinutes = 23 * 60;
+        $openingMinutes = $settings['opening_hour'] * 60;
+        $closingMinutes = $settings['closing_hour'] * 60;
         $endMinutes = $startMinutes + ($durationHours * 60);
 
         return $startMinutes >= $openingMinutes && $endMinutes <= $closingMinutes;

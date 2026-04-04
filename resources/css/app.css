@@ -7,14 +7,16 @@
     --mcd-red: #da291c;
     --mcd-red-deep: #9f1914;
     --mcd-gold: #ffc72c;
+    --mcd-gold-deep: #d89a00;
     --mcd-cream: #fff7e6;
     --mcd-charcoal: #1f1f1f;
     --mcd-ink: #241714;
-    --mcd-surface: rgba(255, 255, 255, 0.84);
-    --mcd-surface-strong: rgba(255, 255, 255, 0.96);
+    --mcd-night: #150906;
+    --mcd-surface: rgba(255, 255, 255, 0.86);
+    --mcd-surface-strong: rgba(255, 255, 255, 0.98);
     --mcd-line: rgba(36, 23, 20, 0.09);
-    --mcd-shadow: 0 22px 44px rgba(89, 54, 20, 0.11);
-    --mcd-sidebar: linear-gradient(180deg, rgba(28, 18, 16, 0.98), rgba(49, 28, 20, 0.96));
+    --mcd-shadow: 0 26px 54px rgba(89, 54, 20, 0.13);
+    --mcd-sidebar: linear-gradient(180deg, rgba(20, 8, 7, 0.995), rgba(53, 17, 11, 0.985) 52%, rgba(82, 24, 13, 0.965));
   }
 
   html {
@@ -23,9 +25,9 @@
 
   body {
     background:
-      radial-gradient(circle at top right, rgba(255, 199, 44, 0.32), transparent 30%),
-      radial-gradient(circle at 20% 0%, rgba(218, 41, 28, 0.14), transparent 28%),
-      linear-gradient(180deg, #fff9ef 0%, #fff2d7 100%);
+      radial-gradient(circle at top right, rgba(255, 199, 44, 0.3), transparent 28%),
+      radial-gradient(circle at 20% 0%, rgba(218, 41, 28, 0.14), transparent 26%),
+      linear-gradient(180deg, #fff9ef 0%, #fff3de 58%, #ffeccc 100%);
     color: var(--mcd-charcoal);
     font-family: "Trebuchet MS", "Segoe UI", sans-serif;
   }
@@ -51,9 +53,11 @@
     position: absolute;
     inset: 0;
     background:
-      radial-gradient(circle at top right, rgba(255, 199, 44, 0.18), transparent 28%),
+      radial-gradient(circle at top right, rgba(255, 199, 44, 0.22), transparent 24%),
+      radial-gradient(circle at 0% 0%, rgba(218, 41, 28, 0.1), transparent 18%),
       linear-gradient(135deg, rgba(218, 41, 28, 0.1), transparent 42%),
       linear-gradient(315deg, rgba(255, 199, 44, 0.18), transparent 40%);
+    opacity: 0.95;
     pointer-events: none;
   }
 
@@ -80,8 +84,8 @@
     border-radius: 2rem;
     background: var(--mcd-sidebar);
     color: white;
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    box-shadow: 0 25px 70px rgba(22, 8, 6, 0.22);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 28px 80px rgba(22, 8, 6, 0.28);
     overflow: hidden;
   }
 
@@ -96,7 +100,7 @@
 
   .mcd-brand strong {
     display: block;
-    font-size: 1.05rem;
+    font-size: 1.08rem;
   }
 
   .mcd-brand small {
@@ -122,15 +126,16 @@
     padding: 1.1rem;
     border-radius: 1.6rem;
     background:
-      linear-gradient(145deg, rgba(255, 199, 44, 0.18), rgba(255, 255, 255, 0.06)),
+      radial-gradient(circle at top right, rgba(255, 199, 44, 0.22), transparent 38%),
+      linear-gradient(145deg, rgba(255, 199, 44, 0.18), rgba(255, 255, 255, 0.04)),
       rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.1);
   }
 
   .mcd-sidebar__meta h2 {
     margin-top: 0.9rem;
-    font-size: 1.6rem;
-    line-height: 1.1;
+    font-size: 1.75rem;
+    line-height: 1.05;
   }
 
   .mcd-sidebar__subtitle {
@@ -156,7 +161,7 @@
     color: rgba(255, 255, 255, 0.9);
     text-decoration: none;
     border: 1px solid transparent;
-    background: rgba(255, 255, 255, 0.04);
+    background: rgba(255, 255, 255, 0.035);
     transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
   }
 
@@ -174,7 +179,8 @@
   .mcd-sidebar__link.is-active {
     transform: translateY(-1px);
     border-color: rgba(255, 199, 44, 0.35);
-    background: linear-gradient(135deg, rgba(255, 199, 44, 0.16), rgba(255, 255, 255, 0.08));
+    background: linear-gradient(135deg, rgba(255, 199, 44, 0.18), rgba(255, 255, 255, 0.08));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
   }
 
   .mcd-sidebar__link.is-active small {
@@ -185,8 +191,8 @@
     margin-top: auto;
     padding: 1rem 1.05rem;
     border-radius: 1.5rem;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.04));
+    border: 1px solid rgba(255, 255, 255, 0.1);
   }
 
   .mcd-sidebar__footer-label {
@@ -215,9 +221,11 @@
     gap: 1rem;
     padding: 1rem 1.1rem;
     border-radius: 1.85rem;
-    background: rgba(255, 255, 255, 0.76);
-    border: 1px solid rgba(255, 255, 255, 0.7);
-    box-shadow: 0 14px 30px rgba(89, 54, 20, 0.08);
+    background:
+      radial-gradient(circle at top right, rgba(255, 199, 44, 0.16), transparent 28%),
+      rgba(255, 255, 255, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.78);
+    box-shadow: 0 18px 38px rgba(89, 54, 20, 0.1);
     backdrop-filter: blur(20px);
   }
 
@@ -243,8 +251,8 @@
 
   .mcd-toolbar__subtitle {
     margin-top: 0.6rem;
-    color: rgba(36, 23, 20, 0.72);
-    line-height: 1.7;
+    color: rgba(36, 23, 20, 0.7);
+    line-height: 1.75;
   }
 
   .mcd-toolbar__actions {
@@ -273,7 +281,7 @@
     gap: 0.75rem;
     padding: 0.6rem 0.9rem;
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.88);
+    background: rgba(255, 255, 255, 0.9);
     border: 1px solid rgba(36, 23, 20, 0.08);
   }
 
@@ -330,17 +338,18 @@
     padding: 2.15rem;
     border-radius: 2rem;
     background:
-      radial-gradient(circle at top right, rgba(255, 199, 44, 0.2), transparent 30%),
-      linear-gradient(135deg, rgba(218, 41, 28, 0.98), rgba(247, 120, 45, 0.96)),
+      radial-gradient(circle at top right, rgba(255, 212, 91, 0.3), transparent 26%),
+      linear-gradient(130deg, rgba(115, 18, 12, 0.98), rgba(218, 41, 28, 0.97) 48%, rgba(247, 120, 45, 0.94)),
       linear-gradient(120deg, rgba(255, 255, 255, 0.16), transparent);
     color: white;
-    box-shadow: 0 28px 60px rgba(159, 25, 20, 0.2);
+    box-shadow: 0 34px 70px rgba(159, 25, 20, 0.24);
   }
 
   .mcd-panel {
     border-radius: 1.5rem;
-    background: var(--mcd-surface);
-    border: 1px solid rgba(255, 255, 255, 0.65);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 250, 243, 0.88));
+    border: 1px solid rgba(255, 255, 255, 0.72);
     box-shadow: var(--mcd-shadow);
     backdrop-filter: blur(18px);
   }
@@ -379,7 +388,9 @@
   .mcd-metric-card {
     padding: 1.35rem;
     border-radius: 1.5rem;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(255, 248, 236, 0.88));
+    background:
+      radial-gradient(circle at top right, rgba(255, 199, 44, 0.16), transparent 34%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 248, 236, 0.9));
     border: 1px solid rgba(255, 255, 255, 0.72);
     box-shadow: 0 16px 26px rgba(89, 54, 20, 0.08);
   }
@@ -411,7 +422,9 @@
     gap: 0.8rem;
     padding: 1.5rem;
     border-radius: 1.7rem;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(255, 251, 244, 0.88));
+    background:
+      radial-gradient(circle at top right, rgba(255, 199, 44, 0.12), transparent 32%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 251, 244, 0.9));
     border: 1px solid rgba(255, 255, 255, 0.72);
     box-shadow: 0 18px 26px rgba(89, 54, 20, 0.08);
   }
@@ -423,7 +436,7 @@
     gap: 0.5rem;
     padding: 0.9rem 1.2rem;
     border-radius: 999px;
-    background: var(--mcd-red);
+    background: linear-gradient(135deg, #cf2419, #f36d27);
     color: white;
     font-weight: 800;
     text-decoration: none;
@@ -434,7 +447,7 @@
 
   .mcd-button:hover {
     transform: translateY(-1px);
-    box-shadow: 0 10px 20px rgba(218, 41, 28, 0.22);
+    box-shadow: 0 14px 26px rgba(218, 41, 28, 0.24);
   }
 
   .mcd-button--secondary {
@@ -443,7 +456,7 @@
   }
 
   .mcd-button--ghost {
-    background: transparent;
+    background: rgba(255, 255, 255, 0.6);
     color: var(--mcd-charcoal);
     border: 1px solid rgba(31, 31, 31, 0.12);
   }
@@ -1072,13 +1085,20 @@
   .auth-shell__hero {
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
-    gap: 2rem;
+    justify-content: center;
     padding: 2.5rem;
     color: white;
     background:
       linear-gradient(145deg, rgba(20, 8, 7, 0.62), rgba(20, 8, 7, 0.18)),
       radial-gradient(circle at top right, rgba(255, 199, 44, 0.2), transparent 30%);
+  }
+
+  .auth-shell__hero-stack {
+    display: grid;
+    align-content: center;
+    gap: clamp(2.25rem, 7vh, 5rem);
+    width: min(100%, 36rem);
+    min-height: 100%;
   }
 
   .auth-shell__brand {
@@ -1122,17 +1142,17 @@
 
   .auth-shell__copy h1 {
     margin-top: 1rem;
-    max-width: 11ch;
-    font-size: clamp(3rem, 4vw, 4.8rem);
-    line-height: 0.98;
+    max-width: 12ch;
+    font-size: clamp(2.8rem, 4vw, 4.6rem);
+    line-height: 1;
   }
 
   .auth-shell__description {
     margin-top: 1.25rem;
-    max-width: 36rem;
+    max-width: 34rem;
     color: rgba(255, 255, 255, 0.82);
-    font-size: 1.05rem;
-    line-height: 1.8;
+    font-size: 1rem;
+    line-height: 1.7;
   }
 
   .auth-shell__feature-grid {
@@ -1186,7 +1206,7 @@
 
   .auth-shell__panel {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
     padding: 2rem;
     background:
@@ -1194,13 +1214,17 @@
   }
 
   .auth-shell__panel-inner {
-    width: min(100%, 34rem);
+    width: min(100%, 36rem);
     border-radius: 2rem;
     background: rgba(255, 255, 255, 0.8);
     padding: 2.1rem;
     border: 1px solid rgba(31, 31, 31, 0.08);
     box-shadow: 0 18px 40px rgba(31, 31, 31, 0.08);
     backdrop-filter: blur(10px);
+  }
+
+  .auth-shell__panel-inner--wide {
+    width: min(100%, 48rem);
   }
 }
 
@@ -1268,6 +1292,11 @@
   .auth-shell__hero,
   .auth-shell__panel {
     padding: 1.5rem;
+  }
+
+  .auth-shell__hero-stack {
+    gap: 1.75rem;
+    width: 100%;
   }
 
   .auth-shell__feature-grid,

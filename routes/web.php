@@ -34,6 +34,9 @@ Route::middleware('auth')->group(function () {
     Route::post('/admin/inventory-items/{inventoryItem}', [ReservationController::class, 'updateInventoryItem'])->name('admin.inventory-items.update');
     Route::post('/admin/event-types/{eventType}', [ReservationController::class, 'updateEventType'])->name('admin.event-types.update');
     Route::post('/admin/packages/{package}', [ReservationController::class, 'updatePackage'])->name('admin.packages.update');
+    Route::post('/admin/room-options', [ReservationController::class, 'storeRoomOption'])->name('admin.room-options.store');
+    Route::post('/admin/room-options/{roomOption}', [ReservationController::class, 'updateRoomOption'])->name('admin.room-options.update');
+    Route::post('/admin/booking-settings', [ReservationController::class, 'updateBookingSettings'])->name('admin.booking-settings.update');
 
     Route::get('/staff/dashboard', [ReservationController::class, 'staffDashboard'])->name('staff.dashboard');
     Route::post('/staff/check-in', [ReservationController::class, 'checkIn'])->name('staff.check-in');

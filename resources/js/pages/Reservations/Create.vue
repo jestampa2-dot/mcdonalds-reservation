@@ -150,16 +150,20 @@ const startDateLabel = computed(() => {
   })
 })
 const additionalHours = computed(() => Math.max(Number(form.duration_hours) - 4, 0))
+const bookingWindowLabel = computed(() => {
+  const openingHour = Number(props.catalog.bookingWindow?.opening_hour ?? 7)
+  const closingHour = Number(props.catalog.bookingWindow?.closing_hour ?? 23)
+
+  return `${formatTimeLabel(`${String(openingHour).padStart(2, '0')}:00`)} to ${formatTimeLabel(`${String(closingHour).padStart(2, '0')}:00`)}`
+})
 
 const formatCurrency = (value) =>
   `\u20B1${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 const defaultRoomChoiceForEventType = (eventType) => {
-  if (eventType === 'business' || eventType === 'table') {
-    return 'function-room'
-  }
-
-  return 'birthday-party-room'
+  return props.roomChoices.find((item) => item.preferred_event_type === eventType)?.code
+    ?? props.roomChoices[0]?.code
+    ?? ''
 }
 
 const scrollToSection = (id) => {
@@ -573,7 +577,7 @@ const submit = () => {
             <h1 class="mt-4 text-4xl">Plan your party, meeting, or reserved table in one fast flow.</h1>
           </div>
           <div class="rounded-3xl bg-red-50 px-5 py-4 text-sm text-red-800">
-            Flexible reservation hours: choose your own start and end time between 7:00 AM and 11:00 PM.
+            Flexible reservation hours: choose your own start and end time between {{ bookingWindowLabel }}.
           </div>
         </div>
       </div>

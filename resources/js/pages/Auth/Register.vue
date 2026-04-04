@@ -30,24 +30,27 @@ const submit = () => {
 <template>
   <GuestLayout
     title="Create Account"
-    eyebrow="Launch your account"
-    heading="Create a modern reservation workspace for guests, managers, and service crew."
-    description="Register once, then start booking events, tracking approvals, and managing check-ins from a richer desktop experience."
+    panel-size="wide"
+    eyebrow="Account registration"
+    heading="Create your McDonald's reservation account."
+    description="Complete your personal and contact details to access booking, payment review, and account services in one secure workspace."
   >
     <Head title="Create Account" />
 
     <div class="auth-form">
       <div class="auth-form__header">
         <p class="auth-form__eyebrow">Create account</p>
-        <h2>Get started fast</h2>
-        <p>Set up your account to book party packages, business meetings, and table reservations.</p>
+        <h2>Registration form</h2>
+        <p>
+          Please provide accurate personal information so your bookings, approvals, and branch coordination remain complete and verified.
+        </p>
       </div>
 
       <form class="auth-form__body" @submit.prevent="submit">
         <section class="auth-form__section">
           <div>
-            <p class="auth-form__section-label">Personal information</p>
-            <h3>Tell us about yourself</h3>
+            <p class="auth-form__section-label">Personal details</p>
+            <h3>Primary account information</h3>
           </div>
 
           <div class="auth-form__split">
@@ -66,7 +69,7 @@ const submit = () => {
             </div>
 
             <div class="auth-form__field">
-              <InputLabel for="email" value="Email" />
+              <InputLabel for="email" value="Email address" />
               <TextInput
                 id="email"
                 v-model="form.email"
@@ -117,6 +120,13 @@ const submit = () => {
               </select>
               <InputError class="mt-2" :message="form.errors.gender" />
             </div>
+          </div>
+        </section>
+
+        <section class="auth-form__section">
+          <div>
+            <p class="auth-form__section-label">Address details</p>
+            <h3>Residential information</h3>
           </div>
 
           <div class="auth-form__field">
@@ -175,8 +185,8 @@ const submit = () => {
 
         <section class="auth-form__section">
           <div>
-            <p class="auth-form__section-label">Account security</p>
-            <h3>Finish your sign-up</h3>
+            <p class="auth-form__section-label">Security</p>
+            <h3>Create your sign-in credentials</h3>
           </div>
 
           <div class="auth-form__split">
@@ -209,7 +219,7 @@ const submit = () => {
         </section>
 
         <PrimaryButton class="auth-form__submit" :class="{ 'opacity-25': form.processing }" :disabled="form.processing">
-          Create account
+          Submit registration
         </PrimaryButton>
       </form>
 
@@ -224,27 +234,29 @@ const submit = () => {
 <style scoped>
 .auth-form {
   display: grid;
-  gap: 1.5rem;
+  gap: 1.75rem;
 }
 
 .auth-form__header h2 {
-  margin-top: 0.4rem;
-  font-size: 2.4rem;
+  margin-top: 0.35rem;
+  font-size: clamp(2.2rem, 4vw, 3rem);
   color: #1f1f1f;
+  line-height: 1.04;
 }
 
 .auth-form__header p:last-child {
-  margin-top: 0.75rem;
-  color: rgba(31, 31, 31, 0.7);
-  line-height: 1.7;
+  margin-top: 0.9rem;
+  max-width: 46rem;
+  color: rgba(31, 31, 31, 0.68);
+  line-height: 1.8;
 }
 
 .auth-form__eyebrow {
   display: inline-flex;
-  padding: 0.35rem 0.7rem;
+  padding: 0.35rem 0.78rem;
   border-radius: 999px;
-  background: rgba(255, 199, 44, 0.22);
-  color: #9f1914;
+  background: rgba(255, 199, 44, 0.2);
+  color: #b32217;
   font-size: 0.78rem;
   font-weight: 800;
   text-transform: uppercase;
@@ -253,22 +265,23 @@ const submit = () => {
 
 .auth-form__body {
   display: grid;
-  gap: 1.15rem;
+  gap: 1.25rem;
 }
 
 .auth-form__section {
   display: grid;
-  gap: 1rem;
-  padding: 1.1rem;
-  border: 1px solid rgba(31, 31, 31, 0.08);
-  border-radius: 1.4rem;
-  background: rgba(255, 248, 235, 0.7);
+  gap: 1.15rem;
+  padding: 1.4rem;
+  border: 1px solid rgba(159, 25, 20, 0.08);
+  border-radius: 1.5rem;
+  background: linear-gradient(180deg, rgba(255, 252, 245, 0.96), rgba(255, 248, 236, 0.94));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92);
 }
 
 .auth-form__section h3 {
-  margin-top: 0.25rem;
-  font-size: 1.15rem;
-  font-weight: 800;
+  margin-top: 0.2rem;
+  font-size: 1.2rem;
+  font-weight: 700;
   color: #1f1f1f;
 }
 
@@ -292,19 +305,30 @@ const submit = () => {
 
 .auth-form__field {
   display: grid;
-  gap: 0.4rem;
+  gap: 0.45rem;
 }
 
 .auth-form__input {
   width: 100%;
+  min-height: 3.5rem;
   border-radius: 1rem;
   border: 1px solid rgba(31, 31, 31, 0.12);
-  background: rgba(255, 255, 255, 0.96);
+  background: #fffdfa;
   padding: 0.95rem 1rem;
+  color: #1f1f1f;
+  box-shadow: inset 0 1px 2px rgba(31, 31, 31, 0.03);
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+.auth-form__input:focus {
+  border-color: rgba(218, 41, 28, 0.48);
+  box-shadow: 0 0 0 4px rgba(255, 199, 44, 0.18);
+  background: #ffffff;
+  outline: none;
 }
 
 .auth-form__textarea {
-  min-height: 6.8rem;
+  min-height: 7rem;
   resize: vertical;
 }
 
@@ -312,8 +336,9 @@ const submit = () => {
   justify-content: center;
   border-radius: 999px !important;
   background: linear-gradient(135deg, #da291c, #f26b21) !important;
-  padding: 1rem 1.2rem !important;
+  padding: 1rem 1.4rem !important;
   font-size: 1rem !important;
+  letter-spacing: 0.02em;
 }
 
 .auth-form__footer {
@@ -332,11 +357,14 @@ const submit = () => {
   text-decoration: none;
 }
 
-@media (max-width: 760px) {
-  .auth-form__split {
+@media (max-width: 960px) {
+  .auth-form__split,
+  .auth-form__split--three {
     grid-template-columns: 1fr;
   }
+}
 
+@media (max-width: 760px) {
   .auth-form__footer {
     flex-direction: column;
     align-items: flex-start;

@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Models\AddOn;
 use App\Models\BookingPackage;
+use App\Models\BookingSetting;
 use App\Models\Branch;
 use App\Models\BranchHost;
 use App\Models\BranchInventoryItem;
@@ -14,6 +15,7 @@ use App\Models\MenuItem;
 use App\Models\MenuItemOption;
 use App\Models\PricingSetting;
 use App\Models\Reservation;
+use App\Models\RoomOption;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
@@ -97,6 +99,48 @@ class DatabaseSeeder extends Seeder
                 'is_active' => true,
             ]
         );
+
+        BookingSetting::updateOrCreate(
+            ['id' => 1],
+            [
+                'opening_hour' => 7,
+                'closing_hour' => 23,
+                'default_duration_hours' => 4,
+                'is_active' => true,
+            ]
+        );
+
+        collect([
+            [
+                'code' => 'birthday-party-room',
+                'label' => 'Birthday Party Room',
+                'description' => 'A decorated party room for birthday celebrations and family events.',
+                'preferred_event_type' => 'birthday',
+            ],
+            [
+                'code' => 'function-room',
+                'label' => 'Function Room',
+                'description' => 'A flexible function room for meetings, gatherings, and reserved events.',
+                'preferred_event_type' => 'business',
+            ],
+            [
+                'code' => 'whole-mcdonalds-room',
+                'label' => 'Whole McDonald\'s Room',
+                'description' => 'A full-space rental setup for bigger private events and store takeovers.',
+                'preferred_event_type' => 'table',
+            ],
+        ])->each(function (array $roomOption, int $index) {
+            RoomOption::updateOrCreate(
+                ['code' => $roomOption['code']],
+                [
+                    'label' => $roomOption['label'],
+                    'description' => $roomOption['description'],
+                    'preferred_event_type' => $roomOption['preferred_event_type'],
+                    'sort_order' => $index,
+                    'is_active' => true,
+                ]
+            );
+        });
 
         $this->seedMenuCatalog();
 
