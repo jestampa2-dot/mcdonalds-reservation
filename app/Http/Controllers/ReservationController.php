@@ -74,11 +74,9 @@ class ReservationController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $catalog = $this->catalog();
+        $customer = $request->user();
 
         $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'email', 'max:255'],
-            'phone' => ['required', 'string', 'max:50'],
             'event_type' => ['required', Rule::in(array_keys($catalog['eventTypes']))],
             'branch_code' => ['required', Rule::in(array_keys($catalog['branches']))],
             'event_date' => ['required', 'date', 'after_or_equal:today'],
@@ -163,10 +161,10 @@ class ReservationController extends Controller
         );
 
         Reservation::create([
-            'user_id' => $request->user()->id,
-            'name' => $validated['name'],
-            'email' => $validated['email'],
-            'phone' => $validated['phone'],
+            'user_id' => $customer->id,
+            'name' => $customer->name,
+            'email' => $customer->email,
+            'phone' => $customer->phone ?: 'Not provided',
             'booking_reference' => $bookingReference,
             'reservation_type' => $validated['event_type'],
             'package_name' => $package['name'],
@@ -278,9 +276,39 @@ class ReservationController extends Controller
         $this->authorizeRoles($request, ['admin', 'manager']);
 
         $data = $this->adminPageData();
+        $branchCodes = collect($data['availability']['branches'] ?? [])->pluck('code')->filter()->values();
+        $initialBranch = $request->string('branch')->toString();
+        $initialMonth = $request->string('month')->toString();
+
+        if (! $branchCodes->contains($initialBranch)) {
+            $initialBranch = (string) ($branchCodes->first() ?? '');
+        }
+
+        if (! preg_match('/^\d{4}-\d{2}$/', $initialMonth)) {
+            $initialMonth = now()->format('Y-m');
+        }
 
         return Inertia::render('Admin/Availability', [
             'availability' => $data['availability'],
+            'initialBranch' => $initialBranch,
+            'initialMonth' => $initialMonth,
+        ]);
+    }
+
+    public function adminAvailabilityDay(Request $request, string $branchCode, string $date): InertiaResponse
+    {
+        $this->authorizeRoles($request, ['admin', 'manager']);
+
+        $day = $this->availabilityDayPayload($this->catalog(), $branchCode, $date);
+
+        return Inertia::render('Admin/AvailabilityDay', [
+            'dayAvailability' => $day,
+            'returnTo' => [
+                'branch' => $request->string('branch')->toString() ?: $branchCode,
+                'month' => preg_match('/^\d{4}-\d{2}$/', $request->string('month')->toString())
+                    ? $request->string('month')->toString()
+                    : substr($date, 0, 7),
+            ],
         ]);
     }
 
@@ -364,6 +392,7 @@ class ReservationController extends Controller
         return Inertia::render('Admin/Timeline', [
             'notifications' => $data['notifications'],
             'history' => $data['history'],
+            'cancelledEvents' => $data['cancelledEvents'],
         ]);
     }
 
@@ -1173,6 +1202,139 @@ class ReservationController extends Controller
         ];
     }
 
+    protected function availabilityDayPayload(array $catalog, string $branchCode, string $date): array
+    {
+        abort_unless(preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) === 1, 404);
+
+        $branch = collect($catalog['branches'])->firstWhere('code', $branchCode);
+        abort_unless($branch, 404);
+
+        try {
+            $day = Carbon::createFromFormat('Y-m-d', $date, config('app.timezone'))->startOfDay();
+        } catch (Throwable) {
+            abort(404);
+        }
+
+        $reservations = Reservation::query()
+            ->where('branch_code', $branchCode)
+            ->whereDate('event_date', $day->toDateString())
+            ->whereIn('status', ['pending_review', 'confirmed', 'rescheduled', 'checked_in'])
+            ->orderBy('event_time')
+            ->get();
+
+        $roomChoices = collect($this->roomChoices())
+            ->map(fn (array $room) => [
+                'code' => $room['code'],
+                'label' => $room['label'],
+                'description' => $room['description'],
+            ])
+            ->values();
+
+        $roomLabels = $roomChoices
+            ->pluck('label')
+            ->merge($reservations->pluck('room_choice'))
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($roomLabels->isEmpty()) {
+            $roomLabels = collect(['Main event floor']);
+        }
+
+        $roomCards = $roomLabels->map(function (string $label) use ($roomChoices) {
+            $match = $roomChoices->firstWhere('label', $label);
+
+            return [
+                'code' => $match['code'] ?? Str::slug($label),
+                'label' => $label,
+                'description' => $match['description'] ?? 'Room tracked from reservation history.',
+            ];
+        })->values();
+
+        $maxConcurrent = max((int) ($branch['concurrent_limit'] ?? 1), 1);
+
+        $timeSlots = collect($catalog['slotOptions'])->map(function (string $time) use ($reservations, $roomLabels, $maxConcurrent) {
+            $activeReservations = $reservations
+                ->filter(fn (Reservation $reservation) => $this->timeRangesOverlap(
+                    substr($reservation->event_time, 0, 5),
+                    (int) ($reservation->duration_hours ?? 4),
+                    $time,
+                    1
+                ))
+                ->values();
+
+            $occupiedRooms = $roomLabels
+                ->filter(fn (string $label) => $activeReservations->contains(
+                    fn (Reservation $reservation) => ($reservation->room_choice ?: 'Main event floor') === $label
+                ))
+                ->values();
+
+            $remainingCapacity = max($maxConcurrent - $activeReservations->count(), 0);
+            $availableRooms = $remainingCapacity > 0
+                ? $roomLabels->reject(fn (string $label) => $occupiedRooms->contains($label))->values()
+                : collect();
+
+            return [
+                'time' => $time,
+                'label' => $this->formatTimeLabel($time),
+                'range_label' => $this->formatTimeRange($time, 1),
+                'status' => $remainingCapacity === 0
+                    ? 'full'
+                    : ($availableRooms->count() <= 1 ? 'limited' : 'available'),
+                'available_rooms' => $availableRooms->values()->all(),
+                'occupied_rooms' => $occupiedRooms->values()->all(),
+                'remaining_capacity' => $remainingCapacity,
+                'active_events' => $activeReservations->map(fn (Reservation $reservation) => [
+                    'booking_reference' => $reservation->booking_reference,
+                    'customer_name' => $reservation->customer_name,
+                    'room_choice' => $reservation->room_choice ?: 'Main event floor',
+                    'status' => $reservation->status,
+                    'event_time' => $this->formatTimeRange(
+                        substr($reservation->event_time, 0, 5),
+                        (int) ($reservation->duration_hours ?? 4)
+                    ),
+                ])->values()->all(),
+            ];
+        })->values();
+
+        return [
+            'branch' => [
+                'code' => $branch['code'],
+                'name' => $branch['name'],
+                'city' => $branch['city'],
+                'concurrent_limit' => $maxConcurrent,
+            ],
+            'date' => $day->toDateString(),
+            'formatted_date' => $day->translatedFormat('F j, Y'),
+            'weekday' => $day->translatedFormat('l'),
+            'rooms' => $roomCards->map(function (array $room) use ($reservations) {
+                $roomBookings = $reservations
+                    ->filter(fn (Reservation $reservation) => ($reservation->room_choice ?: 'Main event floor') === $room['label'])
+                    ->values();
+
+                return [
+                    'code' => $room['code'],
+                    'label' => $room['label'],
+                    'description' => $room['description'],
+                    'bookings_count' => $roomBookings->count(),
+                    'schedule' => $roomBookings
+                        ->map(fn (Reservation $reservation) => $this->formatTimeRange(
+                            substr($reservation->event_time, 0, 5),
+                            (int) ($reservation->duration_hours ?? 4)
+                        ))
+                        ->values()
+                        ->all(),
+                ];
+            })->values()->all(),
+            'open_slots' => $timeSlots->where('status', '!=', 'full')->count(),
+            'time_slots' => $timeSlots->all(),
+            'bookings' => $reservations
+                ->map(fn (Reservation $reservation) => $this->serializeReservation($reservation))
+                ->values()
+                ->all(),
+        ];
+    }
+
     protected function isSlotAvailable(string $branchCode, string $date, string $time, int $durationHours, ?int $ignoreReservationId = null): bool
     {
         return Reservation::query()
@@ -1320,6 +1482,13 @@ class ReservationController extends Controller
     protected function serializeReservation(Reservation $reservation): array
     {
         $catalog = $this->catalog();
+        $customer = $reservation->relationLoaded('user') ? $reservation->user : null;
+        $customerAddress = collect([
+            $customer?->address_line,
+            $customer?->city,
+            $customer?->province,
+            $customer?->postal_code,
+        ])->filter()->implode(', ');
         $serviceAdjustments = $reservation->service_adjustments ?? ['extra_menu_bundles' => [], 'extra_add_ons' => [], 'extra_manual_menu_items' => []];
         $package = collect($catalog['packages'][$reservation->reservation_type] ?? [])->firstWhere('code', $reservation->package_code)
             ?? ['name' => $reservation->package_name, 'price' => (float) $reservation->total_amount];
@@ -1344,9 +1513,19 @@ class ReservationController extends Controller
         return [
             'id' => $reservation->id,
             'booking_reference' => $reservation->booking_reference,
-            'customer_name' => $reservation->name,
-            'customer_email' => $reservation->email,
-            'customer_phone' => $reservation->phone,
+            'customer_name' => $customer?->name ?: $reservation->name,
+            'customer_email' => $customer?->email ?: $reservation->email,
+            'customer_phone' => $customer?->phone ?: $reservation->phone,
+            'customer_profile' => [
+                'gender' => $customer?->gender,
+                'birth_date' => $customer?->birth_date?->toDateString(),
+                'birth_date_label' => $customer?->birth_date?->format('M d, Y'),
+                'address_line' => $customer?->address_line,
+                'city' => $customer?->city,
+                'province' => $customer?->province,
+                'postal_code' => $customer?->postal_code,
+                'full_address' => $customerAddress,
+            ],
             'event_type' => $reservation->reservation_type,
             'package_name' => $reservation->package_name,
             'room_choice' => $reservation->room_choice,
@@ -1585,7 +1764,11 @@ class ReservationController extends Controller
     protected function adminPageData(): array
     {
         $catalog = $this->catalog();
-        $bookings = Reservation::query()->orderBy('event_date')->orderBy('event_time')->get();
+        $bookings = Reservation::query()
+            ->with(['user', 'assignedStaff'])
+            ->orderBy('event_date')
+            ->orderBy('event_time')
+            ->get();
 
         return [
             'stats' => $this->adminStats($bookings),
@@ -1597,6 +1780,7 @@ class ReservationController extends Controller
                 ->map(fn (Reservation $reservation) => $this->serializeReservation($reservation)),
             'notifications' => $this->upcomingEventNotifications($bookings),
             'history' => $this->eventHistory($bookings),
+            'cancelledEvents' => $this->cancelledEvents($bookings),
             'inventory' => $this->inventorySnapshot($catalog, $bookings),
             'staffAssignments' => $this->staffAssignments($catalog, $bookings),
             'availability' => $this->availabilityPayload($catalog, 366),
@@ -1810,7 +1994,7 @@ class ReservationController extends Controller
                 }
 
                 return $reservation->event_date->copy()->startOfDay()->lessThan($today)
-                    || in_array($reservation->status, ['completed', 'cancelled'], true);
+                    || $reservation->status === 'completed';
             })
             ->sortByDesc(fn (Reservation $reservation) => sprintf(
                 '%s %s',
@@ -1831,6 +2015,33 @@ class ReservationController extends Controller
                 'service_status' => $reservation->service_status,
                 'assigned_staff_name' => $reservation->assignedStaff?->name,
                 'checked_in_by' => $reservation->checked_in_by,
+            ])
+            ->all();
+    }
+
+    protected function cancelledEvents($bookings, int $limit = 10): array
+    {
+        return $bookings
+            ->where('status', 'cancelled')
+            ->sortByDesc(fn (Reservation $reservation) => sprintf(
+                '%s %s',
+                $reservation->event_date?->toDateString() ?? '0000-00-00',
+                $reservation->event_time ?? '00:00:00'
+            ))
+            ->take($limit)
+            ->values()
+            ->map(fn (Reservation $reservation) => [
+                'id' => $reservation->id,
+                'booking_reference' => $reservation->booking_reference,
+                'package_name' => $reservation->package_name,
+                'branch' => $reservation->branch,
+                'event_type' => ucfirst($reservation->reservation_type),
+                'event_date' => $reservation->event_date?->format('M d, Y'),
+                'event_time' => $this->formatTimeRange(substr($reservation->event_time, 0, 5), (int) ($reservation->duration_hours ?? 4)),
+                'status' => $reservation->status,
+                'service_status' => $reservation->service_status,
+                'customer_name' => $reservation->name,
+                'cancelled_note' => $reservation->notes,
             ])
             ->all();
     }

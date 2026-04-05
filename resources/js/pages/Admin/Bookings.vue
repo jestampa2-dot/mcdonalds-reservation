@@ -69,7 +69,7 @@ const refreshBookings = () => {
         <div class="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p class="mcd-chip">Pending bookings</p>
-            <h1 class="mt-4 text-4xl">Review new reservations before they move into confirmed events.</h1>
+            <h1 class="mt-4 text-4xl">Pending bookings</h1>
           </div>
           <button type="button" class="mcd-button mcd-button--ghost" @click="refreshBookings">Refresh list</button>
         </div>
@@ -115,7 +115,8 @@ const refreshBookings = () => {
                           <StatusBadge :value="booking.service_status" />
                         </div>
                         <p class="mt-2 text-sm text-slate-600">{{ booking.package_name }} | {{ booking.event_date }} | {{ booking.event_time }}</p>
-                        <p class="mt-1 text-sm text-slate-500">Customer: {{ booking.customer_name }} | {{ booking.customer_phone }}</p>
+                        <p class="mt-1 text-sm text-slate-500">Customer: {{ booking.customer_name }}</p>
+                        <p class="mt-1 text-sm text-slate-500">Contact: {{ booking.customer_email }} | {{ booking.customer_phone }}</p>
                         <p class="mt-1 text-sm text-slate-500">Duration: {{ booking.duration_hours }} hours</p>
                         <p v-if="booking.manual_menu_items?.length" class="mt-1 text-sm text-slate-500">
                           Manual tray: {{ booking.manual_menu_items.slice(0, 3).map((item) => `${item.quantity} x ${item.item_name}`).join(', ') }}<span v-if="booking.manual_menu_items.length > 3"> and {{ booking.manual_menu_items.length - 3 }} more</span>
@@ -123,8 +124,19 @@ const refreshBookings = () => {
 
                         <div class="mt-4 grid gap-4 lg:grid-cols-[1fr,0.95fr]">
                           <div class="rounded-2xl bg-white p-4 text-sm">
-                            <p class="font-black uppercase tracking-[0.15em] text-red-700">Customer notes</p>
-                            <p class="mt-3 text-slate-600">{{ booking.notes || 'No special notes provided.' }}</p>
+                            <p class="font-black uppercase tracking-[0.15em] text-red-700">Customer details</p>
+                            <div class="mt-3 space-y-1 text-slate-600">
+                              <p>{{ booking.customer_name }}</p>
+                              <p>{{ booking.customer_email }}</p>
+                              <p>{{ booking.customer_phone }}</p>
+                              <p v-if="booking.customer_profile?.gender">Gender: {{ booking.customer_profile.gender }}</p>
+                              <p v-if="booking.customer_profile?.birth_date_label">Birth date: {{ booking.customer_profile.birth_date_label }}</p>
+                              <p v-if="booking.customer_profile?.full_address">Address: {{ booking.customer_profile.full_address }}</p>
+                            </div>
+                            <div class="mt-4 rounded-2xl bg-amber-50 p-3">
+                              <p class="text-xs font-black uppercase tracking-[0.15em] text-red-700">Special notes</p>
+                              <p class="mt-2 text-slate-600">{{ booking.notes || 'None' }}</p>
+                            </div>
                           </div>
                           <div class="rounded-2xl bg-white p-4 text-sm">
                             <div class="flex items-center justify-between gap-3">
@@ -142,7 +154,7 @@ const refreshBookings = () => {
                       </div>
 
                       <div class="space-y-3">
-                        <p class="text-sm font-black uppercase tracking-[0.15em] text-red-700">Approve booking</p>
+                        <p class="text-sm font-black uppercase tracking-[0.15em] text-red-700">Status</p>
                         <select v-model="statusState[booking.id]" class="mcd-select">
                           <option value="pending_review">pending review</option>
                           <option value="confirmed">confirmed</option>
@@ -152,7 +164,7 @@ const refreshBookings = () => {
                       </div>
 
                       <div class="space-y-3">
-                        <p class="text-sm font-black uppercase tracking-[0.15em] text-red-700">Crew and adjustments</p>
+                        <p class="text-sm font-black uppercase tracking-[0.15em] text-red-700">Crew and edits</p>
                         <select v-model="crewState[booking.id]" class="mcd-select">
                           <option value="">Unassigned</option>
                           <option v-for="staff in staffUsers" :key="staff.id" :value="staff.id">{{ staff.name }} ({{ staff.role }})</option>
@@ -189,7 +201,7 @@ const refreshBookings = () => {
                   </div>
                 </div>
 
-                <div v-else class="mcd-empty mt-4">No pending bookings for this branch and type.</div>
+                <div v-else class="mcd-empty mt-4">No bookings.</div>
               </article>
             </div>
           </section>

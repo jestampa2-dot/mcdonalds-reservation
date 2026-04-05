@@ -1,8 +1,5 @@
 <script setup>
 import InputError from '@/Components/InputError.vue';
-import InputLabel from '@/Components/InputLabel.vue';
-import PrimaryButton from '@/Components/PrimaryButton.vue';
-import TextInput from '@/Components/TextInput.vue';
 import { useForm } from '@inertiajs/vue3';
 import { ref } from 'vue';
 
@@ -34,54 +31,51 @@ const updatePassword = () => {
 </script>
 
 <template>
-    <section>
+    <section class="space-y-6">
         <header>
-            <h2 class="text-lg font-medium text-gray-900">Update Password</h2>
-
-            <p class="mt-1 text-sm text-gray-600">
-                Ensure your account is using a long, random password to stay secure.
-            </p>
+            <p class="text-xs font-black uppercase tracking-[0.18em] text-red-700">Security</p>
+            <h2 class="mt-3 text-3xl font-black text-slate-900">Update Password</h2>
         </header>
 
-        <form @submit.prevent="updatePassword" class="mt-6 space-y-6">
-            <div>
-                <InputLabel for="current_password" value="Current Password" />
+        <form @submit.prevent="updatePassword" class="space-y-6">
+            <div class="grid gap-2">
+                <label for="current_password" class="text-sm font-black uppercase tracking-[0.08em] text-slate-600">Current password</label>
 
-                <TextInput
+                <input
                     id="current_password"
                     ref="currentPasswordInput"
                     v-model="form.current_password"
                     type="password"
-                    class="mt-1 block w-full"
+                    class="mcd-input"
                     autocomplete="current-password"
                 />
 
                 <InputError :message="form.errors.current_password" class="mt-2" />
             </div>
 
-            <div>
-                <InputLabel for="password" value="New Password" />
+            <div class="grid gap-2">
+                <label for="password" class="text-sm font-black uppercase tracking-[0.08em] text-slate-600">New password</label>
 
-                <TextInput
+                <input
                     id="password"
                     ref="passwordInput"
                     v-model="form.password"
                     type="password"
-                    class="mt-1 block w-full"
+                    class="mcd-input"
                     autocomplete="new-password"
                 />
 
                 <InputError :message="form.errors.password" class="mt-2" />
             </div>
 
-            <div>
-                <InputLabel for="password_confirmation" value="Confirm Password" />
+            <div class="grid gap-2">
+                <label for="password_confirmation" class="text-sm font-black uppercase tracking-[0.08em] text-slate-600">Confirm password</label>
 
-                <TextInput
+                <input
                     id="password_confirmation"
                     v-model="form.password_confirmation"
                     type="password"
-                    class="mt-1 block w-full"
+                    class="mcd-input"
                     autocomplete="new-password"
                 />
 
@@ -89,7 +83,7 @@ const updatePassword = () => {
             </div>
 
             <div class="flex items-center gap-4">
-                <PrimaryButton :disabled="form.processing">Save</PrimaryButton>
+                <button type="submit" class="mcd-button" :disabled="form.processing">Save password</button>
 
                 <Transition enter-from-class="opacity-0" leave-to-class="opacity-0" class="transition ease-in-out">
                     <p v-if="form.recentlySuccessful" class="text-sm text-gray-600">Saved.</p>

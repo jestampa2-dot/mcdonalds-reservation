@@ -2,6 +2,22 @@
 import { Link } from '@inertiajs/vue3'
 import FlashToast from '@/Components/FlashToast.vue'
 
+const authPhotos = [
+  {
+    src: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=1200&q=80',
+    alt: 'Stacked burger close-up',
+    featured: true,
+  },
+  {
+    src: 'https://images.unsplash.com/photo-1586190848861-99aa4a171e90?auto=format&fit=crop&w=900&q=80',
+    alt: 'Fast food tray with fries and drinks',
+  },
+  {
+    src: 'https://images.unsplash.com/photo-1550547660-d9450f859349?auto=format&fit=crop&w=900&q=80',
+    alt: 'Restaurant burger presentation',
+  },
+]
+
 defineProps({
   title: {
     type: String,
@@ -17,11 +33,11 @@ defineProps({
   },
   heading: {
     type: String,
-    default: 'Plan and manage reservations with speed.',
+    default: 'Sign in or create an account.',
   },
   description: {
     type: String,
-    default: 'From birthday parties to staff-ready check-ins, keep every booking in one fast-moving system.',
+    default: '',
   },
 })
 </script>
@@ -39,14 +55,25 @@ defineProps({
             <span class="auth-shell__brand-mark">M</span>
             <span>
               <strong>McDonald's Reservations</strong>
-              <small>Fast bookings for guests, managers, and crew</small>
+              <small>Event booking</small>
             </span>
           </Link>
 
           <div class="auth-shell__copy">
             <p class="auth-shell__eyebrow">{{ eyebrow }}</p>
             <h1>{{ heading }}</h1>
-            <p class="auth-shell__description">{{ description }}</p>
+            <p v-if="description" class="auth-shell__description">{{ description }}</p>
+          </div>
+
+          <div class="auth-shell__photo-grid" aria-hidden="true">
+            <article
+              v-for="photo in authPhotos"
+              :key="photo.src"
+              class="auth-shell__photo-card"
+              :class="{ 'auth-shell__photo-card--feature': photo.featured }"
+            >
+              <img :src="photo.src" :alt="photo.alt" class="auth-shell__photo-image" loading="lazy" decoding="async" />
+            </article>
           </div>
         </div>
       </section>

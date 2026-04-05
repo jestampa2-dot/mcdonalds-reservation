@@ -73,26 +73,26 @@ const navLinks = computed(() => {
 
 const roleLabel = computed(() => {
   if (!user.value) {
-    return 'Guest experience'
+    return 'Guest'
   }
 
-  return `${String(user.value.role).charAt(0).toUpperCase()}${String(user.value.role).slice(1)} workspace`
+  return `${String(user.value.role).charAt(0).toUpperCase()}${String(user.value.role).slice(1)}`
 })
 
 const workspaceSubtitle = computed(() => {
   if (!user.value) {
-    return 'Browse event packages, compare branches, and sign in when you are ready to book.'
+    return 'Browse and book.'
   }
 
   if (['admin', 'manager'].includes(user.value.role)) {
-    return 'Coordinate bookings, catalog data, branches, inventory, and event execution from one command center.'
+    return 'Bookings, branches, catalog, and reports.'
   }
 
   if (user.value.role === 'staff') {
-    return 'Handle check-ins, preparation lists, and active event operations with a cleaner floor view.'
+    return 'Check-ins, prep, and floor updates.'
   }
 
-  return 'Track reservations, payment review, schedule updates, and event details from your personal dashboard.'
+  return 'Bookings, payments, and event details.'
 })
 
 const userInitials = computed(() => {
@@ -125,14 +125,12 @@ const isLinkActive = (link) => {
           <span class="mcd-brand__arches">M</span>
           <span>
             <strong>McDonald's Reservations</strong>
-            <small>Fast, friendly, branch-ready event booking</small>
+            <small>Event booking</small>
           </span>
         </Link>
 
         <div class="mcd-sidebar__meta">
-          <p class="mcd-chip">Reservation OS</p>
-          <h2>McDonald&apos;s event booking platform.</h2>
-          <p class="mcd-sidebar__subtitle">Premium guest booking, cleaner branch operations, and one connected reservation workflow.</p>
+          <h2>Book and manage events.</h2>
         </div>
 
         <nav class="mcd-sidebar__nav">
@@ -148,12 +146,6 @@ const isLinkActive = (link) => {
           </Link>
         </nav>
 
-        <div class="mcd-sidebar__footer">
-          <p class="mcd-sidebar__footer-label">Signature Service</p>
-          <p class="mcd-sidebar__footer-copy">
-            Database-backed bookings, clean approvals, and fast-moving crew execution styled in a McDonald&apos;s-inspired workspace.
-          </p>
-        </div>
       </aside>
 
       <div class="mcd-main">
@@ -165,13 +157,11 @@ const isLinkActive = (link) => {
           </div>
 
           <div class="mcd-toolbar__actions">
-            <span class="mcd-toolbar__pill">Philippine-time booking flow</span>
-
             <div class="mcd-toolbar__profile">
               <span class="mcd-toolbar__avatar">{{ userInitials }}</span>
               <span>
                 <strong>{{ user?.name ?? 'Guest User' }}</strong>
-                <small>{{ user?.email ?? 'Browse packages, then sign in to book.' }}</small>
+                <small>{{ user?.email ?? 'Sign in to continue.' }}</small>
               </span>
             </div>
 

@@ -82,7 +82,7 @@ const refreshConfirmed = () => {
         <div class="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p class="mcd-chip">Confirmed events</p>
-            <h1 class="mt-4 text-4xl">Edit confirmed bookings without mixing them into pending approvals.</h1>
+            <h1 class="mt-4 text-4xl">Confirmed events</h1>
           </div>
           <button type="button" class="mcd-button mcd-button--ghost" @click="refreshConfirmed">Refresh events</button>
         </div>
@@ -114,17 +114,27 @@ const refreshConfirmed = () => {
                   <StatusBadge :value="booking.service_status" />
                 </div>
                 <p class="mt-2 text-sm text-slate-600">{{ booking.package_name }} | {{ booking.event_date }} | {{ booking.event_time }}</p>
-                <p class="mt-1 text-sm text-slate-500">Customer: {{ booking.customer_name }} | {{ booking.customer_phone }}</p>
+                <p class="mt-1 text-sm text-slate-500">Customer: {{ booking.customer_name }}</p>
+                <p class="mt-1 text-sm text-slate-500">Contact: {{ booking.customer_email }} | {{ booking.customer_phone }}</p>
                 <p class="mt-1 text-sm text-slate-500">Assigned crew: {{ booking.assigned_staff_name || 'Unassigned' }}</p>
                 <p class="mt-1 text-sm text-slate-500">Duration: {{ booking.duration_hours }} hours</p>
+                <p v-if="booking.customer_profile?.full_address" class="mt-1 text-sm text-slate-500">Address: {{ booking.customer_profile.full_address }}</p>
+                <p v-if="booking.customer_profile?.gender || booking.customer_profile?.birth_date_label" class="mt-1 text-sm text-slate-500">
+                  <span v-if="booking.customer_profile?.gender">Gender: {{ booking.customer_profile.gender }}</span>
+                  <span v-if="booking.customer_profile?.gender && booking.customer_profile?.birth_date_label"> | </span>
+                  <span v-if="booking.customer_profile?.birth_date_label">Birth date: {{ booking.customer_profile.birth_date_label }}</span>
+                </p>
                 <p v-if="booking.manual_menu_items?.length" class="mt-1 text-sm text-slate-500">
                   Manual tray: {{ booking.manual_menu_items.slice(0, 3).map((item) => `${item.quantity} x ${item.item_name}`).join(', ') }}<span v-if="booking.manual_menu_items.length > 3"> and {{ booking.manual_menu_items.length - 3 }} more</span>
                 </p>
-                <p class="mt-3 text-sm text-slate-600">{{ booking.notes || 'No special notes provided.' }}</p>
+                <div class="mt-3 rounded-2xl bg-white p-4 text-sm">
+                  <p class="font-black uppercase tracking-[0.15em] text-red-700">Special notes</p>
+                  <p class="mt-2 text-slate-600">{{ booking.notes || 'None' }}</p>
+                </div>
               </div>
 
               <div class="space-y-3">
-                <p class="text-sm font-black uppercase tracking-[0.15em] text-red-700">Update confirmed event</p>
+                <p class="text-sm font-black uppercase tracking-[0.15em] text-red-700">Status</p>
                 <select v-model="statusState[booking.id]" class="mcd-select">
                   <option value="confirmed">confirmed</option>
                   <option value="rescheduled">rescheduled</option>
@@ -171,7 +181,7 @@ const refreshConfirmed = () => {
             </div>
           </div>
         </div>
-        <div v-else class="mcd-empty">No confirmed events yet.</div>
+        <div v-else class="mcd-empty">No events.</div>
       </article>
     </section>
   </AppShell>

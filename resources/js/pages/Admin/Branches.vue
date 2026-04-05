@@ -27,7 +27,7 @@ const createBranch = () => {
     <section class="mcd-section">
       <div class="mcd-panel p-8">
         <p class="mcd-chip">Branches</p>
-        <h1 class="mt-4 text-4xl">Manage store locations on their own clean page.</h1>
+        <h1 class="mt-4 text-4xl">Branches</h1>
         <div class="mt-6">
           <AdminQuickLinks current="branches" />
         </div>

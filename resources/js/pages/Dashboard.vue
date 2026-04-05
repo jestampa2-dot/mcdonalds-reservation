@@ -68,8 +68,8 @@ const refreshDashboard = () => {
       <div class="mcd-panel p-8">
         <div class="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p class="mcd-chip">Customer dashboard</p>
-            <h1 class="mt-4 text-4xl">Track your upcoming bookings, payment review, and check-in pass.</h1>
+            <p class="mcd-chip">Dashboard</p>
+            <h1 class="mt-4 text-4xl">Your bookings</h1>
           </div>
           <div class="flex flex-wrap gap-3">
             <button type="button" class="mcd-button mcd-button--ghost" @click="refreshDashboard">Refresh dashboard</button>
@@ -88,8 +88,8 @@ const refreshDashboard = () => {
 
     <section class="mcd-section">
       <div>
-        <p class="mcd-chip">Upcoming bookings</p>
-        <h2 class="mt-3 text-3xl">Everything you need before arrival</h2>
+        <p class="mcd-chip">Bookings</p>
+        <h2 class="mt-3 text-3xl">Upcoming</h2>
       </div>
 
       <div v-if="bookings.length" class="space-y-5">
@@ -126,7 +126,6 @@ const refreshDashboard = () => {
 
             <div class="rounded-3xl bg-amber-50 p-5">
               <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">Reschedule</p>
-              <p class="mt-2 text-xs text-slate-500">Choose a new reservation time between 7:00 AM and 11:00 PM.</p>
               <div class="mt-4 grid gap-3">
                 <input v-model="rescheduleState[booking.id].event_date" type="date" class="mcd-input" />
                 <select v-model="rescheduleState[booking.id].event_time" class="mcd-select">
@@ -141,7 +140,7 @@ const refreshDashboard = () => {
       </div>
 
       <div v-else class="mcd-empty">
-        No bookings yet. Start with a birthday bash, business huddle, or quick table reservation.
+        No bookings yet.
       </div>
     </section>
   </AppShell>

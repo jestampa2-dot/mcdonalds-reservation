@@ -31,9 +31,9 @@ const submit = () => {
   <GuestLayout
     title="Create Account"
     panel-size="wide"
-    eyebrow="Account registration"
-    heading="Create your McDonald's reservation account."
-    description="Complete your personal and contact details to access booking, payment review, and account services in one secure workspace."
+    eyebrow="Create account"
+    heading="Create your account."
+    description=""
   >
     <Head title="Create Account" />
 
@@ -41,16 +41,13 @@ const submit = () => {
       <div class="auth-form__header">
         <p class="auth-form__eyebrow">Create account</p>
         <h2>Registration form</h2>
-        <p>
-          Please provide accurate personal information so your bookings, approvals, and branch coordination remain complete and verified.
-        </p>
       </div>
 
       <form class="auth-form__body" @submit.prevent="submit">
         <section class="auth-form__section">
           <div>
             <p class="auth-form__section-label">Personal details</p>
-            <h3>Primary account information</h3>
+            <h3>Personal information</h3>
           </div>
 
           <div class="auth-form__split">
@@ -126,7 +123,7 @@ const submit = () => {
         <section class="auth-form__section">
           <div>
             <p class="auth-form__section-label">Address details</p>
-            <h3>Residential information</h3>
+            <h3>Address</h3>
           </div>
 
           <div class="auth-form__field">
@@ -186,7 +183,7 @@ const submit = () => {
         <section class="auth-form__section">
           <div>
             <p class="auth-form__section-label">Security</p>
-            <h3>Create your sign-in credentials</h3>
+            <h3>Password</h3>
           </div>
 
           <div class="auth-form__split">
@@ -218,13 +215,11 @@ const submit = () => {
           </div>
         </section>
 
-        <PrimaryButton class="auth-form__submit" :class="{ 'opacity-25': form.processing }" :disabled="form.processing">
-          Submit registration
-        </PrimaryButton>
+        <PrimaryButton class="auth-form__submit" :class="{ 'opacity-25': form.processing }" :disabled="form.processing">Create account</PrimaryButton>
       </form>
 
       <div class="auth-form__footer">
-        <p>Already have an account?</p>
+        <p>Already registered?</p>
         <Link :href="route('login')" prefetch class="auth-form__secondary-link">Log in instead</Link>
       </div>
     </div>

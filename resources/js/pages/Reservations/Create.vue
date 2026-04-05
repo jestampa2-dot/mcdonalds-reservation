@@ -21,9 +21,6 @@ const flexibleDurationOptions = Array.from({ length: 16 }, (_, index) => index +
 let availabilityTimer = null
 
 const form = useForm({
-  name: '',
-  email: '',
-  phone: '',
   event_type: eventTypeKeys[0],
   branch_code: Object.keys(props.catalog.branches)[0],
   event_date: props.defaults.event_date,
@@ -549,7 +546,7 @@ onMounted(() => {
     }
 
     refreshAvailability()
-  }, 30000)
+  }, 45000)
   initializeAvailabilitySelection()
 })
 
@@ -574,10 +571,10 @@ const submit = () => {
         <div class="flex flex-wrap items-end justify-between gap-4">
           <div>
             <p class="mcd-chip">Booking wizard</p>
-            <h1 class="mt-4 text-4xl">Plan your party, meeting, or reserved table in one fast flow.</h1>
+            <h1 class="mt-4 text-4xl">Book your event</h1>
           </div>
           <div class="rounded-3xl bg-red-50 px-5 py-4 text-sm text-red-800">
-            Flexible reservation hours: choose your own start and end time between {{ bookingWindowLabel }}.
+            Hours: {{ bookingWindowLabel }}
           </div>
         </div>
       </div>
@@ -617,18 +614,15 @@ const submit = () => {
                     <div>
                       <p class="text-xs font-black uppercase tracking-[0.16em] text-slate-400">Selected duration</p>
                       <p class="mt-2 text-3xl font-black text-slate-800">{{ durationLabel }}</p>
-                      <p class="mt-1 text-sm text-slate-500">
-                        {{ additionalHours > 0 ? `Base package covers the first 4 hours. ${additionalHours} additional hour${additionalHours > 1 ? 's are' : ' is'} added to the final total.` : 'Base package pricing covers up to the first 4 hours of service.' }}
-                      </p>
+                      <p class="mt-1 text-sm text-slate-500">Total updates automatically.</p>
                     </div>
                     <div class="grid gap-2 text-right">
                       <span class="rounded-full bg-amber-50 px-4 py-2 text-sm font-black uppercase tracking-[0.14em] text-amber-700">Flexible timing</span>
-                      <span class="rounded-full bg-red-50 px-4 py-2 text-sm font-black uppercase tracking-[0.14em] text-red-700">Live schedule check</span>
+                      <span class="rounded-full bg-red-50 px-4 py-2 text-sm font-black uppercase tracking-[0.14em] text-red-700">Schedule</span>
                     </div>
                   </div>
                 </div>
-                <p class="mt-2 text-xs text-slate-500">Base package pricing covers the first 4 hours. Extra time after that is charged at {{ formatCurrency(catalog.pricing.extension_hourly_rate) }}/hour.</p>
-                <p class="mt-1 text-xs text-slate-500">Pick your own start and end time. The system checks the full reservation span against live branch availability.</p>
+                <p class="mt-2 text-xs text-slate-500">Extra time is charged at {{ formatCurrency(catalog.pricing.extension_hourly_rate) }}/hour.</p>
                 <p v-if="form.errors.duration_hours" class="text-sm text-red-700">{{ form.errors.duration_hours }}</p>
               </div>
 
@@ -661,8 +655,7 @@ const submit = () => {
 
               <div class="flex flex-wrap items-center justify-between gap-3 rounded-3xl bg-amber-50 px-5 py-4">
                 <div>
-                  <p class="text-sm font-black uppercase tracking-[0.18em] text-red-700">Need custom food and drinks?</p>
-                  <p class="mt-1 text-sm text-slate-600">Jump to the manual ordering board and add items one by one.</p>
+                  <p class="text-sm font-black uppercase tracking-[0.18em] text-red-700">Manual food and drinks</p>
                 </div>
                 <button type="button" class="mcd-button" @click="scrollToSection('manual-menu-board')">Go to manual food and drinks</button>
               </div>
@@ -671,7 +664,6 @@ const submit = () => {
                 <div class="flex flex-wrap items-start justify-between gap-4">
                   <div>
                     <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">Reservation schedule</p>
-                    <p class="mt-2 text-sm text-slate-500">Choose your event date, start time, and end time. The booking form keeps the reservation smooth, clean, and checks the full range in real time.</p>
                   </div>
                   <button type="button" class="mcd-button mcd-button--ghost" @click="refreshAvailability">Refresh now</button>
                 </div>
@@ -716,10 +708,7 @@ const submit = () => {
 
                       <div v-else class="mcd-schedule-planner__time-panel">
                         <p class="mcd-schedule-planner__time-title">
-                          {{ activeTimeField === 'start' ? 'Choose Start Time' : 'Choose Due Time' }}
-                        </p>
-                        <p class="text-sm text-slate-500">
-                          {{ activeTimeField === 'start' ? 'Available start times for the selected reservation date.' : 'Available end times based on your chosen start time and the remaining open booking window.' }}
+                          {{ activeTimeField === 'start' ? 'Start Time' : 'End Time' }}
                         </p>
 
                         <div class="mcd-schedule-planner__time-grid">
@@ -821,7 +810,6 @@ const submit = () => {
                         </div>
                       </div>
 
-                      <p class="text-xs text-slate-500">Only end times that stay available for your selected branch will appear here. Availability refreshes automatically as new bookings come in.</p>
                     </div>
                   </div>
                 </div>
@@ -840,28 +828,12 @@ const submit = () => {
             </section>
 
             <section class="mcd-panel p-6">
-            <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">3. Your details</p>
+            <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">3. Special notes</p>
             <div class="mt-5 grid gap-4">
-              <div class="mcd-field">
-                <label>Full name</label>
-                <input v-model="form.name" type="text" class="mcd-input" />
-                <p v-if="form.errors.name" class="text-sm text-red-700">{{ form.errors.name }}</p>
-              </div>
-              <div class="mcd-grid mcd-grid--2">
-                <div class="mcd-field">
-                  <label>Email</label>
-                  <input v-model="form.email" type="email" class="mcd-input" />
-                  <p v-if="form.errors.email" class="text-sm text-red-700">{{ form.errors.email }}</p>
-                </div>
-                <div class="mcd-field">
-                  <label>Phone</label>
-                  <input v-model="form.phone" type="text" class="mcd-input" />
-                  <p v-if="form.errors.phone" class="text-sm text-red-700">{{ form.errors.phone }}</p>
-                </div>
-              </div>
               <div class="mcd-field">
                 <label>Special notes</label>
                 <textarea v-model="form.notes" rows="4" class="mcd-textarea"></textarea>
+                <p class="mt-2 text-xs text-slate-500">Your profile details will be attached to this reservation automatically.</p>
               </div>
             </div>
             </section>
@@ -882,7 +854,6 @@ const submit = () => {
                     <div>
                       <p class="text-lg">{{ item.name }}</p>
                       <p class="mt-1 text-sm text-slate-500">{{ item.guest_range }}</p>
-                      <p class="mt-1 text-xs font-bold uppercase tracking-[0.12em] text-red-700">Base package covers the first 4 hours</p>
                     </div>
                     <strong class="text-red-700">{{ formatCurrency(item.price) }}</strong>
                   </div>
@@ -948,7 +919,7 @@ const submit = () => {
 
         <section v-else class="mcd-panel p-6">
           <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">5. Manual foods and drinks</p>
-          <p class="mt-3 text-sm text-slate-500">The manual menu board will appear here after the menu catalog is loaded into the database.</p>
+          <p class="mt-3 text-sm text-slate-500">Menu unavailable.</p>
         </section>
 
         <section class="mcd-panel mcd-panel--dark p-6">
@@ -983,7 +954,7 @@ const submit = () => {
                     <strong class="text-white">{{ formatCurrency(item.line_total) }}</strong>
                   </div>
                 </div>
-                <p v-else class="mt-3 text-sm text-white/65">No manual foods or drinks added yet.</p>
+                <p v-else class="mt-3 text-sm text-white/65">No items added.</p>
               </div>
             </div>
 
@@ -1010,7 +981,6 @@ const submit = () => {
               <div class="border-t border-white/10 pt-4">
                 <p class="text-sm uppercase tracking-[0.2em] text-amber-200">Total before confirmation</p>
                 <p class="mt-2 text-4xl text-white">{{ formatCurrency(receiptPreview.total) }}</p>
-                <p class="mt-2 text-xs text-white/65">This receipt updates in real time as dates and slots become unavailable.</p>
               </div>
               <button type="submit" class="mcd-button mt-2 w-full" :disabled="form.processing || !selectedDateCard || selectedDateCard.computed_status === 'full' || !selectedTimeRangeIsAvailable">
                 {{ form.processing ? 'Submitting...' : 'Confirm reservation' }}

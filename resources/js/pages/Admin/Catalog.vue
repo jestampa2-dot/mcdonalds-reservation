@@ -111,10 +111,7 @@ const formatHour = (hour) => {
     <section class="mcd-section">
       <div class="mcd-panel p-8">
         <p class="mcd-chip">Catalog</p>
-        <h1 class="mt-4 text-4xl">Database-backed event catalog, room rentals, and booking window controls.</h1>
-        <p class="mt-4 max-w-3xl text-sm text-slate-600">
-          This page now manages customer-facing booking data directly from the database, including event types, packages, room rental options, and operating hours.
-        </p>
+        <h1 class="mt-4 text-4xl">Catalog</h1>
         <div class="mt-6">
           <AdminQuickLinks current="catalog" />
         </div>
@@ -125,10 +122,7 @@ const formatHour = (hour) => {
       <div class="mcd-grid mcd-grid--2">
         <article class="mcd-panel p-6">
           <p class="mcd-chip">Booking hours</p>
-          <h2 class="mt-4 text-3xl">Reservation operating window</h2>
-          <p class="mt-3 text-sm leading-6 text-slate-600">
-            Update the daily booking hours and the default starting duration used in the customer booking flow.
-          </p>
+          <h2 class="mt-4 text-3xl">Booking window</h2>
 
           <div class="mt-6 grid gap-4 md:grid-cols-3">
             <div class="mcd-field">
@@ -162,10 +156,7 @@ const formatHour = (hour) => {
 
         <article class="mcd-panel p-6">
           <p class="mcd-chip">Room rentals</p>
-          <h2 class="mt-4 text-3xl">Add new room options</h2>
-          <p class="mt-3 text-sm leading-6 text-slate-600">
-            Add rentable spaces that customers can choose during booking. Each option is stored as its own database record.
-          </p>
+          <h2 class="mt-4 text-3xl">Room options</h2>
 
           <form class="mt-6 grid gap-4" @submit.prevent="createRoomOption">
             <input v-model="roomOptionForm.label" type="text" class="mcd-input" placeholder="Room label" />
@@ -251,7 +242,7 @@ const formatHour = (hour) => {
               </div>
 
               <div v-if="!eventType.packages.length" class="mcd-empty">
-                No packages are assigned to this event type yet.
+                No packages yet.
               </div>
             </div>
           </div>

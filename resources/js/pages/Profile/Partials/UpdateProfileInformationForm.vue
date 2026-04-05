@@ -1,8 +1,5 @@
 <script setup>
 import InputError from '@/Components/InputError.vue';
-import InputLabel from '@/Components/InputLabel.vue';
-import PrimaryButton from '@/Components/PrimaryButton.vue';
-import TextInput from '@/Components/TextInput.vue';
 import { Link, useForm } from '@inertiajs/vue3';
 
 const props = defineProps({
@@ -28,25 +25,27 @@ const form = useForm({
 </script>
 
 <template>
-    <section>
-        <header>
-            <h2 class="text-lg font-medium text-gray-900">Personal Information</h2>
-
-            <p class="mt-1 text-sm text-gray-600">
-                Review and update the personal details connected to your reservation account.
-            </p>
+    <section class="space-y-6">
+        <header class="flex flex-wrap items-start justify-between gap-4">
+            <div>
+                <p class="text-xs font-black uppercase tracking-[0.18em] text-red-700">Profile</p>
+                <h2 class="mt-3 text-3xl font-black text-slate-900">Personal Information</h2>
+            </div>
+            <span class="rounded-full bg-amber-50 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-amber-700">
+                Account details
+            </span>
         </header>
 
-        <form @submit.prevent="form.patch(route('profile.update'), { preserveScroll: true })" class="mt-6 space-y-6">
+        <form @submit.prevent="form.patch(route('profile.update'), { preserveScroll: true })" class="space-y-6">
             <div class="grid gap-6 md:grid-cols-2">
-                <div>
-                    <InputLabel for="name" value="Full name" />
+                <div class="grid gap-2">
+                    <label for="name" class="text-sm font-black uppercase tracking-[0.08em] text-slate-600">Full name</label>
 
-                    <TextInput
+                    <input
                         id="name"
                         type="text"
-                        class="mt-1 block w-full"
                         v-model="form.name"
+                        class="mcd-input"
                         required
                         autofocus
                         autocomplete="name"
@@ -55,14 +54,14 @@ const form = useForm({
                     <InputError class="mt-2" :message="form.errors.name" />
                 </div>
 
-                <div>
-                    <InputLabel for="email" value="Email" />
+                <div class="grid gap-2">
+                    <label for="email" class="text-sm font-black uppercase tracking-[0.08em] text-slate-600">Email</label>
 
-                    <TextInput
+                    <input
                         id="email"
                         type="email"
-                        class="mt-1 block w-full"
                         v-model="form.email"
+                        class="mcd-input"
                         required
                         autocomplete="username"
                     />
@@ -72,14 +71,14 @@ const form = useForm({
             </div>
 
             <div class="grid gap-6 md:grid-cols-3">
-                <div>
-                    <InputLabel for="phone" value="Phone number" />
+                <div class="grid gap-2">
+                    <label for="phone" class="text-sm font-black uppercase tracking-[0.08em] text-slate-600">Phone number</label>
 
-                    <TextInput
+                    <input
                         id="phone"
                         type="text"
-                        class="mt-1 block w-full"
                         v-model="form.phone"
+                        class="mcd-input"
                         required
                         autocomplete="tel"
                     />
@@ -87,14 +86,14 @@ const form = useForm({
                     <InputError class="mt-2" :message="form.errors.phone" />
                 </div>
 
-                <div>
-                    <InputLabel for="birth_date" value="Birth date" />
+                <div class="grid gap-2">
+                    <label for="birth_date" class="text-sm font-black uppercase tracking-[0.08em] text-slate-600">Birth date</label>
 
-                    <TextInput
+                    <input
                         id="birth_date"
                         type="date"
-                        class="mt-1 block w-full"
                         v-model="form.birth_date"
+                        class="mcd-input"
                         required
                         autocomplete="bday"
                     />
@@ -102,13 +101,13 @@ const form = useForm({
                     <InputError class="mt-2" :message="form.errors.birth_date" />
                 </div>
 
-                <div>
-                    <InputLabel for="gender" value="Gender" />
+                <div class="grid gap-2">
+                    <label for="gender" class="text-sm font-black uppercase tracking-[0.08em] text-slate-600">Gender</label>
 
                     <select
                         id="gender"
                         v-model="form.gender"
-                        class="mt-1 block w-full rounded-xl border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500"
+                        class="mcd-select"
                         required
                     >
                         <option value="male">Male</option>
@@ -121,14 +120,14 @@ const form = useForm({
                 </div>
             </div>
 
-            <div>
-                <InputLabel for="address_line" value="Street address" />
+            <div class="grid gap-2">
+                <label for="address_line" class="text-sm font-black uppercase tracking-[0.08em] text-slate-600">Street address</label>
 
                 <textarea
                     id="address_line"
                     v-model="form.address_line"
                     rows="3"
-                    class="mt-1 block w-full rounded-xl border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500"
+                    class="mcd-textarea"
                     required
                     autocomplete="street-address"
                 ></textarea>
@@ -137,14 +136,14 @@ const form = useForm({
             </div>
 
             <div class="grid gap-6 md:grid-cols-3">
-                <div>
-                    <InputLabel for="city" value="City / Municipality" />
+                <div class="grid gap-2">
+                    <label for="city" class="text-sm font-black uppercase tracking-[0.08em] text-slate-600">City / Municipality</label>
 
-                    <TextInput
+                    <input
                         id="city"
                         type="text"
-                        class="mt-1 block w-full"
                         v-model="form.city"
+                        class="mcd-input"
                         required
                         autocomplete="address-level2"
                     />
@@ -152,14 +151,14 @@ const form = useForm({
                     <InputError class="mt-2" :message="form.errors.city" />
                 </div>
 
-                <div>
-                    <InputLabel for="province" value="Province" />
+                <div class="grid gap-2">
+                    <label for="province" class="text-sm font-black uppercase tracking-[0.08em] text-slate-600">Province</label>
 
-                    <TextInput
+                    <input
                         id="province"
                         type="text"
-                        class="mt-1 block w-full"
                         v-model="form.province"
+                        class="mcd-input"
                         required
                         autocomplete="address-level1"
                     />
@@ -167,14 +166,14 @@ const form = useForm({
                     <InputError class="mt-2" :message="form.errors.province" />
                 </div>
 
-                <div>
-                    <InputLabel for="postal_code" value="Postal code" />
+                <div class="grid gap-2">
+                    <label for="postal_code" class="text-sm font-black uppercase tracking-[0.08em] text-slate-600">Postal code</label>
 
-                    <TextInput
+                    <input
                         id="postal_code"
                         type="text"
-                        class="mt-1 block w-full"
                         v-model="form.postal_code"
+                        class="mcd-input"
                         autocomplete="postal-code"
                     />
 
@@ -183,28 +182,28 @@ const form = useForm({
             </div>
 
             <div v-if="props.mustVerifyEmail && props.profile.email_verified_at === null">
-                <p class="text-sm mt-2 text-gray-800">
-                    Your email address is unverified.
+                <p class="rounded-2xl bg-amber-50 px-4 py-3 text-sm text-slate-700">
+                    Email not verified.
                     <Link
                         :href="route('verification.send')"
                         method="post"
                         as="button"
-                        class="underline text-sm text-gray-600 hover:text-gray-900 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                        class="ml-1 font-bold text-red-700"
                     >
-                        Click here to re-send the verification email.
+                        Send again.
                     </Link>
                 </p>
 
                 <div
                     v-show="props.status === 'verification-link-sent'"
-                    class="mt-2 font-medium text-sm text-green-600"
+                    class="mt-2 rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700"
                 >
-                    A new verification link has been sent to your email address.
+                    Verification link sent.
                 </div>
             </div>
 
             <div class="flex items-center gap-4">
-                <PrimaryButton :disabled="form.processing">Save personal information</PrimaryButton>
+                <button type="submit" class="mcd-button" :disabled="form.processing">Save personal information</button>
 
                 <Transition enter-from-class="opacity-0" leave-to-class="opacity-0" class="transition ease-in-out">
                     <p v-if="form.recentlySuccessful" class="text-sm text-gray-600">Saved.</p>

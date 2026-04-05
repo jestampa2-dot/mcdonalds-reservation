@@ -13,51 +13,43 @@ defineProps({
 const adminCards = [
   {
     title: 'Pending Bookings',
-    copy: 'Review payment proof, notes, and customer details before approving new reservations.',
     href: route('admin.bookings'),
-    button: 'Open pending list',
+    button: 'Open',
   },
   {
     title: 'Confirmed Events',
-    copy: 'Edit active events, assign crew, update status, and manage extra orders or time extensions.',
     href: route('admin.confirmed'),
-    button: 'Open confirmed events',
+    button: 'Open',
   },
   {
     title: 'Availability',
-    copy: 'Monitor live branch dates and slot capacity without crowding the main dashboard.',
     href: route('admin.availability'),
-    button: 'Open availability',
+    button: 'Open',
   },
   {
     title: 'Catalog',
-    copy: 'Edit event types, package details, prices, and availability from one page.',
     href: route('admin.catalog'),
-    button: 'Open catalog',
+    button: 'Open',
   },
   {
     title: 'Branches',
-    copy: 'Add and monitor store branches or supported reservation types from one page.',
     href: route('admin.branches'),
-    button: 'Open branches',
+    button: 'Open',
   },
   {
     title: 'Accounts',
-    copy: 'Approve roles for admin, manager, staff, and customer accounts.',
     href: route('admin.accounts'),
-    button: 'Open accounts',
+    button: 'Open',
   },
   {
     title: 'Reports',
-    copy: 'See analytics, inventory pressure, staffing assignments, and rate settings.',
     href: route('admin.reports'),
-    button: 'Open reports',
+    button: 'Open',
   },
   {
     title: 'Timeline',
-    copy: 'Track upcoming event notifications and previous-event history in a clean timeline page.',
     href: route('admin.timeline'),
-    button: 'Open timeline',
+    button: 'Open',
   },
 ]
 
@@ -77,7 +69,7 @@ const refreshDashboard = () => {
         <div class="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p class="mcd-chip">Admin hub</p>
-            <h1 class="mt-4 max-w-4xl text-4xl">A cleaner command center for approvals, branches, reporting, and live event control.</h1>
+            <h1 class="mt-4 max-w-4xl text-4xl">Admin hub</h1>
           </div>
           <button type="button" class="mcd-button mcd-button--ghost" @click="refreshDashboard">Refresh hub</button>
         </div>
@@ -99,7 +91,6 @@ const refreshDashboard = () => {
         <article v-for="card in adminCards" :key="card.title" class="mcd-command-card">
           <p class="mcd-chip">{{ card.title }}</p>
           <p class="text-2xl">{{ card.title }}</p>
-          <p class="text-sm leading-6 text-slate-600">{{ card.copy }}</p>
           <Link :href="card.href" prefetch class="mcd-button mt-6">{{ card.button }}</Link>
         </article>
       </div>
@@ -111,7 +102,7 @@ const refreshDashboard = () => {
           <div class="flex items-center justify-between gap-3">
             <div>
               <p class="mcd-chip">Upcoming alerts</p>
-              <h2 class="mt-3 text-3xl">Next events to review</h2>
+              <h2 class="mt-3 text-3xl">Alerts</h2>
             </div>
             <Link :href="route('admin.timeline')" prefetch class="mcd-button mcd-button--ghost">Open timeline</Link>
           </div>
@@ -122,12 +113,12 @@ const refreshDashboard = () => {
               <p class="mt-1 text-sm text-slate-500">{{ item.event_date }} | {{ item.event_time }}</p>
             </div>
           </div>
-          <div v-else class="mcd-empty mt-5">No upcoming alerts.</div>
+          <div v-else class="mcd-empty mt-5">No alerts.</div>
         </article>
 
         <article class="mcd-panel p-6">
           <p class="mcd-chip">Active branches</p>
-          <h2 class="mt-3 text-3xl">Current locations</h2>
+          <h2 class="mt-3 text-3xl">Branches</h2>
           <div class="mt-5 space-y-3">
             <div v-for="branch in branchSummaries" :key="branch.code" class="rounded-3xl bg-white p-4">
               <p class="font-bold">{{ branch.name }}</p>

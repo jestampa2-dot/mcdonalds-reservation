@@ -21,6 +21,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/admin/bookings', [ReservationController::class, 'adminBookings'])->name('admin.bookings');
     Route::get('/admin/confirmed-events', [ReservationController::class, 'adminConfirmedEvents'])->name('admin.confirmed');
     Route::get('/admin/availability', [ReservationController::class, 'adminAvailability'])->name('admin.availability');
+    Route::get('/admin/availability/{branchCode}/{date}', [ReservationController::class, 'adminAvailabilityDay'])
+        ->where('date', '\d{4}-\d{2}-\d{2}')
+        ->name('admin.availability.day');
     Route::get('/admin/branches', [ReservationController::class, 'adminBranches'])->name('admin.branches');
     Route::get('/admin/accounts', [ReservationController::class, 'adminAccounts'])->name('admin.accounts');
     Route::get('/admin/catalog', [ReservationController::class, 'adminCatalog'])->name('admin.catalog');

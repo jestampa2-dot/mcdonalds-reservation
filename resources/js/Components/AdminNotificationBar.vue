@@ -24,7 +24,7 @@ onMounted(() => {
     }
 
     refreshAlerts()
-  }, 12000)
+  }, 30000)
 })
 
 onBeforeUnmount(() => {
@@ -41,10 +41,10 @@ onBeforeUnmount(() => {
   >
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div>
-        <p class="text-xs font-black uppercase tracking-[0.18em] text-amber-100">New reservations</p>
-        <p class="mt-1 text-lg font-bold">{{ alerts.count }} booking{{ alerts.count === 1 ? '' : 's' }} waiting for review</p>
+        <p class="text-xs font-black uppercase tracking-[0.18em] text-amber-100">Pending</p>
+        <p class="mt-1 text-lg font-bold">{{ alerts.count }} booking{{ alerts.count === 1 ? '' : 's' }}</p>
       </div>
-      <Link :href="route('admin.bookings')" prefetch class="mcd-button mcd-button--secondary">View pending</Link>
+      <Link :href="route('admin.bookings')" prefetch class="mcd-button mcd-button--secondary">Open</Link>
     </div>
 
     <div class="mt-4 flex flex-wrap gap-3">

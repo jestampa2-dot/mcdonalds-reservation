@@ -94,16 +94,16 @@ const refreshStaffView = () => {
     <section class="mcd-section">
       <div class="grid gap-5 xl:grid-cols-[1.1fr,1fr,1fr]">
         <article class="mcd-panel p-8">
-          <p class="mcd-chip">Crew view</p>
-          <h1 class="mt-4 text-4xl">Prep confirmed events, check in arrivals, and update the floor in real time.</h1>
+          <p class="mcd-chip">Staff</p>
+          <h1 class="mt-4 text-4xl">Staff dashboard</h1>
           <button type="button" class="mcd-button mcd-button--ghost mt-6" @click="refreshStaffView">Refresh staff view</button>
         </article>
 
         <article class="mcd-panel p-6">
           <div class="flex items-center justify-between gap-3">
             <div>
-              <p class="mcd-chip">Previous event history</p>
-              <h2 class="mt-3 text-2xl">Recent completed events</h2>
+              <p class="mcd-chip">History</p>
+              <h2 class="mt-3 text-2xl">Previous events</h2>
             </div>
             <span class="mcd-badge mcd-badge--success">{{ historyItems.length }} records</span>
           </div>
@@ -119,7 +119,7 @@ const refreshStaffView = () => {
               <p class="mt-2 text-xs text-slate-500">Checked in by: {{ item.checked_in_by || 'No check-in recorded' }}</p>
             </div>
           </div>
-          <div v-else class="mcd-empty mt-5">No past event history yet.</div>
+          <div v-else class="mcd-empty mt-5">No history.</div>
         </article>
 
         <article class="mcd-panel mcd-panel--dark p-8">
@@ -128,9 +128,7 @@ const refreshStaffView = () => {
             <input v-model="checkInForm.code" type="text" class="mcd-input" placeholder="Enter booking reference or check-in code" />
             <button type="button" class="mcd-button" @click="checkIn">Check in guest</button>
           </div>
-          <p class="mt-3 text-sm text-white/70">
-            Staff can only check in reservations after admin confirms the booking.
-          </p>
+          <p class="mt-3 text-sm text-white/70">Admin confirmation required.</p>
         </article>
       </div>
     </section>
@@ -140,8 +138,8 @@ const refreshStaffView = () => {
         <article class="mcd-panel p-6">
           <div class="flex items-center justify-between gap-3">
             <div>
-              <p class="mcd-chip">Upcoming event notifications</p>
-              <h2 class="mt-3 text-3xl">Confirmed events coming up next</h2>
+              <p class="mcd-chip">Notifications</p>
+              <h2 class="mt-3 text-3xl">Upcoming events</h2>
             </div>
             <span class="mcd-badge mcd-badge--pending">{{ notificationItems.length }} alerts</span>
           </div>
@@ -163,11 +161,11 @@ const refreshStaffView = () => {
               <p class="mt-4 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-slate-700">{{ item.message }}</p>
             </div>
           </div>
-          <div v-else class="mcd-empty mt-5">No upcoming crew alerts right now.</div>
+          <div v-else class="mcd-empty mt-5">No alerts.</div>
         </article>
 
         <article class="mcd-panel p-6">
-          <p class="mcd-chip">Daily prep list</p>
+          <p class="mcd-chip">Prep</p>
           <div v-if="prepList.length" class="mt-5 space-y-4">
             <div v-for="item in prepList" :key="item.booking_reference" class="rounded-3xl bg-white p-5">
               <div class="flex items-start justify-between gap-3">
@@ -188,7 +186,7 @@ const refreshStaffView = () => {
               </div>
             </div>
           </div>
-          <div v-else class="mcd-empty mt-5">No prep items scheduled because there are no confirmed events for today.</div>
+          <div v-else class="mcd-empty mt-5">No prep items.</div>
         </article>
       </div>
     </section>
@@ -211,7 +209,7 @@ const refreshStaffView = () => {
                 <p v-if="booking.manual_menu_items?.length" class="mt-1 text-sm text-slate-500">
                   Manual tray: {{ booking.manual_menu_items.slice(0, 3).map((item) => `${item.quantity} x ${item.item_name}`).join(', ') }}<span v-if="booking.manual_menu_items.length > 3"> and {{ booking.manual_menu_items.length - 3 }} more</span>
                 </p>
-                <p class="mt-3 text-sm text-slate-600">{{ booking.notes || 'No special notes provided.' }}</p>
+                <p class="mt-3 text-sm text-slate-600">{{ booking.notes || 'None' }}</p>
               </div>
 
               <div class="space-y-3">
@@ -251,7 +249,7 @@ const refreshStaffView = () => {
             </div>
           </div>
         </div>
-        <div v-else class="mcd-empty mt-5">No confirmed or active events on the floor right now.</div>
+        <div v-else class="mcd-empty mt-5">No active events.</div>
       </article>
     </section>
   </AppShell>

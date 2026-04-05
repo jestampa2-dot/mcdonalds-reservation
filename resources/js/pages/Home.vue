@@ -12,9 +12,30 @@ defineProps({
 const page = usePage()
 
 const heroPillars = [
-  'Live branch availability',
-  'Manual food and drink ordering',
-  'Admin approvals and staff prep flow',
+  'Live availability',
+  'Manual orders',
+  'Admin and staff tools',
+]
+
+const photoCards = [
+  {
+    src: 'https://images.unsplash.com/photo-1571091718767-18b5b1457add?auto=format&fit=crop&w=1200&q=80',
+    alt: 'Burger and fries meal',
+    tag: 'Signature meals',
+    title: 'Featured meals',
+  },
+  {
+    src: 'https://images.unsplash.com/photo-1552566626-52f8b828add9?auto=format&fit=crop&w=1200&q=80',
+    alt: 'Restaurant dining space',
+    tag: 'Branch ambience',
+    title: 'Branch view',
+  },
+  {
+    src: 'https://images.unsplash.com/photo-1550317138-10000687a72b?auto=format&fit=crop&w=1200&q=80',
+    alt: 'Burger tray with fries and drink',
+    tag: 'Party tray',
+    title: 'Party tray',
+  },
 ]
 
 const formatCurrency = (value) =>
@@ -25,14 +46,13 @@ const formatCurrency = (value) =>
   <AppShell title="Home">
     <section class="mcd-hero">
       <div class="space-y-6">
-        <span class="mcd-chip">Fast-food quick booking for parties, meetings, and table reservations</span>
+        <span class="mcd-chip">Book events</span>
         <div class="space-y-4">
           <h1 class="max-w-3xl text-4xl leading-tight md:text-6xl">
-            Turn every McDonald&apos;s event into a polished, branch-ready experience before guests arrive.
+            Book McDonald&apos;s events faster.
           </h1>
           <p class="max-w-2xl text-lg text-white/90">
-            Launch a polished reservation experience with live slot visibility, menu pre-orders, proof-of-payment upload,
-            customer QR passes, branch operations dashboards, and staff-ready prep lists.
+            Choose a branch, time, room, and package in one flow.
           </p>
         </div>
 
@@ -65,23 +85,34 @@ const formatCurrency = (value) =>
       </div>
 
       <div class="mcd-panel p-6 text-slate-900">
-        <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">McDonald&apos;s-style booking stack</p>
+        <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">Overview</p>
         <div class="mt-4 grid gap-4">
           <div class="rounded-[1.8rem] bg-red-50 p-5">
-            <p class="text-xs font-black uppercase tracking-[0.18em] text-red-700">Customer flow</p>
-            <h2 class="mt-3 text-2xl">Fast booking with cleaner choices</h2>
-            <p class="mt-2 text-sm leading-6 text-slate-700">
-              Guided event selection, room rentals, live schedule checks, menu ordering, and proof-of-payment upload.
-            </p>
+            <p class="text-xs font-black uppercase tracking-[0.18em] text-red-700">Customer</p>
+            <h2 class="mt-3 text-2xl">Booking</h2>
+          </div>
+          <div class="mcd-photo-grid">
+            <article
+              v-for="(photo, index) in photoCards"
+              :key="photo.src"
+              class="mcd-photo-card"
+              :class="{ 'mcd-photo-card--feature': index === 0 }"
+            >
+              <img :src="photo.src" :alt="photo.alt" class="mcd-photo-card__image" loading="lazy" decoding="async" />
+              <div class="mcd-photo-card__overlay">
+                <p class="mcd-photo-card__tag">{{ photo.tag }}</p>
+                <h3>{{ photo.title }}</h3>
+              </div>
+            </article>
           </div>
           <div class="grid gap-4 md:grid-cols-2">
             <div class="rounded-[1.7rem] bg-amber-50 p-5">
               <p class="text-xs font-black uppercase tracking-[0.18em] text-amber-700">Admin</p>
-              <p class="mt-3 text-lg font-black text-slate-900">Database-managed catalog, approvals, inventory, and branch control.</p>
+              <p class="mt-3 text-lg font-black text-slate-900">Catalog, approvals, inventory.</p>
             </div>
             <div class="rounded-[1.7rem] bg-white p-5">
               <p class="text-xs font-black uppercase tracking-[0.18em] text-slate-400">Crew</p>
-              <p class="mt-3 text-lg font-black text-slate-900">Prep lists, check-in control, and event-floor updates in one view.</p>
+              <p class="mt-3 text-lg font-black text-slate-900">Prep, check-in, floor updates.</p>
             </div>
           </div>
         </div>
@@ -99,8 +130,8 @@ const formatCurrency = (value) =>
 
     <section class="mcd-section">
       <div>
-        <p class="mcd-chip">Customer-facing pages</p>
-        <h2 class="mt-3 text-3xl">Choose the event flow that fits the guest</h2>
+        <p class="mcd-chip">Event types</p>
+        <h2 class="mt-3 text-3xl">Choose an event</h2>
       </div>
 
       <div class="mcd-command-grid">
@@ -114,8 +145,8 @@ const formatCurrency = (value) =>
 
     <section class="mcd-section">
       <div>
-        <p class="mcd-chip">Store locator</p>
-        <h2 class="mt-3 text-3xl">Branches built for events and quick-turn table service</h2>
+        <p class="mcd-chip">Branches</p>
+        <h2 class="mt-3 text-3xl">Choose a branch</h2>
       </div>
 
       <div class="mcd-grid mcd-grid--3">
@@ -148,8 +179,8 @@ const formatCurrency = (value) =>
 
     <section class="mcd-section">
       <div>
-        <p class="mcd-chip">Featured packages</p>
-        <h2 class="mt-3 text-3xl">Fast picks for birthdays, meetings, and group meals</h2>
+        <p class="mcd-chip">Packages</p>
+        <h2 class="mt-3 text-3xl">Featured packages</h2>
       </div>
 
       <div class="mcd-command-grid">

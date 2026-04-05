@@ -75,7 +75,7 @@ const addInventoryItem = (branchId) => {
         <div class="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p class="mcd-chip">Reports</p>
-            <h1 class="mt-4 text-4xl">Analytics, inventory, and staffing are now separated from the booking workflow.</h1>
+            <h1 class="mt-4 text-4xl">Reports</h1>
           </div>
           <button type="button" class="mcd-button mcd-button--ghost" @click="refreshReports">Refresh reports</button>
         </div>
@@ -241,9 +241,7 @@ const addInventoryItem = (branchId) => {
                   </div>
                 </div>
 
-                <div v-else class="rounded-2xl bg-slate-100 px-4 py-3 text-sm text-slate-500">
-                  Inventory editing is available once the branch inventory table is loaded from the database.
-                </div>
+                <div v-else class="rounded-2xl bg-slate-100 px-4 py-3 text-sm text-slate-500">Inventory unavailable.</div>
               </div>
             </div>
           </div>

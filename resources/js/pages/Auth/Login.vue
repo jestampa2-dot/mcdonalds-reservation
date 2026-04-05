@@ -28,9 +28,9 @@ const submit = () => {
 <template>
   <GuestLayout
     title="Login"
-    eyebrow="Operator-ready access"
-    heading="Jump back into bookings, approvals, and check-ins from one desktop workspace."
-    description="Sign in to manage customer reservations, review schedules, and keep the service floor moving."
+    eyebrow="Sign in"
+    heading="Access your account."
+    description=""
   >
     <Head title="Login" />
 
@@ -38,7 +38,6 @@ const submit = () => {
       <div class="auth-form__header">
         <p class="auth-form__eyebrow">Sign in</p>
         <h2>Welcome back</h2>
-        <p>Use your account to access customer, admin, or staff tools.</p>
       </div>
 
       <div v-if="status" class="auth-form__status">
@@ -95,7 +94,7 @@ const submit = () => {
       </form>
 
       <div class="auth-form__footer">
-        <p>New here? Build your reservation workspace in a minute.</p>
+        <p>New account?</p>
         <Link :href="route('register')" prefetch class="auth-form__secondary-link">Create account</Link>
       </div>
     </div>

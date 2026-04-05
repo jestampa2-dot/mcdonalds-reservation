@@ -33,7 +33,7 @@ const updateRole = (id) => {
     <section class="mcd-section">
       <div class="mcd-panel p-8">
         <p class="mcd-chip">Accounts</p>
-        <h1 class="mt-4 text-4xl">Approve and manage user roles on a dedicated account page.</h1>
+        <h1 class="mt-4 text-4xl">Accounts</h1>
         <div class="mt-6">
           <AdminQuickLinks current="accounts" />
         </div>
@@ -70,12 +70,12 @@ const updateRole = (id) => {
                 <option value="manager">manager</option>
                 <option value="admin">admin</option>
               </select>
-              <button type="button" class="mcd-button" @click="updateRole(user.id)">Approve role</button>
+              <button type="button" class="mcd-button" @click="updateRole(user.id)">Save role</button>
             </div>
           </div>
 
           <div v-if="!filteredUsers.length" class="rounded-3xl bg-white p-6 text-center text-slate-500">
-            No accounts matched your search.
+            No matches.
           </div>
         </div>
       </article>
