@@ -33,6 +33,10 @@ const toastLabelForMessage = (message, type = 'success') => {
     return 'Checked in'
   }
 
+  if (/account created|welcome to mcdonald's reservations|registered/i.test(message)) {
+    return 'Account created'
+  }
+
   if (/added/i.test(message)) {
     return 'Added'
   }

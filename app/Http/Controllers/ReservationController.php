@@ -23,10 +23,12 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
 use Inertia\Response as InertiaResponse;
 use Throwable;
@@ -34,6 +36,8 @@ use Throwable;
 class ReservationController extends Controller
 {
     protected ?bool $databaseAvailable = null;
+    protected ?array $catalogCache = null;
+    protected bool $databaseDefaultsEnsured = false;
 
     public function home(): InertiaResponse
     {
@@ -222,16 +226,15 @@ class ReservationController extends Controller
     public function adminDashboard(Request $request): InertiaResponse
     {
         $this->authorizeRoles($request, ['admin', 'manager']);
-
-        $data = $this->adminPageData();
-
         $catalog = $this->catalog();
+        $bookings = $this->adminReservations(['assignedStaff:id,name']);
+        $statsBookings = $this->adminStatsBookings();
 
         return Inertia::render('Admin/Dashboard', [
-            'stats' => $data['stats'],
-            'notifications' => $data['notifications'],
-            'history' => $data['history'],
-            'branchSummaries' => collect($data['branches'])->map(fn ($branch) => [
+            'stats' => $this->adminStats($statsBookings),
+            'notifications' => $this->upcomingEventNotifications($bookings),
+            'history' => $this->eventHistory($bookings),
+            'branchSummaries' => collect(array_values($catalog['branches']))->map(fn ($branch) => [
                 'code' => $branch['code'],
                 'name' => $branch['name'],
                 'city' => $branch['city'],
@@ -242,41 +245,41 @@ class ReservationController extends Controller
     public function adminBookings(Request $request): InertiaResponse
     {
         $this->authorizeRoles($request, ['admin', 'manager']);
-
-        $data = $this->adminPageData();
+        $catalog = $this->catalog();
+        $bookings = $this->adminReservations(['user', 'assignedStaff'], ['pending_review']);
 
         return Inertia::render('Admin/Bookings', [
-            'stats' => $data['stats'],
-            'groupedBookings' => $data['groupedBookings'],
-            'staffUsers' => $data['staffUsers'],
-            'menuBundles' => $data['menuBundles'],
-            'addOns' => $data['addOns'],
-            'durationOptions' => $data['durationOptions'],
+            'stats' => $this->adminStats($this->adminStatsBookings()),
+            'groupedBookings' => $this->groupedBookings($catalog, $bookings),
+            'staffUsers' => $this->adminStaffUsers(),
+            'menuBundles' => $catalog['menuBundles'],
+            'addOns' => $catalog['addOns'],
+            'durationOptions' => range(1, 16),
         ]);
     }
 
     public function adminConfirmedEvents(Request $request): InertiaResponse
     {
         $this->authorizeRoles($request, ['admin', 'manager']);
-
-        $data = $this->adminPageData();
+        $catalog = $this->catalog();
+        $bookings = $this->adminReservations(['user', 'assignedStaff'], ['confirmed', 'rescheduled', 'checked_in']);
 
         return Inertia::render('Admin/ConfirmedEvents', [
-            'stats' => $data['stats'],
-            'confirmedEvents' => $data['confirmedEvents'],
-            'staffUsers' => $data['staffUsers'],
-            'menuBundles' => $data['menuBundles'],
-            'addOns' => $data['addOns'],
-            'durationOptions' => $data['durationOptions'],
+            'stats' => $this->adminStats($this->adminStatsBookings()),
+            'confirmedEvents' => $bookings->map(fn (Reservation $reservation) => $this->serializeReservation($reservation))->values(),
+            'staffUsers' => $this->adminStaffUsers(),
+            'menuBundles' => $catalog['menuBundles'],
+            'addOns' => $catalog['addOns'],
+            'durationOptions' => range(1, 16),
         ]);
     }
 
     public function adminAvailability(Request $request): InertiaResponse
     {
         $this->authorizeRoles($request, ['admin', 'manager']);
-
-        $data = $this->adminPageData();
-        $branchCodes = collect($data['availability']['branches'] ?? [])->pluck('code')->filter()->values();
+        $catalog = $this->catalog();
+        $availability = $this->availabilityPayload($catalog, 366);
+        $branchCodes = collect($availability['branches'] ?? [])->pluck('code')->filter()->values();
         $initialBranch = $request->string('branch')->toString();
         $initialMonth = $request->string('month')->toString();
 
@@ -289,7 +292,7 @@ class ReservationController extends Controller
         }
 
         return Inertia::render('Admin/Availability', [
-            'availability' => $data['availability'],
+            'availability' => $availability,
             'initialBranch' => $initialBranch,
             'initialMonth' => $initialMonth,
         ]);
@@ -316,10 +319,8 @@ class ReservationController extends Controller
     {
         $this->authorizeRoles($request, ['admin', 'manager']);
 
-        $data = $this->adminPageData();
-
         return Inertia::render('Admin/Branches', [
-            'branches' => $data['branches'],
+            'branches' => $this->adminBranchList(),
         ]);
     }
 
@@ -327,16 +328,16 @@ class ReservationController extends Controller
     {
         $this->authorizeRoles($request, ['admin', 'manager']);
 
-        $data = $this->adminPageData();
-
         return Inertia::render('Admin/Accounts', [
-            'users' => $data['users'],
+            'users' => $this->adminUsers(),
+            'canManageAccounts' => $request->user()->role === 'admin',
         ]);
     }
 
     public function adminCatalog(Request $request): InertiaResponse
     {
         $this->authorizeRoles($request, ['admin', 'manager']);
+        $this->ensureDatabaseBackedDefaults();
 
         return Inertia::render('Admin/Catalog', [
             'eventTypes' => $this->runDatabaseCheck(
@@ -372,27 +373,26 @@ class ReservationController extends Controller
     public function adminReports(Request $request): InertiaResponse
     {
         $this->authorizeRoles($request, ['admin', 'manager']);
-
-        $data = $this->adminPageData();
+        $catalog = $this->catalog();
+        $bookings = $this->adminReservations(['assignedStaff:id,name']);
 
         return Inertia::render('Admin/Reports', [
-            'pricing' => $data['pricing'],
-            'report' => $data['report'],
-            'inventory' => $data['inventory'],
-            'staffAssignments' => $data['staffAssignments'],
+            'pricing' => $catalog['pricing'],
+            'report' => $this->analyticsReport($bookings),
+            'inventory' => $this->inventorySnapshot($catalog, $bookings),
+            'staffAssignments' => $this->staffAssignments($catalog, $bookings),
         ]);
     }
 
     public function adminTimeline(Request $request): InertiaResponse
     {
         $this->authorizeRoles($request, ['admin', 'manager']);
-
-        $data = $this->adminPageData();
+        $bookings = $this->adminReservations(['assignedStaff:id,name']);
 
         return Inertia::render('Admin/Timeline', [
-            'notifications' => $data['notifications'],
-            'history' => $data['history'],
-            'cancelledEvents' => $data['cancelledEvents'],
+            'notifications' => $this->upcomingEventNotifications($bookings),
+            'history' => $this->eventHistory($bookings),
+            'cancelledEvents' => $this->cancelledEvents($bookings),
         ]);
     }
 
@@ -552,6 +552,78 @@ class ReservationController extends Controller
         return back()->with('success', 'Account role updated.');
     }
 
+    public function storeAdminUser(Request $request): RedirectResponse
+    {
+        $this->authorizeRoles($request, ['admin']);
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'email', 'max:255', 'unique:users,email'],
+            'phone' => ['nullable', 'string', 'max:30'],
+            'role' => ['required', Rule::in(['customer', 'staff', 'manager', 'admin'])],
+            'password' => ['required', 'confirmed', Password::defaults()],
+        ]);
+
+        User::create([
+            'name' => $validated['name'],
+            'email' => $validated['email'],
+            'phone' => $validated['phone'] ?: null,
+            'role' => $validated['role'],
+            'password' => Hash::make($validated['password']),
+        ]);
+
+        return back()->with('success', 'Account created.');
+    }
+
+    public function updateAdminUser(Request $request, User $user): RedirectResponse
+    {
+        $this->authorizeRoles($request, ['admin']);
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
+            'phone' => ['nullable', 'string', 'max:30'],
+            'role' => ['required', Rule::in(['customer', 'staff', 'manager', 'admin'])],
+            'password' => ['nullable', 'confirmed', Password::defaults()],
+        ]);
+
+        $updates = [
+            'name' => $validated['name'],
+            'email' => $validated['email'],
+            'phone' => $validated['phone'] ?: null,
+            'role' => $validated['role'],
+        ];
+
+        if ($user->email !== $validated['email']) {
+            $updates['email_verified_at'] = null;
+        }
+
+        if (! empty($validated['password'])) {
+            $updates['password'] = Hash::make($validated['password']);
+        }
+
+        $user->update($updates);
+
+        return back()->with('success', 'Account updated.');
+    }
+
+    public function destroyAdminUser(Request $request, User $user): RedirectResponse
+    {
+        $this->authorizeRoles($request, ['admin']);
+
+        if ($request->user()->is($user)) {
+            return back()->with('error', 'You cannot delete your own account.');
+        }
+
+        if ($user->role === 'admin' && User::query()->where('role', 'admin')->count() <= 1) {
+            return back()->with('error', 'At least one admin account must remain in the system.');
+        }
+
+        $user->delete();
+
+        return back()->with('success', 'Account deleted.');
+    }
+
     public function updateEventType(Request $request, EventType $eventType): RedirectResponse
     {
         $this->authorizeRoles($request, ['admin', 'manager']);
@@ -703,6 +775,56 @@ class ReservationController extends Controller
         }
 
         return back()->with('success', 'New branch added.');
+    }
+
+    public function updateBranch(Request $request, Branch $branch): RedirectResponse
+    {
+        $this->authorizeRoles($request, ['admin', 'manager']);
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'city' => ['required', 'string', 'max:255'],
+            'map_url' => ['nullable', 'url'],
+            'concurrent_limit' => ['required', 'integer', 'min:1', 'max:10'],
+            'max_guests' => ['required', 'integer', 'min:4', 'max:200'],
+            'supports' => ['required', 'array', 'min:1'],
+            'supports.*' => ['string', Rule::in(array_keys($this->catalog()['eventTypes']))],
+            'is_active' => ['sometimes', 'boolean'],
+        ]);
+
+        $supports = collect(array_keys($this->catalog()['eventTypes']))
+            ->mapWithKeys(fn ($type) => [$type => in_array($type, $validated['supports'], true)])
+            ->all();
+
+        $branch->update([
+            'name' => $validated['name'],
+            'city' => $validated['city'],
+            'map_url' => $validated['map_url'] ?? null,
+            'concurrent_limit' => $validated['concurrent_limit'],
+            'max_guests' => $validated['max_guests'],
+            'supports' => $supports,
+            'is_active' => (bool) ($validated['is_active'] ?? true),
+        ]);
+
+        if (Schema::hasTable('branch_event_type') && Schema::hasTable('event_types')) {
+            $branch->supportedEventTypes()->sync(
+                EventType::query()
+                    ->whereIn('code', $validated['supports'])
+                    ->pluck('id')
+                    ->all()
+            );
+        }
+
+        return back()->with('success', 'Branch updated.');
+    }
+
+    public function destroyBranch(Request $request, Branch $branch): RedirectResponse
+    {
+        $this->authorizeRoles($request, ['admin', 'manager']);
+
+        $branch->delete();
+
+        return back()->with('success', 'Branch deleted.');
     }
 
     public function storeInventoryItem(Request $request, Branch $branch): RedirectResponse
@@ -885,6 +1007,12 @@ class ReservationController extends Controller
 
     protected function catalog(): array
     {
+        if ($this->catalogCache !== null) {
+            return $this->catalogCache;
+        }
+
+        $this->ensureDatabaseBackedDefaults();
+
         if ($this->dbCatalogAvailable()) {
             $databaseCatalog = $this->runDatabaseCheck(function () {
                 $eventTypes = EventType::query()
@@ -953,11 +1081,11 @@ class ReservationController extends Controller
             }, null);
 
             if ($databaseCatalog) {
-                return $databaseCatalog;
+                return $this->catalogCache = $databaseCatalog;
             }
         }
 
-        return [
+        return $this->catalogCache = [
             'eventTypes' => config('booking.event_types'),
             'branches' => $this->branchCatalog(),
             'packages' => config('booking.packages'),
@@ -969,6 +1097,97 @@ class ReservationController extends Controller
             'slotOptions' => $this->slotOptions(),
             'pricing' => config('booking.pricing'),
         ];
+    }
+
+    protected function adminReservations(array $with = [], ?array $statuses = null)
+    {
+        return Reservation::query()
+            ->with($with)
+            ->when($statuses, fn ($query) => $query->whereIn('status', $statuses))
+            ->orderBy('event_date')
+            ->orderBy('event_time')
+            ->get();
+    }
+
+    protected function adminStatsBookings()
+    {
+        return Reservation::query()
+            ->get(['id', 'status', 'event_time', 'total_amount']);
+    }
+
+    protected function adminUsers()
+    {
+        return User::query()
+            ->orderByRaw("CASE role WHEN 'admin' THEN 1 WHEN 'manager' THEN 2 WHEN 'staff' THEN 3 ELSE 4 END")
+            ->orderBy('name')
+            ->get(['id', 'name', 'email', 'phone', 'role', 'created_at'])
+            ->map(fn (User $user) => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'phone' => $user->phone,
+                'role' => $user->role,
+                'created_at' => optional($user->created_at)->format('M j, Y g:i A'),
+            ]);
+    }
+
+    protected function adminBranchList(): array
+    {
+        $this->ensureDatabaseBackedDefaults();
+
+        if ($this->hasTableSafely('branches')) {
+            $branches = $this->runDatabaseCheck(
+                fn () => Branch::query()->orderBy('name')->get(),
+                collect()
+            );
+
+            if ($branches->isNotEmpty()) {
+                return $branches->map(fn (Branch $branch) => [
+                    'id' => $branch->id,
+                    'code' => $branch->code,
+                    'name' => $branch->name,
+                    'city' => $branch->city,
+                    'map_url' => $branch->map_url,
+                    'concurrent_limit' => $branch->concurrent_limit,
+                    'max_guests' => $branch->max_guests,
+                    'supports' => collect($branch->supports ?? [])
+                        ->filter(fn ($enabled) => $enabled)
+                        ->keys()
+                        ->values()
+                        ->all(),
+                    'is_active' => (bool) $branch->is_active,
+                ])->values()->all();
+            }
+        }
+
+        return collect($this->catalog()['branches'])->values()->map(fn ($branch) => [
+            'id' => null,
+            'code' => $branch['code'],
+            'name' => $branch['name'],
+            'city' => $branch['city'],
+            'map_url' => $branch['map_url'] ?? null,
+            'concurrent_limit' => $branch['concurrent_limit'] ?? 1,
+            'max_guests' => $branch['max_guests'] ?? 40,
+            'supports' => collect($branch['supports'] ?? [])
+                ->filter(fn ($enabled) => $enabled)
+                ->keys()
+                ->values()
+                ->all(),
+            'is_active' => true,
+        ])->all();
+    }
+
+    protected function adminStaffUsers()
+    {
+        return User::query()
+            ->whereIn('role', ['staff', 'manager'])
+            ->orderBy('name')
+            ->get(['id', 'name', 'email', 'role'])
+            ->map(fn (User $user) => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'role' => $user->role,
+            ]);
     }
 
     protected function menuCategoryCatalog(): array
@@ -1009,6 +1228,8 @@ class ReservationController extends Controller
 
     protected function branchCatalog(array $eventTypeCodes = []): array
     {
+        $this->ensureDatabaseBackedDefaults();
+
         if (! $this->hasTableSafely('branches')) {
             return config('booking.branches');
         }
@@ -1058,6 +1279,8 @@ class ReservationController extends Controller
 
     protected function dbCatalogAvailable(): bool
     {
+        $this->ensureDatabaseBackedDefaults();
+
         return $this->hasTableSafely('event_types')
             && $this->hasTableSafely('booking_packages')
             && $this->hasTableSafely('menu_bundles')
@@ -1067,6 +1290,8 @@ class ReservationController extends Controller
 
     protected function bookingWindowSettings(): array
     {
+        $this->ensureDatabaseBackedDefaults();
+
         if ($this->hasTableSafely('booking_settings')) {
             $setting = $this->runDatabaseCheck(
                 fn () => BookingSetting::query()->where('is_active', true)->latest('id')->first(),
@@ -1679,6 +1904,8 @@ class ReservationController extends Controller
 
     protected function roomChoices(bool $includeInactive = false): array
     {
+        $this->ensureDatabaseBackedDefaults();
+
         if ($this->hasTableSafely('room_options')) {
             $roomOptions = $this->runDatabaseCheck(
                 fn () => RoomOption::query()
@@ -1701,6 +1928,190 @@ class ReservationController extends Controller
             }
         }
 
+        return $this->defaultRoomChoices();
+    }
+
+    protected function ensureDatabaseBackedDefaults(): void
+    {
+        if ($this->databaseDefaultsEnsured || ! $this->databaseAvailable()) {
+            return;
+        }
+
+        $this->databaseDefaultsEnsured = true;
+
+        $this->runDatabaseCheck(function () {
+            $eventTypeModels = collect();
+            $bookingConfig = config('booking');
+
+            if ($this->hasTableSafely('event_types')) {
+                $eventTypeModels = collect($bookingConfig['event_types'] ?? [])->mapWithKeys(function (array $eventType, string $code) {
+                    $model = EventType::query()->firstOrCreate(
+                        ['code' => $code],
+                        [
+                            'label' => $eventType['label'],
+                            'description' => $eventType['description'],
+                            'icon' => $eventType['icon'] ?? null,
+                            'sort_order' => 0,
+                            'is_active' => true,
+                        ]
+                    );
+
+                    if ($model->sort_order === null) {
+                        $model->update(['sort_order' => 0]);
+                    }
+
+                    return [$code => $model];
+                });
+            }
+
+            if ($this->hasTableSafely('booking_packages') && $eventTypeModels->isNotEmpty()) {
+                collect($bookingConfig['packages'] ?? [])->each(function (array $items, string $eventTypeCode) use ($eventTypeModels) {
+                    collect($items)->each(function (array $package, int $index) use ($eventTypeModels, $eventTypeCode) {
+                        BookingPackage::query()->firstOrCreate(
+                            ['code' => $package['code']],
+                            [
+                                'event_type_id' => $eventTypeModels[$eventTypeCode]->id,
+                                'name' => $package['name'],
+                                'price' => $package['price'],
+                                'guest_range' => $package['guest_range'] ?? null,
+                                'features' => $package['features'] ?? [],
+                                'sort_order' => $index,
+                                'is_active' => true,
+                            ]
+                        );
+                    });
+                });
+            }
+
+            if ($this->hasTableSafely('menu_bundles')) {
+                collect($bookingConfig['menu_bundles'] ?? [])->each(function (array $bundle, int $index) {
+                    MenuBundle::query()->firstOrCreate(
+                        ['code' => $bundle['code']],
+                        [
+                            'name' => $bundle['name'],
+                            'price' => $bundle['price'],
+                            'prep_label' => $bundle['prep_label'] ?? null,
+                            'sort_order' => $index,
+                            'is_active' => true,
+                        ]
+                    );
+                });
+            }
+
+            if ($this->hasTableSafely('add_ons')) {
+                collect($bookingConfig['add_ons'] ?? [])->each(function (array $addOn, int $index) {
+                    AddOn::query()->firstOrCreate(
+                        ['code' => $addOn['code']],
+                        [
+                            'name' => $addOn['name'],
+                            'price' => $addOn['price'],
+                            'sort_order' => $index,
+                            'is_active' => true,
+                        ]
+                    );
+                });
+            }
+
+            if ($this->hasTableSafely('pricing_settings') && ! PricingSetting::query()->where('is_active', true)->exists()) {
+                $pricing = $bookingConfig['pricing'] ?? [];
+
+                PricingSetting::query()->create([
+                    'weekend_multiplier' => $pricing['weekend_multiplier'] ?? 1.15,
+                    'holiday_multiplier' => $pricing['holiday_multiplier'] ?? 1.25,
+                    'extension_hourly_rate' => $pricing['extension_hourly_rate'] ?? 450,
+                    'holidays' => $pricing['holidays'] ?? [],
+                    'is_active' => true,
+                ]);
+            }
+
+            if ($this->hasTableSafely('booking_settings') && ! BookingSetting::query()->where('is_active', true)->exists()) {
+                BookingSetting::query()->create([
+                    'opening_hour' => 7,
+                    'closing_hour' => 23,
+                    'default_duration_hours' => 4,
+                    'is_active' => true,
+                ]);
+            }
+
+            if ($this->hasTableSafely('room_options')) {
+                collect($this->defaultRoomChoices())->each(function (array $roomOption, int $index) {
+                    RoomOption::query()->firstOrCreate(
+                        ['code' => $roomOption['code']],
+                        [
+                            'label' => $roomOption['label'],
+                            'description' => $roomOption['description'],
+                            'preferred_event_type' => $roomOption['preferred_event_type'],
+                            'sort_order' => $index,
+                            'is_active' => true,
+                        ]
+                    );
+                });
+            }
+
+            if ($this->hasTableSafely('branches')) {
+                collect($bookingConfig['branches'] ?? [])->each(function (array $branch) use ($eventTypeModels) {
+                    $branchModel = Branch::query()->firstOrCreate(
+                        ['code' => $branch['code']],
+                        [
+                            'name' => $branch['name'],
+                            'city' => $branch['city'],
+                            'supports' => $branch['supports'] ?? [],
+                            'concurrent_limit' => $branch['concurrent_limit'] ?? 1,
+                            'max_guests' => $branch['max_guests'] ?? 40,
+                            'map_url' => $branch['map_url'] ?? null,
+                            'inventory' => $branch['inventory'] ?? [],
+                            'hosts' => $branch['hosts'] ?? [],
+                            'is_active' => true,
+                        ]
+                    );
+
+                    if ($this->hasTableSafely('branch_event_type') && $eventTypeModels->isNotEmpty() && ! $branchModel->supportedEventTypes()->exists()) {
+                        $branchModel->supportedEventTypes()->sync(
+                            $eventTypeModels
+                                ->filter(fn ($eventTypeModel, $code) => $branch['supports'][$code] ?? false)
+                                ->pluck('id')
+                                ->all()
+                        );
+                    }
+
+                    if ($this->hasTableSafely('branch_inventory_items') && ! $branchModel->inventoryItems()->exists()) {
+                        collect($branch['inventory'] ?? [])->each(function (array $item, int $index) use ($branchModel) {
+                            BranchInventoryItem::query()->firstOrCreate(
+                                [
+                                    'branch_id' => $branchModel->id,
+                                    'item' => $item['item'],
+                                ],
+                                [
+                                    'stock' => $item['stock'] ?? 0,
+                                    'threshold' => $item['threshold'] ?? 0,
+                                    'sort_order' => $index,
+                                ]
+                            );
+                        });
+                    }
+
+                    if ($this->hasTableSafely('branch_hosts') && ! $branchModel->hostsList()->exists()) {
+                        collect($branch['hosts'] ?? [])->each(function (string $host, int $index) use ($branchModel) {
+                            BranchHost::query()->firstOrCreate(
+                                [
+                                    'branch_id' => $branchModel->id,
+                                    'name' => $host,
+                                ],
+                                [
+                                    'sort_order' => $index,
+                                ]
+                            );
+                        });
+                    }
+                });
+            }
+
+            return true;
+        }, false);
+    }
+
+    protected function defaultRoomChoices(): array
+    {
         return [
             [
                 'code' => 'birthday-party-room',

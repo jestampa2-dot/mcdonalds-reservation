@@ -1,5 +1,5 @@
 <script setup>
-import { computed, reactive, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { router } from '@inertiajs/vue3'
 import AppShell from '@/Components/AppShell.vue'
 import AdminQuickLinks from '@/Components/AdminQuickLinks.vue'
@@ -14,7 +14,35 @@ const props = defineProps({
   durationOptions: Array,
 })
 
+const searchQuery = ref('')
+
 const pendingBookings = computed(() => props.groupedBookings.flatMap((group) =>
+  group.types.flatMap((typeGroup) => typeGroup.bookings),
+))
+
+const filteredGroupedBookings = computed(() => {
+  const query = searchQuery.value.trim().toLowerCase()
+
+  if (!query) {
+    return props.groupedBookings
+  }
+
+  return props.groupedBookings
+    .map((group) => ({
+      ...group,
+      types: group.types
+        .map((typeGroup) => ({
+          ...typeGroup,
+          bookings: typeGroup.bookings.filter((booking) =>
+            (booking.booking_reference ?? '').toLowerCase().includes(query),
+          ),
+        }))
+        .filter((typeGroup) => typeGroup.bookings.length),
+    }))
+    .filter((group) => group.types.length)
+})
+
+const filteredPendingBookings = computed(() => filteredGroupedBookings.value.flatMap((group) =>
   group.types.flatMap((typeGroup) => typeGroup.bookings),
 ))
 
@@ -88,11 +116,17 @@ const refreshBookings = () => {
 
     <section class="mcd-section">
       <article class="mcd-panel p-6">
-        <div class="mcd-info-strip">
-          <p class="text-sm font-bold text-slate-500">{{ pendingBookings.length }} pending booking{{ pendingBookings.length === 1 ? '' : 's' }}</p>
+        <div class="mcd-info-strip gap-4">
+          <p class="text-sm font-bold text-slate-500">{{ filteredPendingBookings.length }} pending booking{{ filteredPendingBookings.length === 1 ? '' : 's' }}</p>
+          <input
+            v-model="searchQuery"
+            type="search"
+            class="mcd-input max-w-sm"
+            placeholder="Search booking reference"
+          />
         </div>
-        <div class="mt-5 space-y-6">
-          <section v-for="group in groupedBookings" :key="group.branch_code" class="rounded-3xl bg-white p-5">
+        <div v-if="filteredGroupedBookings.length" class="mt-5 space-y-6">
+          <section v-for="group in filteredGroupedBookings" :key="group.branch_code" class="rounded-3xl bg-white p-5">
             <div>
               <h2 class="text-2xl">{{ group.branch }}</h2>
               <p class="mt-1 text-sm text-slate-500">{{ group.city }}</p>
@@ -206,6 +240,7 @@ const refreshBookings = () => {
             </div>
           </section>
         </div>
+        <div v-else class="mcd-empty mt-5">No pending bookings matched that reference.</div>
       </article>
     </section>
   </AppShell>

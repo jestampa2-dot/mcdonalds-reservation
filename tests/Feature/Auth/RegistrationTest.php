@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Auth;
 
+use App\Models\User;
 use App\Providers\RouteServiceProvider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -35,5 +36,20 @@ class RegistrationTest extends TestCase
 
         $this->assertAuthenticated();
         $response->assertRedirect(RouteServiceProvider::HOME);
+        $this->assertDatabaseHas('users', [
+            'name' => 'Test User',
+            'email' => 'test@example.com',
+            'phone' => '+63 917 555 0199',
+            'gender' => 'prefer_not_to_say',
+            'address_line' => '123 Test Street',
+            'city' => 'Quezon City',
+            'province' => 'Metro Manila',
+            'postal_code' => '1100',
+            'role' => 'customer',
+        ]);
+        $user = User::where('email', 'test@example.com')->firstOrFail();
+
+        $this->assertSame('customer', $user->role);
+        $this->assertSame('2000-05-20', optional($user->birth_date)->format('Y-m-d'));
     }
 }

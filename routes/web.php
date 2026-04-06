@@ -31,8 +31,13 @@ Route::middleware('auth')->group(function () {
     Route::get('/admin/timeline', [ReservationController::class, 'adminTimeline'])->name('admin.timeline');
     Route::post('/admin/reservations/{reservation}/status', [ReservationController::class, 'updateBookingStatus'])->name('admin.reservations.status');
     Route::post('/admin/reservations/{reservation}/crew', [ReservationController::class, 'assignCrew'])->name('admin.reservations.crew');
+    Route::post('/admin/users', [ReservationController::class, 'storeAdminUser'])->name('admin.users.store');
+    Route::post('/admin/users/{user}', [ReservationController::class, 'updateAdminUser'])->name('admin.users.update');
     Route::post('/admin/users/{user}/role', [ReservationController::class, 'updateUserRole'])->name('admin.users.role');
+    Route::delete('/admin/users/{user}', [ReservationController::class, 'destroyAdminUser'])->name('admin.users.destroy');
     Route::post('/admin/branches', [ReservationController::class, 'storeBranch'])->name('admin.branches.store');
+    Route::post('/admin/branches/{branch}', [ReservationController::class, 'updateBranch'])->name('admin.branches.update');
+    Route::delete('/admin/branches/{branch}', [ReservationController::class, 'destroyBranch'])->name('admin.branches.destroy');
     Route::post('/admin/branches/{branch}/inventory', [ReservationController::class, 'storeInventoryItem'])->name('admin.branches.inventory.store');
     Route::post('/admin/inventory-items/{inventoryItem}', [ReservationController::class, 'updateInventoryItem'])->name('admin.inventory-items.update');
     Route::post('/admin/event-types/{eventType}', [ReservationController::class, 'updateEventType'])->name('admin.event-types.update');

@@ -30,6 +30,13 @@ class ProfileTest extends TestCase
             ->patch('/profile', [
                 'name' => 'Test User',
                 'email' => 'test@example.com',
+                'phone' => '+63 917 000 0001',
+                'birth_date' => '2000-01-15',
+                'gender' => 'female',
+                'address_line' => '45 Jollibee Street',
+                'city' => 'General Santos City',
+                'province' => 'South Cotabato',
+                'postal_code' => '9500',
             ]);
 
         $response
@@ -40,6 +47,13 @@ class ProfileTest extends TestCase
 
         $this->assertSame('Test User', $user->name);
         $this->assertSame('test@example.com', $user->email);
+        $this->assertSame('+63 917 000 0001', $user->phone);
+        $this->assertSame('2000-01-15', optional($user->birth_date)->format('Y-m-d'));
+        $this->assertSame('female', $user->gender);
+        $this->assertSame('45 Jollibee Street', $user->address_line);
+        $this->assertSame('General Santos City', $user->city);
+        $this->assertSame('South Cotabato', $user->province);
+        $this->assertSame('9500', $user->postal_code);
         $this->assertNull($user->email_verified_at);
     }
 
@@ -52,6 +66,13 @@ class ProfileTest extends TestCase
             ->patch('/profile', [
                 'name' => 'Test User',
                 'email' => $user->email,
+                'phone' => $user->phone,
+                'birth_date' => optional($user->birth_date)->format('Y-m-d'),
+                'gender' => $user->gender,
+                'address_line' => $user->address_line,
+                'city' => $user->city,
+                'province' => $user->province,
+                'postal_code' => $user->postal_code,
             ]);
 
         $response
