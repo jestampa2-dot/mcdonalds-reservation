@@ -1,426 +1,18 @@
 <?php
 
-namespace Database\Seeders;
+namespace App\Support;
 
-use App\Models\AddOn;
-use App\Models\BookingPackage;
-use App\Models\BookingSetting;
-use App\Models\Branch;
-use App\Models\BranchHost;
-use App\Models\BranchInventoryItem;
-use App\Models\EventType;
 use App\Models\MenuCategory;
-use App\Models\MenuBundle;
 use App\Models\MenuItem;
 use App\Models\MenuItemOption;
-use App\Models\PricingSetting;
-use App\Models\Reservation;
-use App\Models\RoomOption;
-use App\Models\User;
-use App\Support\MenuCatalogSynchronizer;
-use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
-class DatabaseSeeder extends Seeder
+class MenuCatalogSynchronizer
 {
-    public function run()
+    public function sync(): void
     {
-        $eventTypes = collect(config('booking.event_types'));
-        $packages = collect(config('booking.packages'));
-        $menuBundles = collect(config('booking.menu_bundles'));
-        $addOns = collect(config('booking.add_ons'));
-        $pricing = config('booking.pricing');
-
-        $eventTypeModels = $eventTypes->values()->mapWithKeys(function (array $eventType, int $index) use ($eventTypes) {
-            $code = $eventTypes->keys()->get($index);
-            $model = EventType::updateOrCreate(
-                ['code' => $code],
-                [
-                    'label' => $eventType['label'],
-                    'description' => $eventType['description'],
-                    'icon' => $eventType['icon'] ?? null,
-                    'sort_order' => $index,
-                    'is_active' => true,
-                ]
-            );
-
-            return [$code => $model];
-        });
-
-        $packages->each(function (array $items, string $eventTypeCode) use ($eventTypeModels) {
-            collect($items)->each(function (array $package, int $index) use ($eventTypeModels, $eventTypeCode) {
-                BookingPackage::updateOrCreate(
-                    ['code' => $package['code']],
-                    [
-                        'event_type_id' => $eventTypeModels[$eventTypeCode]->id,
-                        'name' => $package['name'],
-                        'price' => $package['price'],
-                        'guest_range' => $package['guest_range'] ?? null,
-                        'features' => $package['features'] ?? [],
-                        'sort_order' => $index,
-                        'is_active' => true,
-                    ]
-                );
-            });
-        });
-
-        $menuBundles->each(function (array $bundle, int $index) {
-            MenuBundle::updateOrCreate(
-                ['code' => $bundle['code']],
-                [
-                    'name' => $bundle['name'],
-                    'price' => $bundle['price'],
-                    'prep_label' => $bundle['prep_label'] ?? null,
-                    'sort_order' => $index,
-                    'is_active' => true,
-                ]
-            );
-        });
-
-        $addOns->each(function (array $addOn, int $index) {
-            AddOn::updateOrCreate(
-                ['code' => $addOn['code']],
-                [
-                    'name' => $addOn['name'],
-                    'price' => $addOn['price'],
-                    'sort_order' => $index,
-                    'is_active' => true,
-                ]
-            );
-        });
-
-        PricingSetting::updateOrCreate(
-            ['id' => 1],
-            [
-                'weekend_multiplier' => $pricing['weekend_multiplier'],
-                'holiday_multiplier' => $pricing['holiday_multiplier'],
-                'extension_hourly_rate' => $pricing['extension_hourly_rate'],
-                'holidays' => $pricing['holidays'] ?? [],
-                'is_active' => true,
-            ]
-        );
-
-        BookingSetting::updateOrCreate(
-            ['id' => 1],
-            [
-                'opening_hour' => 7,
-                'closing_hour' => 23,
-                'default_duration_hours' => 4,
-                'is_active' => true,
-            ]
-        );
-
-        collect([
-            [
-                'code' => 'birthday-party-room',
-                'label' => 'Birthday Party Room',
-                'description' => 'A decorated party room for birthday celebrations and family events.',
-                'preferred_event_type' => 'birthday',
-            ],
-            [
-                'code' => 'function-room',
-                'label' => 'Function Room',
-                'description' => 'A flexible function room for meetings, gatherings, and reserved events.',
-                'preferred_event_type' => 'business',
-            ],
-            [
-                'code' => 'whole-mcdonalds-room',
-                'label' => 'Whole McDonald\'s Room',
-                'description' => 'A full-space rental setup for bigger private events and store takeovers.',
-                'preferred_event_type' => 'table',
-            ],
-        ])->each(function (array $roomOption, int $index) {
-            RoomOption::updateOrCreate(
-                ['code' => $roomOption['code']],
-                [
-                    'label' => $roomOption['label'],
-                    'description' => $roomOption['description'],
-                    'preferred_event_type' => $roomOption['preferred_event_type'],
-                    'sort_order' => $index,
-                    'is_active' => true,
-                ]
-            );
-        });
-
-        app(MenuCatalogSynchronizer::class)->sync();
-
-        $admin = User::updateOrCreate(
-            ['email' => 'admin@mcdbooker.test'],
-            [
-                'name' => 'Ava Admin',
-                'phone' => '+63 917 555 0201',
-                'birth_date' => '1991-02-14',
-                'gender' => 'female',
-                'address_line' => '32 High Street Drive',
-                'city' => 'Taguig',
-                'province' => 'Metro Manila',
-                'postal_code' => '1630',
-                'role' => 'admin',
-                'password' => Hash::make('password'),
-            ]
-        );
-
-        $manager = User::updateOrCreate(
-            ['email' => 'manager@mcdbooker.test'],
-            [
-                'name' => 'Milo Manager',
-                'phone' => '+63 917 555 0202',
-                'birth_date' => '1990-07-09',
-                'gender' => 'male',
-                'address_line' => '88 Seaside Avenue',
-                'city' => 'Pasay',
-                'province' => 'Metro Manila',
-                'postal_code' => '1300',
-                'role' => 'manager',
-                'password' => Hash::make('password'),
-            ]
-        );
-
-        $staff = User::updateOrCreate(
-            ['email' => 'staff@mcdbooker.test'],
-            [
-                'name' => 'Sky Staff',
-                'phone' => '+63 917 555 0203',
-                'birth_date' => '1998-04-21',
-                'gender' => 'female',
-                'address_line' => '14 Service Crew Street',
-                'city' => 'Mandaluyong',
-                'province' => 'Metro Manila',
-                'postal_code' => '1550',
-                'role' => 'staff',
-                'password' => Hash::make('password'),
-            ]
-        );
-
-        $staffTwo = User::updateOrCreate(
-            ['email' => 'crewlead@mcdbooker.test'],
-            [
-                'name' => 'Riley Crew Lead',
-                'phone' => '+63 917 555 0204',
-                'birth_date' => '1996-11-03',
-                'gender' => 'non_binary',
-                'address_line' => '45 Pioneer Center',
-                'city' => 'Pasig',
-                'province' => 'Metro Manila',
-                'postal_code' => '1600',
-                'role' => 'staff',
-                'password' => Hash::make('password'),
-            ]
-        );
-
-        $customer = User::updateOrCreate(
-            ['email' => 'guest@mcdbooker.test'],
-            [
-                'name' => 'Casey Customer',
-                'phone' => '+63 917 555 0205',
-                'birth_date' => '1999-06-18',
-                'gender' => 'prefer_not_to_say',
-                'address_line' => '21 Celebration Lane',
-                'city' => 'Quezon City',
-                'province' => 'Metro Manila',
-                'postal_code' => '1100',
-                'role' => 'customer',
-                'password' => Hash::make('password'),
-            ]
-        );
-
-        foreach (config('booking.branches') as $branch) {
-            $branchModel = Branch::updateOrCreate(
-                ['code' => $branch['code']],
-                [
-                    'name' => $branch['name'],
-                    'city' => $branch['city'],
-                    'supports' => $branch['supports'],
-                    'concurrent_limit' => $branch['concurrent_limit'],
-                    'max_guests' => $branch['max_guests'],
-                    'map_url' => $branch['map_url'],
-                    'inventory' => $branch['inventory'],
-                    'hosts' => $branch['hosts'],
-                    'is_active' => true,
-                ]
-            );
-
-            $branchModel->supportedEventTypes()->sync(
-                $eventTypeModels
-                    ->filter(fn ($eventTypeModel, $code) => $branch['supports'][$code] ?? false)
-                    ->pluck('id')
-                    ->all()
-            );
-
-            $inventoryItems = collect($branch['inventory'] ?? []);
-            BranchInventoryItem::query()
-                ->where('branch_id', $branchModel->id)
-                ->whereNotIn('item', $inventoryItems->pluck('item')->all())
-                ->delete();
-
-            $inventoryItems->each(function (array $item, int $index) use ($branchModel) {
-                BranchInventoryItem::updateOrCreate(
-                    [
-                        'branch_id' => $branchModel->id,
-                        'item' => $item['item'],
-                    ],
-                    [
-                        'stock' => $item['stock'] ?? 0,
-                        'threshold' => $item['threshold'] ?? 0,
-                        'sort_order' => $index,
-                    ]
-                );
-            });
-
-            $hosts = collect($branch['hosts'] ?? []);
-            BranchHost::query()
-                ->where('branch_id', $branchModel->id)
-                ->whereNotIn('name', $hosts->all())
-                ->delete();
-
-            $hosts->each(function (string $host, int $index) use ($branchModel) {
-                BranchHost::updateOrCreate(
-                    [
-                        'branch_id' => $branchModel->id,
-                        'name' => $host,
-                    ],
-                    [
-                        'sort_order' => $index,
-                    ]
-                );
-            });
-        }
-
-        $samples = [
-            [
-                'user_id' => $customer->id,
-                'assigned_staff_id' => $staff->id,
-                'name' => 'Casey Customer',
-                'email' => 'guest@mcdbooker.test',
-                'phone' => '+63 917 555 0101',
-                'booking_reference' => 'MCR-DEMO100',
-                'reservation_type' => 'birthday',
-                'package_name' => 'The Ultimate Birthday PlayPlace Bash',
-                'package_code' => 'playplace-blast',
-                'room_choice' => 'Celebration area',
-                'food_package' => '10 Cheeseburger Meals, 5 McNugget Share Boxes',
-                'beverage_package' => 'McFloat Refreshment Round',
-                'event_materials' => 'Dedicated Party Host, Cake Service',
-                'branch' => 'McDonald\'s BGC High Street',
-                'branch_code' => 'mnl-bgc',
-                'event_date' => now()->addDays(4)->toDateString(),
-                'event_time' => '08:00',
-                'menu_bundles' => ['burger-10', 'nugget-share-5'],
-                'add_ons' => ['party-host', 'cake-service'],
-                'manual_menu_items' => [
-                    [
-                        'option_code' => 'big-mac-solo',
-                        'item_code' => 'big-mac',
-                        'item_name' => 'Big Mac',
-                        'option_label' => 'Solo',
-                        'quantity' => 4,
-                        'unit_price' => 154,
-                        'line_total' => 616,
-                        'prep_label' => '4 x Big Mac Solo',
-                        'category_code' => 'burgers',
-                    ],
-                ],
-                'guests' => 22,
-                'total_amount' => 13807.50,
-                'check_in_code' => 'demo100abc',
-                'notes' => 'Birthday celebrant loves sports-themed decor.',
-                'status' => 'confirmed',
-                'service_status' => 'available',
-            ],
-            [
-                'user_id' => $customer->id,
-                'assigned_staff_id' => $staffTwo->id,
-                'name' => 'Casey Customer',
-                'email' => 'guest@mcdbooker.test',
-                'phone' => '+63 917 555 0101',
-                'booking_reference' => 'MCR-DEMO200',
-                'reservation_type' => 'table',
-                'package_name' => 'Family Feast Reservation',
-                'package_code' => 'family-feast',
-                'room_choice' => 'Family dining zone',
-                'food_package' => '12 McSpaghetti Party Plates',
-                'beverage_package' => 'McFloat Refreshment Round',
-                'event_materials' => 'Cake Service',
-                'branch' => 'McDonald\'s Mall of Asia',
-                'branch_code' => 'mnl-moa',
-                'event_date' => now()->addDays(2)->toDateString(),
-                'event_time' => '09:00',
-                'menu_bundles' => ['mcspaghetti-12', 'mcfloat-round'],
-                'add_ons' => ['cake-service'],
-                'manual_menu_items' => [
-                    [
-                        'option_code' => 'fries-bff',
-                        'item_code' => 'fries',
-                        'item_name' => 'Fries',
-                        'option_label' => 'BFF',
-                        'quantity' => 1,
-                        'unit_price' => 135,
-                        'line_total' => 135,
-                        'prep_label' => '1 x Fries BFF',
-                        'category_code' => 'fries',
-                    ],
-                ],
-                'guests' => 8,
-                'total_amount' => 5485.50,
-                'check_in_code' => 'demo200xyz',
-                'notes' => 'Need a stroller-friendly table.',
-                'status' => 'pending_review',
-                'service_status' => 'available',
-            ],
-            [
-                'user_id' => $manager->id,
-                'assigned_staff_id' => $staff->id,
-                'name' => 'Nadia Ops',
-                'email' => 'ops@example.com',
-                'phone' => '+63 917 555 0125',
-                'booking_reference' => 'MCR-DEMO300',
-                'reservation_type' => 'business',
-                'package_name' => 'Boardroom Bites',
-                'package_code' => 'boardroom-bites',
-                'room_choice' => 'McCafe meeting zone',
-                'food_package' => '10 Cheeseburger Meals',
-                'beverage_package' => 'Coffee station',
-                'event_materials' => 'Presentation Kit Upgrade',
-                'branch' => 'McDonald\'s Ortigas Center',
-                'branch_code' => 'mnl-ortigas',
-                'event_date' => now()->addDay()->toDateString(),
-                'event_time' => '11:30',
-                'menu_bundles' => ['burger-10'],
-                'add_ons' => ['meeting-upgrade'],
-                'manual_menu_items' => [
-                    [
-                        'option_code' => 'coke-regular',
-                        'item_code' => 'coke',
-                        'item_name' => 'Coke',
-                        'option_label' => 'Regular',
-                        'quantity' => 10,
-                        'unit_price' => 77,
-                        'line_total' => 770,
-                        'prep_label' => '10 x Coke Regular',
-                        'category_code' => 'desserts-drinks',
-                    ],
-                ],
-                'guests' => 14,
-                'total_amount' => 9810.00,
-                'check_in_code' => 'demo300ops',
-                'notes' => 'Need extension cords for laptop setup.',
-                'status' => 'confirmed',
-                'service_status' => 'available',
-            ],
-        ];
-
-        foreach ($samples as $sample) {
-            Reservation::updateOrCreate(
-                ['booking_reference' => $sample['booking_reference']],
-                $sample
-            );
-        }
-    }
-
-    protected function seedMenuCatalog(): void
-    {
-        collect($this->menuCatalogSeed())->each(function (array $categoryData, int $categoryIndex) {
+        collect($this->definition())->each(function (array $categoryData, int $categoryIndex) {
             $category = MenuCategory::updateOrCreate(
                 ['code' => $categoryData['code']],
                 [
@@ -463,19 +55,14 @@ class DatabaseSeeder extends Seeder
         });
     }
 
-    protected function menuOptionCode(string $itemCode, string $label): string
-    {
-        return $itemCode.'-'.Str::slug($label);
-    }
-
-    protected function menuCatalogSeed(): array
+    public function definition(): array
     {
         return [
             [
                 'code' => 'burgers',
                 'name' => 'Burgers',
                 'icon' => '🍔',
-                'description' => 'Classic McDonald’s burger picks with solo, medium meal, and large meal options.',
+                'description' => 'Classic McDonald\'s burger picks with solo, medium meal, and large meal options.',
                 'items' => [
                     ['code' => 'big-mac', 'name' => 'Big Mac', 'description' => 'Signature layered burger with the classic Big Mac taste.', 'badge' => 'Bestseller', 'artwork' => 'burger', 'options' => [['label' => 'Solo', 'price' => 154], ['label' => 'Medium Meal', 'price' => 206], ['label' => 'Large Meal', 'price' => 226]]],
                     ['code' => 'burger-mcdo', 'name' => 'Burger McDo', 'description' => 'The everyday burger option for quick group add-ons.', 'artwork' => 'burger', 'options' => [['label' => 'Solo', 'price' => 37], ['label' => 'Medium Meal', 'price' => 111], ['label' => 'Large Meal', 'price' => 131]]],
@@ -581,7 +168,7 @@ class DatabaseSeeder extends Seeder
                 'icon' => '🍦',
                 'description' => 'Single-price dessert and beverage selections.',
                 'items' => [
-                    ['code' => 'apple-pie', 'name' => 'Apple Pie', 'description' => 'Classic McDonald’s dessert add-on.', 'artwork' => 'dessert', 'options' => [['label' => 'Regular', 'price' => 45]]],
+                    ['code' => 'apple-pie', 'name' => 'Apple Pie', 'description' => 'Classic McDonald\'s dessert add-on.', 'artwork' => 'dessert', 'options' => [['label' => 'Regular', 'price' => 45]]],
                     ['code' => 'coke', 'name' => 'Coke', 'description' => 'Standard Coke drink selection for manual ordering.', 'artwork' => 'drink', 'options' => [['label' => 'Regular', 'price' => 77]]],
                     ['code' => 'coke-zero-sugar', 'name' => 'Coke Zero Sugar', 'description' => 'Zero sugar Coke drink option.', 'artwork' => 'drink', 'options' => [['label' => 'Regular', 'price' => 77]]],
                     ['code' => 'sprite', 'name' => 'Sprite', 'description' => 'Refreshing lemon-lime soft drink.', 'artwork' => 'drink', 'options' => [['label' => 'Regular', 'price' => 77]]],
@@ -610,5 +197,17 @@ class DatabaseSeeder extends Seeder
                 ],
             ],
         ];
+    }
+
+    public function isSeeded(): bool
+    {
+        return MenuCategory::query()->exists()
+            && MenuItem::query()->exists()
+            && MenuItemOption::query()->exists();
+    }
+
+    protected function menuOptionCode(string $itemCode, string $label): string
+    {
+        return $itemCode.'-'.Str::slug($label);
     }
 }

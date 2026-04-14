@@ -54,5 +54,20 @@ class DatabaseBackedCatalogTest extends TestCase
         $this->assertDatabaseHas('pricing_settings', [
             'extension_hourly_rate' => 450,
         ]);
+
+        $this->assertDatabaseHas('menu_categories', [
+            'code' => 'burgers',
+            'name' => 'Burgers',
+        ]);
+
+        $this->assertDatabaseHas('menu_items', [
+            'code' => 'big-mac',
+            'name' => 'Big Mac',
+        ]);
+
+        $this->assertDatabaseHas('menu_item_options', [
+            'code' => 'big-mac-solo',
+            'label' => 'Solo',
+        ]);
     }
 }

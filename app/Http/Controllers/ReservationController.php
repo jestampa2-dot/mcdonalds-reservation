@@ -16,6 +16,7 @@ use App\Models\PricingSetting;
 use App\Models\Reservation;
 use App\Models\RoomOption;
 use App\Models\User;
+use App\Support\MenuCatalogSynchronizer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -2104,6 +2105,18 @@ class ReservationController extends Controller
                         });
                     }
                 });
+            }
+
+            if (
+                $this->hasTableSafely('menu_categories')
+                && $this->hasTableSafely('menu_items')
+                && $this->hasTableSafely('menu_item_options')
+            ) {
+                $menuCatalogSynchronizer = app(MenuCatalogSynchronizer::class);
+
+                if (! $menuCatalogSynchronizer->isSeeded()) {
+                    $menuCatalogSynchronizer->sync();
+                }
             }
 
             return true;
