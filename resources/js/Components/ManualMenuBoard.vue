@@ -10,6 +10,18 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  stepLabel: {
+    type: String,
+    default: '5. Manual foods and drinks',
+  },
+  title: {
+    type: String,
+    default: "Build the customer's tray like the McDonald's ordering app.",
+  },
+  description: {
+    type: String,
+    default: 'Select a category, choose the meal size you want, and add exact quantities to the reservation.',
+  },
 })
 
 const emit = defineEmits(['update:modelValue'])
@@ -175,9 +187,9 @@ const viewTray = (event) => {
   <section id="manual-menu-board" class="mcd-order-board">
     <div class="mcd-order-board__header">
       <div>
-        <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">5. Manual foods and drinks</p>
-        <h2 class="mt-3 text-3xl">Build the customer's tray like the McDonald's ordering app.</h2>
-        <p class="mt-2 text-sm text-slate-500">Select a category, choose the meal size you want, and add exact quantities to the reservation.</p>
+        <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">{{ stepLabel }}</p>
+        <h2 class="mt-3 text-3xl">{{ title }}</h2>
+        <p class="mt-2 text-sm text-slate-500">{{ description }}</p>
       </div>
       <div class="space-y-3">
         <div class="rounded-[1.75rem] bg-white px-5 py-4 shadow-sm">

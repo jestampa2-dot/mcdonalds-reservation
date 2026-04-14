@@ -570,7 +570,7 @@ const submit = () => {
       <div class="mcd-panel p-8">
         <div class="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p class="mcd-chip">Booking wizard</p>
+            <p class="mcd-chip">Booking</p>
             <h1 class="mt-4 text-4xl">Book your event</h1>
           </div>
           <div class="rounded-3xl bg-red-50 px-5 py-4 text-sm text-red-800">
