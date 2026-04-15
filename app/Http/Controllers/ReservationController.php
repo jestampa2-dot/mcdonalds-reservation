@@ -6,6 +6,7 @@ use App\Models\AddOn;
 use App\Models\BookingPackage;
 use App\Models\BookingSetting;
 use App\Models\Branch;
+use App\Models\BranchHost;
 use App\Models\BranchInventoryItem;
 use App\Models\EventType;
 use App\Models\MenuCategory;
