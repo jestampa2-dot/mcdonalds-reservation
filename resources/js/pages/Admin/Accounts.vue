@@ -3,6 +3,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { router, useForm } from '@inertiajs/vue3'
 import AppShell from '@/Components/AppShell.vue'
 import AdminQuickLinks from '@/Components/AdminQuickLinks.vue'
+import Modal from '@/Components/Modal.vue'
 
 const props = defineProps({
   users: Array,
@@ -10,6 +11,8 @@ const props = defineProps({
 })
 
 const search = ref('')
+const accountPendingDeletion = ref(null)
+const deletingAccountId = ref(null)
 
 const createForm = useForm({
   name: '',
@@ -57,6 +60,8 @@ const filteredUsers = computed(() => {
   )
 })
 
+const deleteModalOpen = computed(() => Boolean(accountPendingDeletion.value))
+
 const createAccount = () => {
   createForm.post(route('admin.users.store'), {
     preserveScroll: true,
@@ -75,14 +80,35 @@ const updateAccount = (id) => {
   })
 }
 
-const deleteAccount = (id) => {
-  if (! window.confirm('Delete this account? This cannot be undone.')) {
+const askToDeleteAccount = (user) => {
+  accountPendingDeletion.value = user
+}
+
+const closeDeleteModal = () => {
+  if (deletingAccountId.value) {
     return
   }
+
+  accountPendingDeletion.value = null
+}
+
+const deleteAccount = () => {
+  if (!accountPendingDeletion.value) {
+    return
+  }
+
+  const id = accountPendingDeletion.value.id
+  deletingAccountId.value = id
 
   router.delete(route('admin.users.destroy', id), {
     preserveScroll: true,
     preserveState: true,
+    onSuccess: () => {
+      accountPendingDeletion.value = null
+    },
+    onFinish: () => {
+      deletingAccountId.value = null
+    },
   })
 }
 </script>
@@ -219,7 +245,7 @@ const deleteAccount = (id) => {
                   v-if="canManageAccounts"
                   type="button"
                   class="mcd-button mcd-button--ghost"
-                  @click="deleteAccount(user.id)"
+                  @click="askToDeleteAccount(user)"
                 >
                   Delete account
                 </button>
@@ -233,5 +259,139 @@ const deleteAccount = (id) => {
         </div>
       </article>
     </section>
+
+    <Modal :show="deleteModalOpen" max-width="md" @close="closeDeleteModal">
+      <div class="account-delete-dialog">
+        <div class="account-delete-dialog__brand" aria-hidden="true">M</div>
+        <p class="mcd-chip">Account control</p>
+        <h2>Delete account?</h2>
+        <p class="account-delete-dialog__copy">
+          This permanently removes the account and cannot be undone.
+        </p>
+
+        <div class="account-delete-dialog__target">
+          <span>Selected account</span>
+          <strong>{{ accountPendingDeletion?.name || 'Unnamed account' }}</strong>
+          <small>{{ accountPendingDeletion?.email }}</small>
+        </div>
+
+        <div class="account-delete-dialog__actions">
+          <button type="button" class="mcd-button mcd-button--ghost" @click="closeDeleteModal">
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="mcd-button account-delete-dialog__danger"
+            :disabled="Boolean(deletingAccountId)"
+            @click="deleteAccount"
+          >
+            {{ deletingAccountId ? 'Deleting...' : 'Delete account' }}
+          </button>
+        </div>
+      </div>
+    </Modal>
   </AppShell>
 </template>
+
+<style scoped>
+.account-delete-dialog {
+  position: relative;
+  display: grid;
+  gap: 1rem;
+  padding: 2rem;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at top right, rgba(255, 199, 44, 0.42), transparent 32%),
+    linear-gradient(145deg, #fff9ec 0%, #fff0cc 48%, #fff7e7 100%);
+  color: var(--mcd-ink);
+}
+
+.account-delete-dialog::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 0.55rem;
+  background: linear-gradient(90deg, var(--mcd-red), var(--mcd-gold), var(--mcd-red));
+}
+
+.account-delete-dialog__brand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 4rem;
+  height: 4rem;
+  border-radius: 50%;
+  background: var(--mcd-gold);
+  color: var(--mcd-red);
+  font-family: "Arial Black", "Franklin Gothic Heavy", sans-serif;
+  font-size: 2.35rem;
+  line-height: 1;
+  box-shadow: 0 16px 30px rgba(216, 154, 0, 0.22);
+}
+
+.account-delete-dialog h2 {
+  font-size: clamp(2rem, 4vw, 2.75rem);
+  line-height: 1;
+}
+
+.account-delete-dialog__copy {
+  color: rgba(36, 23, 20, 0.72);
+  font-weight: 700;
+  line-height: 1.7;
+}
+
+.account-delete-dialog__target {
+  display: grid;
+  gap: 0.35rem;
+  padding: 1rem;
+  border-radius: 1.25rem;
+  background: rgba(255, 255, 255, 0.74);
+  border: 1px solid rgba(218, 41, 28, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.76);
+}
+
+.account-delete-dialog__target span {
+  color: var(--mcd-red-deep);
+  font-size: 0.74rem;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.account-delete-dialog__target strong {
+  color: var(--mcd-ink);
+  font-size: 1.08rem;
+}
+
+.account-delete-dialog__target small {
+  color: rgba(36, 23, 20, 0.58);
+  overflow-wrap: anywhere;
+}
+
+.account-delete-dialog__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.account-delete-dialog__danger {
+  background: linear-gradient(135deg, #9f1914, #da291c);
+}
+
+.account-delete-dialog__danger:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+@media (max-width: 640px) {
+  .account-delete-dialog {
+    padding: 1.4rem;
+  }
+
+  .account-delete-dialog__actions {
+    display: grid;
+  }
+}
+</style>
