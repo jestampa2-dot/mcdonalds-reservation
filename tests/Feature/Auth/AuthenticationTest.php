@@ -4,7 +4,10 @@ namespace Tests\Feature\Auth;
 
 use App\Models\User;
 use App\Providers\RouteServiceProvider;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
+use PDOException;
 use Tests\TestCase;
 
 class AuthenticationTest extends TestCase
@@ -41,5 +44,30 @@ class AuthenticationTest extends TestCase
         ]);
 
         $this->assertGuest();
+    }
+
+    public function test_users_see_a_friendly_error_when_the_database_is_unavailable(): void
+    {
+        $this->withoutMiddleware(\App\Http\Middleware\RedirectIfAuthenticated::class);
+
+        Auth::shouldReceive('attempt')
+            ->once()
+            ->andThrow(new QueryException(
+                'select * from `users` where `email` = ? limit 1',
+                ['demo@example.com'],
+                new PDOException(
+                    'SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it'
+                )
+            ));
+
+        $response = $this->from('/login')->post('/login', [
+            'email' => 'demo@example.com',
+            'password' => 'password',
+        ]);
+
+        $response->assertRedirect('/login');
+        $response->assertSessionHasErrors([
+            'email' => trans('auth.unavailable'),
+        ]);
     }
 }

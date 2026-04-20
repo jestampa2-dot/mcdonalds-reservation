@@ -3,14 +3,18 @@
 namespace App\Http\Requests\Auth;
 
 use Illuminate\Auth\Events\Lockout;
+use Illuminate\Database\DetectsLostConnections;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class LoginRequest extends FormRequest
 {
+    use DetectsLostConnections;
+
     /**
      * Determine if the user is authorized to make this request.
      */
@@ -41,7 +45,24 @@ class LoginRequest extends FormRequest
     {
         $this->ensureIsNotRateLimited();
 
-        if (! Auth::attempt($this->only('email', 'password'), $this->boolean('remember'))) {
+        try {
+            $authenticated = Auth::attempt(
+                $this->only('email', 'password'),
+                $this->boolean('remember')
+            );
+        } catch (Throwable $exception) {
+            if ($this->wasCausedByUnavailableDatabase($exception)) {
+                report($exception);
+
+                throw ValidationException::withMessages([
+                    'email' => trans('auth.unavailable'),
+                ]);
+            }
+
+            throw $exception;
+        }
+
+        if (! $authenticated) {
             RateLimiter::hit($this->throttleKey());
 
             throw ValidationException::withMessages([
@@ -81,5 +102,26 @@ class LoginRequest extends FormRequest
     public function throttleKey(): string
     {
         return Str::transliterate(Str::lower($this->input('email')).'|'.$this->ip());
+    }
+
+    /**
+     * Determine if authentication failed because the database is temporarily unavailable.
+     */
+    protected function wasCausedByUnavailableDatabase(Throwable $exception): bool
+    {
+        $exceptions = array_filter([$exception, $exception->getPrevious()]);
+
+        foreach ($exceptions as $throwable) {
+            if (
+                $this->causedByLostConnection($throwable) ||
+                Str::contains($throwable->getMessage(), [
+                    'No connection could be made because the target machine actively refused it',
+                ])
+            ) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
