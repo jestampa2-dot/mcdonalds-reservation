@@ -4,7 +4,7 @@ import { Linking, RefreshControl, ScrollView, StyleSheet, Text, useWindowDimensi
 
 import { AppButton, AppScreen, Panel, SectionHeading, Tag } from '@/components/mobile-ui';
 import { palette } from '@/constants/palette';
-import { fetchHome, getApiBaseUrl } from '@/lib/api';
+import { ApiError, fetchHome, getApiBaseUrl } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import type { HomePayload } from '@/lib/types';
 
@@ -13,6 +13,7 @@ export default function HomeScreen() {
   const [payload, setPayload] = useState<HomePayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
   const { width } = useWindowDimensions();
   const isWide = width >= 760;
 
@@ -24,8 +25,11 @@ export default function HomeScreen() {
         setLoading(true);
       }
 
+      setErrorMessage('');
       const response = await fetchHome();
       setPayload(response);
+    } catch (error) {
+      setErrorMessage(error instanceof ApiError ? error.message : 'Unable to load live branch and package data right now.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -52,6 +56,14 @@ export default function HomeScreen() {
       <ScrollView
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void loadHome(true)} tintColor={palette.brandRed} />}
         contentContainerStyle={{ gap: 20, paddingBottom: 32 }}>
+        {errorMessage ? (
+          <Panel style={styles.errorPanel}>
+            <SectionHeading label="Connection issue" title="The mobile app cannot reach Laravel yet" />
+            <Text style={styles.errorText}>{errorMessage}</Text>
+            <AppButton label="Try again" onPress={() => void loadHome()} tone="secondary" />
+          </Panel>
+        ) : null}
+
         <Panel>
           <SectionHeading label="Quick actions" title={user ? `Welcome, ${user.name.split(' ')[0]}` : 'Customer flow'} />
           <View style={styles.buttonRow}>
@@ -60,11 +72,11 @@ export default function HomeScreen() {
           </View>
         </Panel>
 
-        {loading || !payload ? (
+        {loading && !payload ? (
           <Panel>
             <Text style={styles.loadingText}>Loading live branch and package data...</Text>
           </Panel>
-        ) : (
+        ) : payload ? (
           <>
             <View style={[styles.statGrid, isWide ? styles.statGridWide : null]}>
               {payload.stats.map((stat) => (
@@ -139,7 +151,7 @@ export default function HomeScreen() {
               </View>
             </Panel>
           </>
-        )}
+        ) : null}
       </ScrollView>
     </AppScreen>
   );
@@ -152,6 +164,14 @@ const styles = StyleSheet.create({
   loadingText: {
     color: palette.inkMuted,
     fontSize: 15,
+  },
+  errorPanel: {
+    borderColor: '#F2B5AA',
+    backgroundColor: '#FFF4F2',
+  },
+  errorText: {
+    color: palette.brandRedDark,
+    lineHeight: 20,
   },
   statGrid: {
     gap: 12,

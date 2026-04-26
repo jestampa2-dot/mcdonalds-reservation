@@ -1,10 +1,10 @@
 import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { AppButton, AppScreen, Panel, SectionHeading, Tag } from '@/components/mobile-ui';
+import { AppButton, AppScreen, Field, Panel, SectionHeading, Tag } from '@/components/mobile-ui';
 import { palette } from '@/constants/palette';
-import { fetchDashboard } from '@/lib/api';
+import { ApiError, cancelReservation, fetchDashboard, rescheduleReservation } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import type { DashboardPayload } from '@/lib/types';
 
@@ -14,6 +14,7 @@ const statusTone: Record<string, boolean> = {
   pending_review: false,
   rescheduled: false,
   cancelled: false,
+  completed: true,
 };
 
 export default function DashboardScreen() {
@@ -21,6 +22,8 @@ export default function DashboardScreen() {
   const [payload, setPayload] = useState<DashboardPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [rescheduleForms, setRescheduleForms] = useState<Record<number, { event_date: string; event_time: string }>>({});
 
   const loadDashboard = useCallback(async (nextRefreshing = false) => {
     if (!token) {
@@ -34,8 +37,22 @@ export default function DashboardScreen() {
         setLoading(true);
       }
 
+      setErrorMessage('');
       const response = await fetchDashboard(token);
       setPayload(response);
+      setRescheduleForms(
+        Object.fromEntries(
+          response.bookings.map((booking) => [
+            booking.id,
+            {
+              event_date: booking.event_date,
+              event_time: booking.event_start_time,
+            },
+          ]),
+        ),
+      );
+    } catch (error) {
+      setErrorMessage(error instanceof ApiError ? error.message : 'Unable to load your reservation history right now.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -47,6 +64,38 @@ export default function DashboardScreen() {
       void loadDashboard();
     }
   }, [loadDashboard, token]);
+
+  async function handleCancel(reservationId: number) {
+    try {
+      const response = await cancelReservation(token!, reservationId);
+      Alert.alert('Booking updated', response.message);
+      await loadDashboard();
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : 'Unable to cancel the booking right now.';
+      Alert.alert('Cancel failed', message);
+    }
+  }
+
+  async function handleReschedule(reservationId: number) {
+    try {
+      const response = await rescheduleReservation(token!, reservationId, rescheduleForms[reservationId]);
+      Alert.alert('Booking updated', response.message);
+      await loadDashboard();
+    } catch (error) {
+      const message = error instanceof ApiError ? Object.values(error.errors ?? {})[0]?.[0] ?? error.message : 'Unable to reschedule right now.';
+      Alert.alert('Reschedule failed', message);
+    }
+  }
+
+  function setRescheduleValue(reservationId: number, key: 'event_date' | 'event_time', value: string) {
+    setRescheduleForms((current) => ({
+      ...current,
+      [reservationId]: {
+        ...(current[reservationId] ?? { event_date: '', event_time: '' }),
+        [key]: value,
+      },
+    }));
+  }
 
   if (booting) {
     return (
@@ -79,15 +128,23 @@ export default function DashboardScreen() {
   }
 
   return (
-      <AppScreen
-        eyebrow="Customer dashboard"
-        title={`${user.name.split(' ')[0]}'s reservations`}
-        subtitle="Live view of the same reservation records your Laravel dashboard already stores."
-        scroll={false}
-        rightSlot={<AppButton label="Sign out" onPress={() => void signOut()} tone="secondary" />}>
+    <AppScreen
+      eyebrow="Customer dashboard"
+      title={`${user.name.split(' ')[0]}'s reservations`}
+      subtitle="Live view of the same reservation records your Laravel dashboard already stores."
+      scroll={false}
+      rightSlot={<AppButton label="Sign out" onPress={() => void signOut()} tone="secondary" />}>
       <ScrollView
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void loadDashboard(true)} tintColor={palette.brandRed} />}
         contentContainerStyle={{ gap: 20, paddingBottom: 32 }}>
+        {errorMessage ? (
+          <Panel style={styles.errorPanel}>
+            <SectionHeading label="Connection issue" title="Dashboard data is unavailable right now" />
+            <Text style={styles.errorText}>{errorMessage}</Text>
+            <AppButton label="Reload dashboard" onPress={() => void loadDashboard()} tone="secondary" />
+          </Panel>
+        ) : null}
+
         {loading && !payload ? (
           <Panel>
             <Text style={styles.mutedText}>Loading your reservation history...</Text>
@@ -121,6 +178,7 @@ export default function DashboardScreen() {
                         </View>
                         <Tag label={booking.status.replace('_', ' ')} active={statusTone[booking.status] ?? false} />
                       </View>
+
                       <View style={styles.receiptBox}>
                         {booking.receipt.line_items.slice(0, 3).map((line) => (
                           <View key={`${booking.id}-${line.label}`} style={styles.receiptRow}>
@@ -133,6 +191,26 @@ export default function DashboardScreen() {
                           <Text style={styles.receiptStrongValue}>PHP {booking.receipt.total}</Text>
                         </View>
                       </View>
+
+                      {['pending_review', 'confirmed', 'rescheduled'].includes(booking.status) ? (
+                        <View style={styles.actionBox}>
+                          <Text style={styles.actionTitle}>Reservation actions</Text>
+                          <Field
+                            label="New date (YYYY-MM-DD)"
+                            value={rescheduleForms[booking.id]?.event_date ?? booking.event_date}
+                            onChangeText={(value) => setRescheduleValue(booking.id, 'event_date', value)}
+                          />
+                          <Field
+                            label="New start time (HH:MM)"
+                            value={rescheduleForms[booking.id]?.event_time ?? booking.event_start_time}
+                            onChangeText={(value) => setRescheduleValue(booking.id, 'event_time', value)}
+                          />
+                          <View style={styles.actionButtons}>
+                            <AppButton label="Reschedule" onPress={() => void handleReschedule(booking.id)} tone="secondary" />
+                            <AppButton label="Cancel booking" onPress={() => void handleCancel(booking.id)} tone="ghost" />
+                          </View>
+                        </View>
+                      ) : null}
                     </View>
                   ))}
                 </View>
@@ -150,6 +228,14 @@ const styles = StyleSheet.create({
     color: palette.inkMuted,
     lineHeight: 21,
     fontSize: 15,
+  },
+  errorPanel: {
+    borderColor: '#F2B5AA',
+    backgroundColor: '#FFF4F2',
+  },
+  errorText: {
+    color: palette.brandRedDark,
+    lineHeight: 20,
   },
   buttonStack: {
     gap: 12,
@@ -231,5 +317,16 @@ const styles = StyleSheet.create({
   receiptStrongValue: {
     color: palette.brandRed,
     fontWeight: '900',
+  },
+  actionBox: {
+    gap: 12,
+  },
+  actionTitle: {
+    color: palette.ink,
+    fontWeight: '900',
+    fontSize: 16,
+  },
+  actionButtons: {
+    gap: 10,
   },
 });

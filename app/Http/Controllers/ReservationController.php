@@ -18,6 +18,7 @@ use App\Models\Reservation;
 use App\Models\RoomOption;
 use App\Models\User;
 use App\Support\MenuCatalogSynchronizer;
+use App\Support\Timeline\ReservationTimelineBuilder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -40,6 +41,11 @@ class ReservationController extends Controller
     protected ?bool $databaseAvailable = null;
     protected ?array $catalogCache = null;
     protected bool $databaseDefaultsEnsured = false;
+
+    protected function reservationTimelineBuilder(): ReservationTimelineBuilder
+    {
+        return app(ReservationTimelineBuilder::class);
+    }
 
     public function home(): InertiaResponse
     {
@@ -2375,117 +2381,17 @@ class ReservationController extends Controller
 
     protected function upcomingEventNotifications($bookings, int $limit = 8): array
     {
-        $today = now()->startOfDay();
-
-        return $bookings
-            ->filter(function (Reservation $reservation) use ($today) {
-                if (! $reservation->event_date) {
-                    return false;
-                }
-
-                return $reservation->event_date->copy()->startOfDay()->greaterThanOrEqualTo($today)
-                    && in_array($reservation->status, ['pending_review', 'confirmed', 'rescheduled', 'checked_in'], true);
-            })
-            ->sortBy(fn (Reservation $reservation) => sprintf(
-                '%s %s',
-                $reservation->event_date?->toDateString() ?? '9999-12-31',
-                $reservation->event_time ?? '23:59:59'
-            ))
-            ->take($limit)
-            ->values()
-            ->map(fn (Reservation $reservation) => [
-                'id' => $reservation->id,
-                'booking_reference' => $reservation->booking_reference,
-                'package_name' => $reservation->package_name,
-                'branch' => $reservation->branch,
-                'event_type' => ucfirst($reservation->reservation_type),
-                'event_date' => $reservation->event_date?->format('M d, Y'),
-                'event_time' => $this->formatTimeRange(substr($reservation->event_time, 0, 5), (int) ($reservation->duration_hours ?? 4)),
-                'status' => $reservation->status,
-                'assigned_staff_name' => $reservation->assignedStaff?->name,
-                'message' => $this->notificationMessage($reservation),
-            ])
-            ->all();
+        return $this->reservationTimelineBuilder()->notifications($bookings, $limit);
     }
 
     protected function eventHistory($bookings, int $limit = 10): array
     {
-        $today = now()->startOfDay();
-
-        return $bookings
-            ->filter(function (Reservation $reservation) use ($today) {
-                if (! $reservation->event_date) {
-                    return false;
-                }
-
-                return $reservation->event_date->copy()->startOfDay()->lessThan($today)
-                    || $reservation->status === 'completed';
-            })
-            ->sortByDesc(fn (Reservation $reservation) => sprintf(
-                '%s %s',
-                $reservation->event_date?->toDateString() ?? '0000-00-00',
-                $reservation->event_time ?? '00:00:00'
-            ))
-            ->take($limit)
-            ->values()
-            ->map(fn (Reservation $reservation) => [
-                'id' => $reservation->id,
-                'booking_reference' => $reservation->booking_reference,
-                'package_name' => $reservation->package_name,
-                'branch' => $reservation->branch,
-                'event_type' => ucfirst($reservation->reservation_type),
-                'event_date' => $reservation->event_date?->format('M d, Y'),
-                'event_time' => $this->formatTimeRange(substr($reservation->event_time, 0, 5), (int) ($reservation->duration_hours ?? 4)),
-                'status' => $reservation->status,
-                'service_status' => $reservation->service_status,
-                'assigned_staff_name' => $reservation->assignedStaff?->name,
-                'checked_in_by' => $reservation->checked_in_by,
-            ])
-            ->all();
+        return $this->reservationTimelineBuilder()->history($bookings, $limit);
     }
 
     protected function cancelledEvents($bookings, int $limit = 10): array
     {
-        return $bookings
-            ->where('status', 'cancelled')
-            ->sortByDesc(fn (Reservation $reservation) => sprintf(
-                '%s %s',
-                $reservation->event_date?->toDateString() ?? '0000-00-00',
-                $reservation->event_time ?? '00:00:00'
-            ))
-            ->take($limit)
-            ->values()
-            ->map(fn (Reservation $reservation) => [
-                'id' => $reservation->id,
-                'booking_reference' => $reservation->booking_reference,
-                'package_name' => $reservation->package_name,
-                'branch' => $reservation->branch,
-                'event_type' => ucfirst($reservation->reservation_type),
-                'event_date' => $reservation->event_date?->format('M d, Y'),
-                'event_time' => $this->formatTimeRange(substr($reservation->event_time, 0, 5), (int) ($reservation->duration_hours ?? 4)),
-                'status' => $reservation->status,
-                'service_status' => $reservation->service_status,
-                'customer_name' => $reservation->name,
-                'cancelled_note' => $reservation->notes,
-            ])
-            ->all();
-    }
-
-    protected function notificationMessage(Reservation $reservation): string
-    {
-        if ($reservation->status === 'pending_review') {
-            return 'Needs approval before the guest arrives.';
-        }
-
-        if ($reservation->status === 'rescheduled') {
-            return 'Recently moved to a new schedule and should be re-checked.';
-        }
-
-        if ($reservation->status === 'checked_in') {
-            return 'Guest is already on site and service is active.';
-        }
-
-        return 'Confirmed event coming up soon.';
+        return $this->reservationTimelineBuilder()->cancelled($bookings, $limit);
     }
 
     protected function analyticsReport($bookings): array

@@ -37,10 +37,24 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="operations"
+        options={{
+          title: 'Ops',
+          tabBarIcon: ({ color, size }) => <MaterialCommunityIcons size={size + 2} name="briefcase-variant" color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="dashboard"
         options={{
           title: 'Dashboard',
           tabBarIcon: ({ color, size }) => <MaterialCommunityIcons size={size + 2} name="view-dashboard" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="account"
+        options={{
+          title: 'Account',
+          tabBarIcon: ({ color, size }) => <MaterialCommunityIcons size={size + 2} name="account-circle" color={color} />,
         }}
       />
     </Tabs>

@@ -196,3 +196,24 @@ export type DashboardPayload = {
   slotOptions: string[];
   stats: Array<{ label: string; value: string | number }>;
 };
+
+export type OperationsPayload = {
+  role: string;
+  admin?: Record<string, any>;
+  staff?: Record<string, any>;
+};
+
+export type ProfilePayload = {
+  name: string;
+  email: string;
+  phone: string;
+  birth_date: string | null;
+  gender: string | null;
+  address_line: string | null;
+  city: string | null;
+  province: string | null;
+  postal_code: string | null;
+  email_verified_at: string | null;
+  role: string;
+  full_address: string;
+};

@@ -58,6 +58,7 @@ export default function BookingScreen() {
   const [payload, setPayload] = useState<BookingOptionsPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [paymentProof, setPaymentProof] = useState<PickedImage | null>(null);
@@ -82,6 +83,7 @@ export default function BookingScreen() {
         setLoading(true);
       }
 
+      setErrorMessage('');
       const response = await fetchBookingOptions();
       const eventTypes = Object.keys(response.catalog.eventTypes);
       const nextEventType = eventTypes[0] ?? 'birthday';
@@ -104,6 +106,8 @@ export default function BookingScreen() {
       setGuests('10');
       setPaymentProof(null);
       setActiveCategory(response.catalog.menuCategories[0]?.code ?? null);
+    } catch (error) {
+      setErrorMessage(error instanceof ApiError ? error.message : 'Unable to load booking options right now.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -226,7 +230,7 @@ export default function BookingScreen() {
         lineTotal: option.price * selection.quantity,
       };
     })
-    .filter(Boolean);
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
 
   const estimatedTotal = useMemo(() => {
     if (!payload || !selectedPackage) {
@@ -364,11 +368,19 @@ export default function BookingScreen() {
       <ScrollView
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void loadBookingOptions(true)} tintColor={palette.brandRed} />}
         contentContainerStyle={{ gap: 20, paddingBottom: 32 }}>
-        {loading || !payload ? (
+        {errorMessage ? (
+          <Panel style={styles.errorPanel}>
+            <SectionHeading label="Connection issue" title="Booking data is unavailable right now" />
+            <Text style={styles.errorText}>{errorMessage}</Text>
+            <AppButton label="Reload booking data" onPress={() => void loadBookingOptions()} tone="secondary" />
+          </Panel>
+        ) : null}
+
+        {loading && !payload ? (
           <Panel>
             <Text style={styles.loadingText}>Loading booking options...</Text>
           </Panel>
-        ) : (
+        ) : payload ? (
           <>
             <Panel>
               <SectionHeading label="1. Event type" title="Choose the celebration" />
@@ -538,7 +550,7 @@ export default function BookingScreen() {
               </View>
             </Panel>
           </>
-        )}
+        ) : null}
       </ScrollView>
     </AppScreen>
   );
@@ -548,6 +560,14 @@ const styles = StyleSheet.create({
   loadingText: {
     color: palette.inkMuted,
     fontSize: 15,
+  },
+  errorPanel: {
+    borderColor: '#F2B5AA',
+    backgroundColor: '#FFF4F2',
+  },
+  errorText: {
+    color: palette.brandRedDark,
+    lineHeight: 20,
   },
   helperText: {
     color: palette.inkMuted,

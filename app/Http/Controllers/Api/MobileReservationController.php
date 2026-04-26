@@ -224,4 +224,69 @@ class MobileReservationController extends ReservationController
             'reservation' => $this->serializeReservation($reservation),
         ], Response::HTTP_CREATED);
     }
+
+    public function mobileCancel(Request $request, Reservation $reservation): JsonResponse
+    {
+        $this->authorizeReservationAccess($request, $reservation);
+
+        if ($reservation->checked_in_at) {
+            return response()->json([
+                'message' => 'Checked-in bookings cannot be cancelled.',
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $reservation->update([
+            'status' => 'cancelled',
+            'service_status' => 'available',
+        ]);
+
+        return response()->json([
+            'message' => 'Booking cancelled.',
+            'reservation' => $this->serializeReservation($reservation->fresh()),
+        ]);
+    }
+
+    public function mobileReschedule(Request $request, Reservation $reservation): JsonResponse
+    {
+        $this->authorizeReservationAccess($request, $reservation);
+
+        $validated = $request->validate([
+            'event_date' => ['required', 'date', 'after_or_equal:today'],
+            'event_time' => ['required', Rule::in($this->catalog()['slotOptions'])],
+        ]);
+
+        $durationHours = (int) ($reservation->duration_hours ?? 4);
+
+        if (! $this->isDurationWindowValid($validated['event_time'], $durationHours)) {
+            return response()->json([
+                'message' => 'Choose a start and end time that stays between '.$this->bookingWindowLabel().'.',
+                'errors' => [
+                    'event_time' => ['Reservations must fit within the event booking window of '.$this->bookingWindowLabel().'.'],
+                ],
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        if (! $this->isSlotAvailable($reservation->branch_code, $validated['event_date'], $validated['event_time'], $durationHours, $reservation->id)) {
+            return response()->json([
+                'message' => 'The chosen date and time are unavailable or already reserved. Please choose another schedule.',
+                'errors' => [
+                    'event_time' => ['The chosen date and time are unavailable or already reserved.'],
+                ],
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $reservation->update([
+            'event_date' => $validated['event_date'],
+            'event_time' => $validated['event_time'],
+            'status' => 'rescheduled',
+            'checked_in_at' => null,
+            'checked_in_by' => null,
+            'service_status' => 'available',
+        ]);
+
+        return response()->json([
+            'message' => 'Booking rescheduled.',
+            'reservation' => $this->serializeReservation($reservation->fresh()),
+        ]);
+    }
 }

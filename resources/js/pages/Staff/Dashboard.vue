@@ -3,6 +3,7 @@ import { reactive, ref, watch } from 'vue'
 import { useForm, router } from '@inertiajs/vue3'
 import AppShell from '@/Components/AppShell.vue'
 import StatusBadge from '@/Components/StatusBadge.vue'
+import EventHistoryPanel from '@/features/timeline/components/EventHistoryPanel.vue'
 
 const props = defineProps({
   prepList: Array,
@@ -99,28 +100,16 @@ const refreshStaffView = () => {
           <button type="button" class="mcd-button mcd-button--ghost mt-6" @click="refreshStaffView">Refresh staff view</button>
         </article>
 
-        <article class="mcd-panel p-6">
-          <div class="flex items-center justify-between gap-3">
-            <div>
-              <p class="mcd-chip">History</p>
-              <h2 class="mt-3 text-2xl">Previous events</h2>
-            </div>
-            <span class="mcd-badge mcd-badge--success">{{ historyItems.length }} records</span>
-          </div>
-          <div v-if="historyItems.length" class="mt-5 space-y-3">
-            <div v-for="item in historyItems" :key="item.id" class="rounded-3xl bg-white p-4">
-              <div class="flex flex-wrap items-center gap-2">
-                <strong>{{ item.booking_reference }}</strong>
-                <StatusBadge :value="item.status" />
-                <StatusBadge :value="item.service_status" />
-              </div>
-              <p class="mt-2 text-sm text-slate-600">{{ item.package_name }} | {{ item.branch }}</p>
-              <p class="mt-1 text-sm text-slate-500">{{ item.event_date }} | {{ item.event_time }}</p>
-              <p class="mt-2 text-xs text-slate-500">Checked in by: {{ item.checked_in_by || 'No check-in recorded' }}</p>
-            </div>
-          </div>
-          <div v-else class="mcd-empty mt-5">No history.</div>
-        </article>
+        <EventHistoryPanel
+          :items="historyItems"
+          chip-label="History"
+          title="Previous events"
+          search-placeholder="Search history by event, branch, or reference"
+          :show-header-badge="true"
+          header-badge-class="mcd-badge--success"
+          list-class="space-y-3"
+          card-class="rounded-3xl bg-white p-4"
+        />
 
         <article class="mcd-panel mcd-panel--dark p-8">
           <p class="text-sm uppercase tracking-[0.2em] text-amber-300">Check-in scanner</p>

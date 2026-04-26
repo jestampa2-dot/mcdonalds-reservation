@@ -1,9 +1,11 @@
 <script setup>
-import { computed, reactive, ref, watch } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import { router } from '@inertiajs/vue3'
 import AppShell from '@/Components/AppShell.vue'
 import AdminQuickLinks from '@/Components/AdminQuickLinks.vue'
 import StatusBadge from '@/Components/StatusBadge.vue'
+import SearchToolbar from '@/features/search/components/SearchToolbar.vue'
+import { useSearchCollection } from '@/features/search/composables/useSearchCollection'
 
 const props = defineProps({
   stats: Array,
@@ -16,34 +18,23 @@ const props = defineProps({
 
 const searchQuery = ref('')
 
-const filteredConfirmedEvents = computed(() => {
-  const query = searchQuery.value.trim().toLowerCase()
-
-  if (!query) {
-    return props.confirmedEvents
-  }
-
-  return props.confirmedEvents.filter((booking) => {
-    const searchableText = [
-      booking.booking_reference,
-      booking.customer_name,
-      booking.customer_email,
-      booking.customer_phone,
-      booking.package_name,
-      booking.branch,
-      booking.room_choice,
-      booking.event_date,
-      booking.event_time,
-      booking.notes,
-      booking.assigned_staff_name,
-    ]
-      .filter(Boolean)
-      .join(' ')
-      .toLowerCase()
-
-    return searchableText.includes(query)
-  })
-})
+const filteredConfirmedEvents = useSearchCollection(
+  () => props.confirmedEvents,
+  searchQuery,
+  [
+    'booking_reference',
+    'customer_name',
+    'customer_email',
+    'customer_phone',
+    'package_name',
+    'branch',
+    'room_choice',
+    'event_date',
+    'event_time',
+    'notes',
+    'assigned_staff_name',
+  ],
+)
 
 const statusState = reactive(Object.fromEntries(props.confirmedEvents.map((booking) => [booking.id, booking.status])))
 const crewState = reactive(Object.fromEntries(props.confirmedEvents.map((booking) => [booking.id, booking.assigned_staff_id ?? ''])))
@@ -132,15 +123,13 @@ const refreshConfirmed = () => {
 
     <section class="mcd-section">
       <article class="mcd-panel p-6">
-        <div class="mcd-info-strip gap-4">
-          <p class="text-sm font-bold text-slate-500">{{ filteredConfirmedEvents.length }} confirmed event{{ filteredConfirmedEvents.length === 1 ? '' : 's' }}</p>
-          <input
-            v-model="searchQuery"
-            type="search"
-            class="mcd-input max-w-sm"
-            placeholder="Search event, customer, branch, or booking reference"
-          />
-        </div>
+        <SearchToolbar
+          v-model="searchQuery"
+          :count="filteredConfirmedEvents.length"
+          singular-label="confirmed event"
+          placeholder="Search event, customer, branch, or booking reference"
+          max-width-class="max-w-sm"
+        />
         <div v-if="filteredConfirmedEvents.length" class="space-y-4">
           <div v-for="booking in filteredConfirmedEvents" :key="booking.id" class="rounded-2xl bg-amber-50 p-4">
             <div class="grid gap-4 md:grid-cols-[1.1fr,0.8fr,0.8fr]">

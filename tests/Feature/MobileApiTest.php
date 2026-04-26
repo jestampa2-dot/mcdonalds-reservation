@@ -99,4 +99,59 @@ class MobileApiTest extends TestCase
                 'stats',
             ]);
     }
+
+    public function test_admin_can_fetch_mobile_operations_payload(): void
+    {
+        $admin = User::factory()->create([
+            'role' => 'admin',
+        ]);
+
+        Sanctum::actingAs($admin);
+
+        $this->getJson('/api/mobile/operations')
+            ->assertOk()
+            ->assertJsonStructure([
+                'role',
+                'admin' => [
+                    'dashboard',
+                    'bookings',
+                    'confirmedEvents',
+                    'availability',
+                    'branches',
+                    'accounts',
+                    'catalog',
+                    'reports',
+                    'timeline',
+                ],
+                'staff' => [
+                    'prepList',
+                    'todayBookings',
+                    'notifications',
+                    'history',
+                    'statusOptions',
+                ],
+            ]);
+    }
+
+    public function test_authenticated_user_can_update_mobile_profile(): void
+    {
+        $user = User::factory()->create();
+
+        Sanctum::actingAs($user);
+
+        $this->putJson('/api/mobile/profile', [
+            'name' => 'Updated Mobile Name',
+            'email' => $user->email,
+            'phone' => '+63 955 111 2222',
+            'birth_date' => '1999-02-15',
+            'gender' => 'prefer_not_to_say',
+            'address_line' => '456 Updated Street',
+            'city' => 'Quezon City',
+            'province' => 'Metro Manila',
+            'postal_code' => '1100',
+        ])
+            ->assertOk()
+            ->assertJsonPath('profile.name', 'Updated Mobile Name')
+            ->assertJsonPath('profile.city', 'Quezon City');
+    }
 }
