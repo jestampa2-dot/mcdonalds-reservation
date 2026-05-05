@@ -1,13 +1,41 @@
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
-import { Alert, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Alert,
+  Image,
+  Linking,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 
-import { AppButton, AppScreen, Field, Panel, SectionHeading, Tag } from '@/components/mobile-ui';
+import {
+  CustomerButton,
+  CustomerCard,
+  CustomerChip,
+  CustomerField,
+  CustomerHeader,
+  CustomerPage,
+  HeaderIconButton,
+  McLogo,
+  SectionEyebrow,
+  SectionTitle,
+  SheetSurface,
+} from '@/components/customer-ui';
 import { palette } from '@/constants/palette';
 import { ApiError, createReservation, fetchBookingOptions } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { readCache, writeCache } from '@/lib/cache';
+import { addHoursToTime, formatCurrency, formatLongDate, formatMonthLabel, formatTimeLabel } from '@/lib/formatters';
 import type { AvailabilityDate, BookingOptionsPayload } from '@/lib/types';
+
+const bookingOptionsCacheKey = 'mobile-cache:booking-options';
+const bookingOptionsCacheTtlMs = 1000 * 60 * 30;
 
 type PickedImage = {
   uri: string;
@@ -19,22 +47,6 @@ type ManualSelection = {
   option_code: string;
   quantity: number;
 };
-
-function formatTimeLabel(time: string) {
-  const [hours, minutes] = time.split(':').map(Number);
-  const meridian = hours >= 12 ? 'PM' : 'AM';
-  const hour12 = hours % 12 || 12;
-  return `${hour12}:${String(minutes).padStart(2, '0')} ${meridian}`;
-}
-
-function addHoursToTime(time: string, hoursToAdd: number) {
-  const [hours, minutes] = time.split(':').map(Number);
-  const totalMinutes = hours * 60 + minutes + hoursToAdd * 60;
-  const nextHours = Math.floor(totalMinutes / 60) % 24;
-  const nextMinutes = totalMinutes % 60;
-
-  return `${String(nextHours).padStart(2, '0')}:${String(nextMinutes).padStart(2, '0')}`;
-}
 
 function canStartAtTime(time: string, dateAvailability: AvailabilityDate | null, durationHours: number) {
   if (!dateAvailability) {
@@ -53,6 +65,10 @@ function canStartAtTime(time: string, dateAvailability: AvailabilityDate | null,
   return true;
 }
 
+function monthFromDate(date: string) {
+  return date.slice(0, 7);
+}
+
 export default function BookingScreen() {
   const { token, user } = useAuth();
   const [payload, setPayload] = useState<BookingOptionsPayload | null>(null);
@@ -67,6 +83,7 @@ export default function BookingScreen() {
   const [eventType, setEventType] = useState('birthday');
   const [branchCode, setBranchCode] = useState('');
   const [eventDate, setEventDate] = useState('');
+  const [calendarMonth, setCalendarMonth] = useState('');
   const [eventTime, setEventTime] = useState('');
   const [durationHours, setDurationHours] = useState(4);
   const [roomChoice, setRoomChoice] = useState('');
@@ -74,12 +91,15 @@ export default function BookingScreen() {
   const [menuBundles, setMenuBundles] = useState<string[]>([]);
   const [addOns, setAddOns] = useState<string[]>([]);
   const [manualSelections, setManualSelections] = useState<ManualSelection[]>([]);
+  const hasPayloadRef = useRef(false);
+  const { width } = useWindowDimensions();
+  const isWide = width >= 760;
 
-  async function loadBookingOptions(nextRefreshing = false) {
+  const loadBookingOptions = useCallback(async (nextRefreshing = false) => {
     try {
       if (nextRefreshing) {
         setRefreshing(true);
-      } else {
+      } else if (!hasPayloadRef.current) {
         setLoading(true);
       }
 
@@ -91,10 +111,13 @@ export default function BookingScreen() {
       const nextBranch = supportedBranches[0]?.code ?? Object.keys(response.catalog.branches)[0] ?? '';
       const nextPackages = response.catalog.packages[nextEventType] ?? [];
 
+      hasPayloadRef.current = true;
       setPayload(response);
+      await writeCache(bookingOptionsCacheKey, response);
       setEventType(nextEventType);
       setBranchCode(nextBranch);
       setEventDate(response.defaults.event_date);
+      setCalendarMonth(monthFromDate(response.defaults.event_date));
       setEventTime(response.defaults.event_time);
       setDurationHours(response.defaults.duration_hours);
       setRoomChoice(response.defaults.room_choice);
@@ -112,11 +135,50 @@ export default function BookingScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
+    let active = true;
+
+    void (async () => {
+      const cachedPayload = await readCache<BookingOptionsPayload>(bookingOptionsCacheKey, bookingOptionsCacheTtlMs);
+
+      if (!active || !cachedPayload) {
+        return;
+      }
+
+      const eventTypes = Object.keys(cachedPayload.catalog.eventTypes);
+      const nextEventType = eventTypes[0] ?? 'birthday';
+      const supportedCachedBranches = Object.values(cachedPayload.catalog.branches).filter((branch) => branch.supports[nextEventType]);
+      const nextBranch = supportedCachedBranches[0]?.code ?? Object.keys(cachedPayload.catalog.branches)[0] ?? '';
+      const nextPackages = cachedPayload.catalog.packages[nextEventType] ?? [];
+
+      hasPayloadRef.current = true;
+      setPayload(cachedPayload);
+      setEventType(nextEventType);
+      setBranchCode(nextBranch);
+      setEventDate(cachedPayload.defaults.event_date);
+      setCalendarMonth(monthFromDate(cachedPayload.defaults.event_date));
+      setEventTime(cachedPayload.defaults.event_time);
+      setDurationHours(cachedPayload.defaults.duration_hours);
+      setRoomChoice(cachedPayload.defaults.room_choice);
+      setPackageCode(nextPackages[0]?.code ?? '');
+      setMenuBundles(cachedPayload.catalog.menuBundles[0] ? [cachedPayload.catalog.menuBundles[0].code] : []);
+      setAddOns([]);
+      setManualSelections([]);
+      setNotes('');
+      setGuests('10');
+      setPaymentProof(null);
+      setActiveCategory(cachedPayload.catalog.menuCategories[0]?.code ?? null);
+      setLoading(false);
+    })();
+
     void loadBookingOptions();
-  }, []);
+
+    return () => {
+      active = false;
+    };
+  }, [loadBookingOptions]);
 
   const supportedBranches = useMemo(() => {
     if (!payload) {
@@ -132,11 +194,17 @@ export default function BookingScreen() {
     }
   }, [branchCode, supportedBranches]);
 
+  const selectedBranch = useMemo(
+    () => supportedBranches.find((branch) => branch.code === branchCode) ?? supportedBranches[0] ?? null,
+    [branchCode, supportedBranches],
+  );
+
   const branchAvailability = useMemo(() => {
     return payload?.availability.branches.find((branch) => branch.code === branchCode) ?? null;
   }, [branchCode, payload]);
 
   const dateCards = useMemo(() => branchAvailability?.dates ?? [], [branchAvailability]);
+  const monthOptions = useMemo(() => Array.from(new Set(dateCards.map((item) => monthFromDate(item.date)))), [dateCards]);
   const selectedDateAvailability = useMemo(
     () => dateCards.find((item) => item.date === eventDate) ?? dateCards[0] ?? null,
     [dateCards, eventDate],
@@ -150,12 +218,24 @@ export default function BookingScreen() {
     if (!dateCards.some((item) => item.date === eventDate)) {
       setEventDate(selectedDateAvailability.date);
     }
-  }, [dateCards, eventDate, selectedDateAvailability]);
+
+    const nextMonth = monthFromDate(selectedDateAvailability.date);
+    if (nextMonth !== calendarMonth) {
+      setCalendarMonth(nextMonth);
+    }
+  }, [calendarMonth, dateCards, eventDate, selectedDateAvailability]);
+
+  useEffect(() => {
+    if (!calendarMonth && monthOptions[0]) {
+      setCalendarMonth(monthOptions[0]);
+    }
+  }, [calendarMonth, monthOptions]);
 
   const startSlots = useMemo(
     () => (selectedDateAvailability?.slots ?? []).filter((slot) => canStartAtTime(slot.time, selectedDateAvailability, durationHours)),
     [durationHours, selectedDateAvailability],
   );
+
   const allowedDurations = useMemo(() => {
     if (!selectedDateAvailability) {
       return [];
@@ -232,9 +312,15 @@ export default function BookingScreen() {
     })
     .filter((item): item is NonNullable<typeof item> => Boolean(item));
 
-  const estimatedTotal = useMemo(() => {
+  const pricingPreview = useMemo(() => {
     if (!payload || !selectedPackage) {
-      return 0;
+      return {
+        subtotal: 0,
+        multiplier: 1,
+        total: 0,
+        pricingRuleLabel: 'Regular day rate',
+        extensionTotal: 0,
+      };
     }
 
     const date = new Date(`${eventDate}T12:00:00`);
@@ -245,18 +331,73 @@ export default function BookingScreen() {
       : isWeekend
         ? payload.catalog.pricing.weekend_multiplier
         : 1;
-
+    const pricingRuleLabel = isHoliday ? 'Holiday rate' : isWeekend ? 'Weekend rate' : 'Regular day rate';
     const includedHours = 4;
     const extensionHours = Math.max(durationHours - includedHours, 0);
+    const extensionTotal = extensionHours * payload.catalog.pricing.extension_hourly_rate;
     const subtotal =
       selectedPackage.price +
       selectedBundles.reduce((sum, item) => sum + item.price, 0) +
       selectedAddOns.reduce((sum, item) => sum + item.price, 0) +
       selectedManualItems.reduce((sum, item) => sum + item.lineTotal, 0) +
-      extensionHours * payload.catalog.pricing.extension_hourly_rate;
+      extensionTotal;
 
-    return subtotal * multiplier;
+    return {
+      subtotal,
+      multiplier,
+      total: subtotal * multiplier,
+      pricingRuleLabel,
+      extensionTotal,
+    };
   }, [durationHours, eventDate, payload, selectedAddOns, selectedBundles, selectedManualItems, selectedPackage]);
+
+  const selectedRoom = roomChoices.find((choice) => choice.code === roomChoice);
+  const receiptLines = useMemo(() => {
+    const lines = [];
+
+    if (selectedPackage) {
+      lines.push({ label: selectedPackage.name, amount: selectedPackage.price });
+    }
+
+    selectedBundles.forEach((bundle) => lines.push({ label: bundle.name, amount: bundle.price }));
+    selectedAddOns.forEach((item) => lines.push({ label: item.name, amount: item.price }));
+    selectedManualItems.forEach((item) => lines.push({ label: `${item.quantity}x ${item.optionLabel}`, amount: item.lineTotal }));
+
+    if (pricingPreview.extensionTotal > 0) {
+      lines.push({ label: `${durationHours - 4}h extension`, amount: pricingPreview.extensionTotal });
+    }
+
+    return lines;
+  }, [durationHours, pricingPreview.extensionTotal, selectedAddOns, selectedBundles, selectedManualItems, selectedPackage]);
+
+  const visibleMenuItems = payload?.catalog.menuCategories.find((item) => item.code === activeCategory)?.items ?? [];
+
+  const calendarCells = useMemo(() => {
+    if (!calendarMonth) {
+      return [];
+    }
+
+    const [year, month] = calendarMonth.split('-').map(Number);
+    const firstDate = new Date(year, month - 1, 1, 12, 0, 0);
+    const leadingBlanks = (firstDate.getDay() + 6) % 7;
+    const totalDays = new Date(year, month, 0, 12, 0, 0).getDate();
+    const dateMap = Object.fromEntries(
+      dateCards
+        .filter((item) => monthFromDate(item.date) === calendarMonth)
+        .map((item) => [Number(item.date.slice(-2)), item]),
+    );
+    const cells: ({ type: 'blank' } | { type: 'day'; day: number; item: AvailabilityDate | null })[] = [];
+
+    for (let index = 0; index < leadingBlanks; index += 1) {
+      cells.push({ type: 'blank' });
+    }
+
+    for (let day = 1; day <= totalDays; day += 1) {
+      cells.push({ type: 'day', day, item: dateMap[day] ?? null });
+    }
+
+    return cells;
+  }, [calendarMonth, dateCards]);
 
   function toggleCode(list: string[], setList: (value: string[]) => void, code: string) {
     setList(list.includes(code) ? list.filter((item) => item !== code) : [...list, code]);
@@ -307,11 +448,33 @@ export default function BookingScreen() {
   }
 
   async function submitReservation() {
+    const guestCount = Number(guests);
+
     if (!token || !user) {
-      Alert.alert('Sign in required', 'Create an account or sign in first so the reservation can be attached to your customer profile.', [
+      Alert.alert('Sign in required', 'Create an account or sign in first so your reservation can be attached to your customer profile.', [
         { text: 'Later', style: 'cancel' },
         { text: 'Sign in', onPress: () => router.push('/login') },
       ]);
+      return;
+    }
+
+    if (!selectedBranch || !selectedDateAvailability || !selectedPackage || !roomChoice) {
+      Alert.alert('Booking incomplete', 'Please choose a branch, schedule, room, and package before submitting.');
+      return;
+    }
+
+    if (!Number.isInteger(guestCount) || guestCount < 2) {
+      Alert.alert('Invalid guest count', 'Enter at least 2 guests before submitting the reservation.');
+      return;
+    }
+
+    if (guestCount > selectedBranch.max_guests) {
+      Alert.alert('Guest limit exceeded', `This branch currently supports up to ${selectedBranch.max_guests} guests for one booking.`);
+      return;
+    }
+
+    if (!startSlots.some((slot) => slot.time === eventTime)) {
+      Alert.alert('Invalid time slot', 'Please choose an available start time before submitting.');
       return;
     }
 
@@ -329,7 +492,7 @@ export default function BookingScreen() {
       formData.append('event_time', eventTime);
       formData.append('duration_hours', String(durationHours));
       formData.append('room_choice', roomChoice);
-      formData.append('guests', guests);
+      formData.append('guests', String(guestCount));
       formData.append('package_code', packageCode);
       selectedBundles.forEach((bundle, index) => formData.append(`menu_bundles[${index}]`, bundle.code));
       selectedAddOns.forEach((item, index) => formData.append(`add_ons[${index}]`, item.code));
@@ -342,11 +505,14 @@ export default function BookingScreen() {
         formData.append('notes', notes.trim());
       }
 
-      formData.append('payment_proof', {
-        uri: paymentProof.uri,
-        name: paymentProof.name,
-        type: paymentProof.type,
-      } as any);
+      formData.append(
+        'payment_proof',
+        {
+          uri: paymentProof.uri,
+          name: paymentProof.name,
+          type: paymentProof.type,
+        } as any,
+      );
 
       const response = await createReservation(formData, token);
       Alert.alert('Reservation submitted', `${response.message}\n\nReference: ${response.reservation.booking_reference}`);
@@ -360,395 +526,664 @@ export default function BookingScreen() {
   }
 
   return (
-    <AppScreen
-      eyebrow="Reservation flow"
-      title="Build your event package"
-      subtitle="This mobile screen uses the live booking catalog, availability map, and pricing rules from Laravel."
-      scroll={false}>
-      <ScrollView
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void loadBookingOptions(true)} tintColor={palette.brandRed} />}
-        contentContainerStyle={{ gap: 20, paddingBottom: 32 }}>
+    <CustomerPage
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void loadBookingOptions(true)} tintColor={palette.brandRed} />}
+      contentContainerStyle={styles.pageContent}>
+      <CustomerHeader
+        title="Book Event"
+        subtitle="Customer booking flow connected to the live reservation database."
+        leftSlot={<HeaderIconButton icon="chevron-left" onPress={() => router.push('/(tabs)')} />}
+        rightSlot={<McLogo />}
+        centered
+      />
+      <SheetSurface>
         {errorMessage ? (
-          <Panel style={styles.errorPanel}>
-            <SectionHeading label="Connection issue" title="Booking data is unavailable right now" />
-            <Text style={styles.errorText}>{errorMessage}</Text>
-            <AppButton label="Reload booking data" onPress={() => void loadBookingOptions()} tone="secondary" />
-          </Panel>
+          <CustomerCard tone="pink">
+            <SectionEyebrow>Connection issue</SectionEyebrow>
+            <SectionTitle>Booking data is unavailable</SectionTitle>
+            <Text style={styles.helperText}>{errorMessage}</Text>
+            <CustomerButton label="Reload booking data" onPress={() => void loadBookingOptions()} tone="ghost" />
+          </CustomerCard>
         ) : null}
 
-        {loading && !payload ? (
-          <Panel>
-            <Text style={styles.loadingText}>Loading booking options...</Text>
-          </Panel>
-        ) : payload ? (
+        {loading && !payload ? <Text style={styles.helperText}>Loading booking options...</Text> : null}
+
+        {payload ? (
           <>
-            <Panel>
-              <SectionHeading label="1. Event type" title="Choose the celebration" />
-              <View style={styles.tagWrap}>
+            <CustomerCard tone="cream">
+              <SectionEyebrow>Choose a celebration</SectionEyebrow>
+              <View style={styles.chipRow}>
                 {Object.entries(payload.catalog.eventTypes).map(([code, item]) => (
-                  <Tag key={code} label={item.label} active={eventType === code} onPress={() => setEventType(code)} />
+                  <CustomerChip key={code} label={item.label} active={eventType === code} onPress={() => setEventType(code)} />
                 ))}
               </View>
-            </Panel>
+            </CustomerCard>
 
-            <Panel>
-              <SectionHeading label="2. Branch and schedule" title="Pick an open slot" />
-              <Text style={styles.helperText}>Supported branches</Text>
-              <View style={styles.tagWrap}>
+            <CustomerCard>
+              <SectionEyebrow>Choose a branch</SectionEyebrow>
+              <SectionTitle>Book and manage events</SectionTitle>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
                 {supportedBranches.map((branch) => (
-                  <Tag key={branch.code} label={`${branch.name} · ${branch.city}`} active={branchCode === branch.code} onPress={() => setBranchCode(branch.code)} />
-                ))}
-              </View>
-              <Text style={styles.helperText}>Date</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalList}>
-                {dateCards.slice(0, 18).map((dateCard) => (
-                  <Pressable key={dateCard.date} onPress={() => setEventDate(dateCard.date)} style={[styles.dateCard, eventDate === dateCard.date ? styles.dateCardActive : null]}>
-                    <Text style={[styles.dateCardDay, eventDate === dateCard.date ? styles.dateCardDayActive : null]}>
-                      {new Date(`${dateCard.date}T12:00:00`).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
-                    </Text>
-                    <Text style={[styles.dateCardMeta, eventDate === dateCard.date ? styles.dateCardMetaActive : null]}>
-                      {dateCard.available_slots} starts
-                    </Text>
+                  <Pressable
+                    key={branch.code}
+                    onPress={() => setBranchCode(branch.code)}
+                    style={[styles.branchCard, branchCode === branch.code ? styles.branchCardActive : null]}>
+                    <Text style={styles.branchCardTitle}>{branch.name}</Text>
+                    <Text style={styles.branchCardMeta}>{branch.city}</Text>
+                    <Text style={styles.branchCardGuests}>Up to {branch.max_guests} guests</Text>
+                    <View style={styles.chipRow}>
+                      {Object.entries(branch.supports)
+                        .filter(([, supported]) => supported)
+                        .map(([type]) => (
+                          <CustomerChip
+                            key={`${branch.code}-${type}`}
+                            label={type.charAt(0).toUpperCase() + type.slice(1)}
+                            tone={type === 'business' ? 'pink' : 'green'}
+                          />
+                        ))}
+                    </View>
+                    {branch.map_url ? (
+                      <CustomerButton
+                        label="Open in Maps"
+                        onPress={() => void Linking.openURL(branch.map_url!)}
+                        tone="ghost"
+                        compact
+                      />
+                    ) : null}
                   </Pressable>
                 ))}
               </ScrollView>
-              <Text style={styles.helperText}>Start time</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalList}>
-                {startSlots.map((slot) => (
-                  <Tag key={slot.time} label={slot.label} active={eventTime === slot.time} onPress={() => setEventTime(slot.time)} />
-                ))}
-              </ScrollView>
-              <Text style={styles.helperText}>Duration</Text>
-              <View style={styles.tagWrap}>
-                {allowedDurations.map((duration) => (
-                  <Tag key={duration} label={`${duration}h`} active={durationHours === duration} onPress={() => setDurationHours(duration)} />
-                ))}
-              </View>
-              <Text style={styles.summaryText}>
-                {selectedDateAvailability ? `${formatTimeLabel(eventTime)} to ${formatTimeLabel(addHoursToTime(eventTime, durationHours))}` : 'Select a date to continue'}
-              </Text>
-            </Panel>
-
-            <Panel>
-              <SectionHeading label="3. Package" title="Start with the main package" />
-              <View style={styles.optionStack}>
-                {packages.map((item) => (
-                  <Pressable key={item.code} onPress={() => setPackageCode(item.code)} style={[styles.optionCard, packageCode === item.code ? styles.optionCardActive : null]}>
-                    <View style={styles.optionHeader}>
-                      <Text style={styles.optionTitle}>{item.name}</Text>
-                      <Text style={styles.optionPrice}>
-                        {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(item.price)}
-                      </Text>
-                    </View>
-                    <Text style={styles.optionMeta}>{item.guest_range}</Text>
-                    {item.features.map((feature) => (
-                      <Text key={feature} style={styles.optionFeature}>
-                        • {feature}
-                      </Text>
-                    ))}
-                  </Pressable>
-                ))}
-              </View>
-            </Panel>
-
-            <Panel>
-              <SectionHeading label="4. Extras" title="Bundles, add-ons, and manual menu picks" />
-              <Text style={styles.helperText}>Menu bundles</Text>
-              <View style={styles.optionStack}>
-                {payload.catalog.menuBundles.map((bundle) => (
-                  <Pressable key={bundle.code} onPress={() => toggleCode(menuBundles, setMenuBundles, bundle.code)} style={[styles.miniOption, menuBundles.includes(bundle.code) ? styles.miniOptionActive : null]}>
-                    <Text style={styles.miniOptionTitle}>{bundle.name}</Text>
-                    <Text style={styles.miniOptionPrice}>
-                      {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(bundle.price)}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-
-              <Text style={styles.helperText}>Add-ons</Text>
-              <View style={styles.optionStack}>
-                {payload.catalog.addOns.map((item) => (
-                  <Pressable key={item.code} onPress={() => toggleCode(addOns, setAddOns, item.code)} style={[styles.miniOption, addOns.includes(item.code) ? styles.miniOptionActive : null]}>
-                    <Text style={styles.miniOptionTitle}>{item.name}</Text>
-                    <Text style={styles.miniOptionPrice}>
-                      {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(item.price)}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-
-              {payload.catalog.menuCategories.length > 0 ? (
-                <>
-                  <Text style={styles.helperText}>Manual menu</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalList}>
-                    {payload.catalog.menuCategories.map((category) => (
-                      <Tag key={category.code} label={category.name} active={activeCategory === category.code} onPress={() => setActiveCategory(category.code)} />
-                    ))}
-                  </ScrollView>
-                  {(payload.catalog.menuCategories.find((item) => item.code === activeCategory)?.items ?? []).map((item) => (
-                    <View key={item.code} style={styles.manualItemCard}>
-                      <Text style={styles.manualItemTitle}>{item.name}</Text>
-                      {item.description ? <Text style={styles.manualItemDescription}>{item.description}</Text> : null}
-                      {item.options.map((option) => {
-                        const quantity = manualSelections.find((entry) => entry.option_code === option.code)?.quantity ?? 0;
-                        return (
-                          <View key={option.code} style={styles.manualOptionRow}>
-                            <View style={{ flex: 1 }}>
-                              <Text style={styles.manualOptionLabel}>{option.label}</Text>
-                              <Text style={styles.manualOptionPrice}>
-                                {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(option.price)}
-                              </Text>
-                            </View>
-                            <View style={styles.quantityControls}>
-                              <AppButton label="−" onPress={() => updateManualSelection(option.code, 'decrement')} tone="ghost" />
-                              <Text style={styles.quantityText}>{quantity}</Text>
-                              <AppButton label="+" onPress={() => updateManualSelection(option.code, 'increment')} tone="secondary" />
-                            </View>
-                          </View>
-                        );
-                      })}
-                    </View>
-                  ))}
-                </>
+              {selectedBranch?.map_url ? (
+                <CustomerButton
+                  label="Open selected branch in Maps"
+                  onPress={() => void Linking.openURL(selectedBranch.map_url!)}
+                  tone="ghost"
+                  icon="map-marker-outline"
+                  compact
+                />
               ) : null}
-            </Panel>
+            </CustomerCard>
 
-            <Panel>
-              <SectionHeading label="5. Customer details" title="Finalize the request" />
-              <Field label="Number of guests" value={guests} onChangeText={setGuests} placeholder="10" keyboardType="numeric" />
-              <Text style={styles.helperText}>Room choice</Text>
-              <View style={styles.tagWrap}>
-                {payload.roomChoices.map((choice) => (
-                  <Tag key={choice.code} label={choice.label} active={roomChoice === choice.code} onPress={() => setRoomChoice(choice.code)} />
+            <CustomerCard>
+              <View style={styles.sectionHeaderRow}>
+                <View style={{ gap: 2 }}>
+                  <SectionEyebrow>Reservation schedule</SectionEyebrow>
+                  <SectionTitle>Pick your date and time</SectionTitle>
+                </View>
+                <CustomerButton label="Refresh now" onPress={() => void loadBookingOptions(true)} tone="secondary" compact />
+              </View>
+
+              <View style={styles.monthSwitcher}>
+                <CustomerButton
+                  label="<"
+                  onPress={() => {
+                    const currentIndex = monthOptions.indexOf(calendarMonth);
+                    if (currentIndex > 0) {
+                      setCalendarMonth(monthOptions[currentIndex - 1]);
+                    }
+                  }}
+                  tone="ghost"
+                  compact
+                />
+                <Text style={styles.monthLabel}>{calendarMonth ? formatMonthLabel(calendarMonth) : 'Choose a month'}</Text>
+                <CustomerButton
+                  label=">"
+                  onPress={() => {
+                    const currentIndex = monthOptions.indexOf(calendarMonth);
+                    if (currentIndex >= 0 && currentIndex < monthOptions.length - 1) {
+                      setCalendarMonth(monthOptions[currentIndex + 1]);
+                    }
+                  }}
+                  tone="ghost"
+                  compact
+                />
+              </View>
+
+              <View style={styles.weekRow}>
+                {['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map((day) => (
+                  <Text key={day} style={styles.weekLabel}>
+                    {day}
+                  </Text>
                 ))}
               </View>
-              <Field label="Notes for the crew" value={notes} onChangeText={setNotes} placeholder="Theme, special setup, dietary notes..." multiline />
-              <View style={styles.proofPanel}>
-                <View style={{ gap: 4, flex: 1 }}>
-                  <Text style={styles.proofTitle}>Payment proof</Text>
-                  <Text style={styles.proofSubtitle}>Required by the current Laravel booking flow.</Text>
-                </View>
-                <AppButton label={paymentProof ? 'Replace image' : 'Pick image'} onPress={() => void selectPaymentProof()} tone="secondary" />
-              </View>
-              {paymentProof ? <Image source={{ uri: paymentProof.uri }} style={styles.previewImage} /> : null}
-            </Panel>
 
-            <Panel>
-              <SectionHeading label="Summary" title="Estimated total" />
-              <Text style={styles.totalAmount}>
-                {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(estimatedTotal)}
-              </Text>
-              <Text style={styles.summaryDetail}>
-                {selectedPackage?.name ?? 'No package selected'} · {guests} guests · {durationHours} hour{durationHours > 1 ? 's' : ''}
-              </Text>
-              <Text style={styles.summaryDetail}>
-                {selectedManualItems.length} manual picks · {selectedBundles.length} bundles · {selectedAddOns.length} add-ons
-              </Text>
-              <View style={styles.submitStack}>
-                <AppButton label={user ? 'Submit reservation' : 'Sign in to submit'} onPress={() => void submitReservation()} loading={submitting} />
-                {!user ? <AppButton label="Create account first" onPress={() => router.push('/register')} tone="ghost" /> : null}
+              <View style={styles.calendarGrid}>
+                {calendarCells.map((cell, index) =>
+                  cell.type === 'blank' ? (
+                    <View key={`blank-${index}`} style={styles.blankDay} />
+                  ) : (
+                    <Pressable
+                      key={cell.item?.date ?? `${calendarMonth}-${cell.day}`}
+                      disabled={!cell.item}
+                      onPress={() => {
+                        if (cell.item) {
+                          setEventDate(cell.item.date);
+                        }
+                      }}
+                      style={[
+                        styles.dayCell,
+                        cell.item?.date === eventDate ? styles.dayCellActive : null,
+                        cell.item?.status === 'full' ? styles.dayCellFull : null,
+                      ]}>
+                      <Text
+                        style={[
+                          styles.dayCellText,
+                          cell.item?.date === eventDate ? styles.dayCellTextActive : null,
+                          cell.item?.status === 'limited' ? styles.dayCellTextLimited : null,
+                          cell.item?.status === 'full' ? styles.dayCellTextFull : null,
+                        ]}>
+                        {cell.day}
+                      </Text>
+                    </Pressable>
+                  ),
+                )}
               </View>
-            </Panel>
+
+              <View style={styles.timeCardRow}>
+                <CustomerCard tone="cream" style={styles.timeCard}>
+                  <Text style={styles.timeCardLabel}>Start Time</Text>
+                  <Text style={styles.timeCardValue}>{formatTimeLabel(eventTime)}</Text>
+                  <Text style={styles.timeCardMeta}>{formatLongDate(eventDate)}</Text>
+                </CustomerCard>
+                <CustomerCard tone="cream" style={styles.timeCard}>
+                  <Text style={styles.timeCardLabel}>Due Time</Text>
+                  <Text style={styles.timeCardValue}>{formatTimeLabel(addHoursToTime(eventTime, durationHours))}</Text>
+                  <Text style={styles.timeCardMeta}>{durationHours} hour span</Text>
+                </CustomerCard>
+              </View>
+
+              <Text style={styles.inputLabel}>Available start times</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
+                {startSlots.map((slot) => (
+                  <CustomerChip key={slot.time} label={slot.label} active={eventTime === slot.time} onPress={() => setEventTime(slot.time)} />
+                ))}
+              </ScrollView>
+
+              <Text style={styles.inputLabel}>Duration</Text>
+              <View style={styles.chipRow}>
+                {allowedDurations.map((duration) => (
+                  <CustomerChip key={duration} label={`${duration} hour${duration > 1 ? 's' : ''}`} active={durationHours === duration} onPress={() => setDurationHours(duration)} />
+                ))}
+              </View>
+
+              <Text style={styles.inputLabel}>Guests</Text>
+              <CustomerField label="Expected guests" value={guests} onChangeText={setGuests} placeholder="10" keyboardType="numeric" />
+
+              <Text style={styles.inputLabel}>Room choice</Text>
+              <View style={styles.chipRow}>
+                {payload.roomChoices.map((choice) => (
+                  <CustomerChip key={choice.code} label={choice.label} active={roomChoice === choice.code} onPress={() => setRoomChoice(choice.code)} tone="neutral" />
+                ))}
+              </View>
+            </CustomerCard>
+
+            <CustomerCard>
+              <SectionEyebrow>Featured packages</SectionEyebrow>
+              <View style={styles.packageGrid}>
+                {packages.map((item) => (
+                  <Pressable
+                    key={item.code}
+                    onPress={() => setPackageCode(item.code)}
+                    style={[styles.packageCard, packageCode === item.code ? styles.packageCardActive : null, isWide ? styles.packageCardWide : null]}>
+                    <Text style={styles.packageGuestRange}>{item.guest_range}</Text>
+                    <Text style={styles.packageTitle}>{item.name}</Text>
+                    <Text style={styles.packagePrice}>{formatCurrency(item.price)}</Text>
+                    <View style={styles.packageFeatures}>
+                      {item.features.slice(0, 3).map((feature) => (
+                        <Text key={feature} style={styles.packageFeature}>
+                          - {feature}
+                        </Text>
+                      ))}
+                    </View>
+                    <CustomerButton label={packageCode === item.code ? 'Selected' : 'Avail now'} onPress={() => setPackageCode(item.code)} compact />
+                  </Pressable>
+                ))}
+              </View>
+            </CustomerCard>
+
+            <CustomerCard tone="cream">
+              <SectionEyebrow>Extras</SectionEyebrow>
+              <Text style={styles.inputLabel}>Bundle upgrades</Text>
+              <View style={styles.chipRow}>
+                {payload.catalog.menuBundles.map((bundle) => (
+                  <CustomerChip
+                    key={bundle.code}
+                    label={`${bundle.name} - ${formatCurrency(bundle.price)}`}
+                    active={menuBundles.includes(bundle.code)}
+                    onPress={() => toggleCode(menuBundles, setMenuBundles, bundle.code)}
+                  />
+                ))}
+              </View>
+
+              <Text style={styles.inputLabel}>Service add-ons</Text>
+              <View style={styles.chipRow}>
+                {payload.catalog.addOns.map((item) => (
+                  <CustomerChip
+                    key={item.code}
+                    label={`${item.name} - ${formatCurrency(item.price)}`}
+                    active={addOns.includes(item.code)}
+                    onPress={() => toggleCode(addOns, setAddOns, item.code)}
+                    tone="green"
+                  />
+                ))}
+              </View>
+            </CustomerCard>
+
+            <CustomerCard>
+              <SectionEyebrow>Manual food and drinks</SectionEyebrow>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
+                {payload.catalog.menuCategories.map((category) => (
+                  <CustomerChip
+                    key={category.code}
+                    label={category.name}
+                    active={activeCategory === category.code}
+                    onPress={() => setActiveCategory(category.code)}
+                    tone="neutral"
+                  />
+                ))}
+              </ScrollView>
+
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
+                {visibleMenuItems.map((item) => (
+                  <CustomerCard key={item.code} style={styles.menuCard}>
+                    <View style={styles.menuImageMock}>
+                      <Text style={styles.menuImageLabel}>{item.name}</Text>
+                    </View>
+                    {item.options.map((option) => {
+                      const quantity = manualSelections.find((entry) => entry.option_code === option.code)?.quantity ?? 0;
+                      return (
+                        <View key={option.code} style={styles.menuOptionBlock}>
+                          <Text style={styles.menuPrice}>{formatCurrency(option.price)}</Text>
+                          <Text style={styles.menuOptionLabel}>{option.label}</Text>
+                          <View style={styles.stepperRow}>
+                            <Pressable onPress={() => updateManualSelection(option.code, 'decrement')} style={styles.stepperButton}>
+                              <Text style={styles.stepperButtonText}>-</Text>
+                            </Pressable>
+                            <Text style={styles.stepperValue}>{quantity}</Text>
+                            <Pressable onPress={() => updateManualSelection(option.code, 'increment')} style={styles.stepperButton}>
+                              <Text style={styles.stepperButtonText}>+</Text>
+                            </Pressable>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </CustomerCard>
+                ))}
+              </ScrollView>
+            </CustomerCard>
+
+            <CustomerCard>
+              <SectionEyebrow>Booking receipt</SectionEyebrow>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Event type:</Text>
+                <Text style={styles.summaryValue}>{payload.catalog.eventTypes[eventType]?.label ?? eventType}</Text>
+              </View>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Branch:</Text>
+                <Text style={styles.summaryValue}>{selectedBranch?.name ?? '-'}</Text>
+              </View>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Room:</Text>
+                <Text style={styles.summaryValue}>{selectedRoom?.label ?? roomChoice}</Text>
+              </View>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Event time:</Text>
+                <Text style={styles.summaryValue}>
+                  {formatLongDate(eventDate)}{'\n'}
+                  {formatTimeLabel(eventTime)} - {formatTimeLabel(addHoursToTime(eventTime, durationHours))}
+                </Text>
+              </View>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Duration:</Text>
+                <Text style={styles.summaryValue}>{durationHours} hour</Text>
+              </View>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Manual tray:</Text>
+                <Text style={styles.summaryValue}>{selectedManualItems.length > 0 ? `${selectedManualItems.length} selected lines` : 'No items added.'}</Text>
+              </View>
+            </CustomerCard>
+
+            <CustomerCard tone="cream">
+              <SectionEyebrow>Receipt review</SectionEyebrow>
+              {receiptLines.map((line) => (
+                <View key={line.label} style={styles.receiptRow}>
+                  <Text style={styles.receiptLabel}>{line.label}</Text>
+                  <Text style={styles.receiptValue}>{formatCurrency(line.amount)}</Text>
+                </View>
+              ))}
+              <View style={styles.receiptRow}>
+                <Text style={styles.receiptLabel}>Subtotal</Text>
+                <Text style={styles.receiptValue}>{formatCurrency(pricingPreview.subtotal)}</Text>
+              </View>
+              <View style={styles.receiptRow}>
+                <Text style={styles.receiptLabel}>{pricingPreview.pricingRuleLabel}</Text>
+                <Text style={styles.receiptValue}>{pricingPreview.multiplier.toFixed(2)}x</Text>
+              </View>
+              <View style={[styles.receiptRow, styles.receiptRowStrong]}>
+                <Text style={styles.receiptStrongLabel}>Total before confirmation</Text>
+                <Text style={styles.receiptStrongValue}>{formatCurrency(pricingPreview.total)}</Text>
+              </View>
+            </CustomerCard>
+
+            <CustomerCard>
+              <SectionEyebrow>Payment and notes</SectionEyebrow>
+              <Text style={styles.helperText}>Upload proof of payment so your admin can confirm this reservation from the same database-backed dashboard.</Text>
+              <CustomerButton
+                label={paymentProof ? 'Replace payment proof' : 'Choose payment proof'}
+                onPress={() => void selectPaymentProof()}
+                tone="secondary"
+              />
+              {paymentProof ? <Image source={{ uri: paymentProof.uri }} style={styles.previewImage} /> : null}
+              <CustomerField label="Notes" value={notes} onChangeText={setNotes} placeholder="Theme, setup notes, or special requests" multiline />
+              <CustomerButton
+                label={user ? 'Confirm Reservation' : 'Sign in to confirm'}
+                onPress={() => void submitReservation()}
+                loading={submitting}
+              />
+              {!user ? <CustomerButton label="Create customer account" onPress={() => router.push('/register')} tone="ghost" /> : null}
+            </CustomerCard>
           </>
         ) : null}
-      </ScrollView>
-    </AppScreen>
+      </SheetSurface>
+    </CustomerPage>
   );
 }
 
 const styles = StyleSheet.create({
-  loadingText: {
-    color: palette.inkMuted,
-    fontSize: 15,
-  },
-  errorPanel: {
-    borderColor: '#F2B5AA',
-    backgroundColor: '#FFF4F2',
-  },
-  errorText: {
-    color: palette.brandRedDark,
-    lineHeight: 20,
+  pageContent: {
+    gap: 0,
   },
   helperText: {
-    color: palette.inkMuted,
-    fontWeight: '700',
-    fontSize: 13,
-    marginBottom: 4,
+    color: '#675446',
+    fontSize: 14,
+    lineHeight: 20,
   },
-  tagWrap: {
+  chipRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
   },
-  horizontalList: {
+  horizontalScroll: {
     gap: 10,
   },
-  dateCard: {
-    borderRadius: 18,
-    backgroundColor: '#FFF6DE',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    minWidth: 110,
-    gap: 4,
-  },
-  dateCardActive: {
-    backgroundColor: palette.brandRed,
-  },
-  dateCardDay: {
-    color: palette.ink,
-    fontSize: 16,
-    fontWeight: '900',
-  },
-  dateCardDayActive: {
-    color: palette.surfaceStrong,
-  },
-  dateCardMeta: {
-    color: palette.inkMuted,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  dateCardMetaActive: {
-    color: '#FFE9DD',
-  },
-  summaryText: {
-    color: palette.brandRedDark,
-    fontWeight: '800',
-    fontSize: 14,
-  },
-  optionStack: {
-    gap: 12,
-  },
-  optionCard: {
-    borderRadius: 20,
-    backgroundColor: '#FFF7E4',
+  branchCard: {
+    width: 248,
+    borderRadius: 22,
+    backgroundColor: '#FFF7EA',
     padding: 16,
-    gap: 6,
+    gap: 10,
     borderWidth: 1,
     borderColor: 'transparent',
   },
-  optionCardActive: {
+  branchCardActive: {
     borderColor: palette.brandRed,
-    backgroundColor: '#FFF1ED',
+    backgroundColor: '#FFF1EE',
   },
-  optionHeader: {
+  branchCardTitle: {
+    color: palette.ink,
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  branchCardMeta: {
+    color: '#675446',
+    fontSize: 14,
+  },
+  branchCardGuests: {
+    alignSelf: 'flex-start',
+    color: '#8B6A07',
+    backgroundColor: '#FFF2C8',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    overflow: 'hidden',
+    fontWeight: '700',
+    fontSize: 11,
+  },
+  sectionHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     gap: 12,
     alignItems: 'center',
   },
-  optionTitle: {
-    flex: 1,
-    color: palette.ink,
-    fontSize: 18,
-    fontWeight: '900',
-  },
-  optionPrice: {
-    color: palette.brandRed,
-    fontSize: 17,
-    fontWeight: '900',
-  },
-  optionMeta: {
-    color: palette.inkMuted,
-    textTransform: 'uppercase',
-    letterSpacing: 1.1,
-    fontWeight: '700',
-    fontSize: 12,
-  },
-  optionFeature: {
-    color: palette.inkMuted,
-    lineHeight: 20,
-  },
-  miniOption: {
-    borderRadius: 18,
-    padding: 15,
-    backgroundColor: '#FFF7E4',
-    gap: 4,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  miniOptionActive: {
-    backgroundColor: '#FFF1ED',
-    borderColor: palette.brandRed,
-  },
-  miniOptionTitle: {
-    color: palette.ink,
-    fontWeight: '800',
-  },
-  miniOptionPrice: {
-    color: palette.inkMuted,
-  },
-  manualItemCard: {
-    gap: 12,
-    borderRadius: 20,
-    backgroundColor: '#FFF8EA',
-    padding: 16,
-  },
-  manualItemTitle: {
-    color: palette.ink,
-    fontWeight: '900',
-    fontSize: 18,
-  },
-  manualItemDescription: {
-    color: palette.inkMuted,
-    lineHeight: 20,
-  },
-  manualOptionRow: {
+  monthSwitcher: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
     gap: 12,
-    paddingVertical: 4,
   },
-  manualOptionLabel: {
+  monthLabel: {
     color: palette.ink,
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  weekRow: {
+    flexDirection: 'row',
+  },
+  weekLabel: {
+    flex: 1,
+    textAlign: 'center',
+    color: '#77A6E8',
+    fontSize: 12,
     fontWeight: '700',
   },
-  manualOptionPrice: {
-    color: palette.inkMuted,
-    marginTop: 2,
+  calendarGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
   },
-  quantityControls: {
+  blankDay: {
+    width: '13%',
+    aspectRatio: 1,
+  },
+  dayCell: {
+    width: '13%',
+    aspectRatio: 1,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F6F1E7',
+  },
+  dayCellActive: {
+    backgroundColor: '#F5E08A',
+  },
+  dayCellFull: {
+    backgroundColor: '#F9E5E5',
+  },
+  dayCellText: {
+    color: '#857567',
+    fontWeight: '700',
+  },
+  dayCellTextActive: {
+    color: palette.ink,
+    fontWeight: '900',
+  },
+  dayCellTextLimited: {
+    color: '#4C9CF1',
+  },
+  dayCellTextFull: {
+    color: '#E98C8C',
+  },
+  timeCardRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  timeCard: {
+    flex: 1,
+    minWidth: 0,
+  },
+  timeCardLabel: {
+    color: '#7A604B',
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  timeCardValue: {
+    color: palette.ink,
+    fontSize: 26,
+    fontWeight: '900',
+  },
+  timeCardMeta: {
+    color: '#6F6359',
+    fontSize: 13,
+  },
+  inputLabel: {
+    color: '#5F5146',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  packageGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  packageCard: {
+    width: '47%',
+    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
+    padding: 14,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#ECE3D6',
+  },
+  packageCardWide: {
+    width: '31%',
+  },
+  packageCardActive: {
+    borderColor: palette.brandRed,
+    backgroundColor: '#FFF3EF',
+  },
+  packageGuestRange: {
+    color: '#8A7B6A',
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  packageTitle: {
+    color: palette.ink,
+    fontSize: 18,
+    fontWeight: '900',
+    lineHeight: 22,
+  },
+  packagePrice: {
+    color: palette.brandRed,
+    fontSize: 22,
+    fontWeight: '900',
+  },
+  packageFeatures: {
+    minHeight: 60,
+    gap: 3,
+  },
+  packageFeature: {
+    color: '#6B5A4D',
+    fontSize: 13,
+    lineHeight: 17,
+  },
+  menuCard: {
+    width: 200,
+    gap: 12,
+  },
+  menuImageMock: {
+    height: 90,
+    borderRadius: 14,
+    backgroundColor: '#F5E7D8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+  },
+  menuImageLabel: {
+    color: palette.ink,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  menuOptionBlock: {
+    gap: 6,
+  },
+  menuPrice: {
+    color: palette.brandRed,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  menuOptionLabel: {
+    color: palette.ink,
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  stepperRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
   },
-  quantityText: {
-    minWidth: 18,
-    textAlign: 'center',
+  stepperButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: '#FF4B45',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepperButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+    fontSize: 18,
+    lineHeight: 20,
+  },
+  stepperValue: {
     color: palette.ink,
     fontWeight: '900',
-    fontSize: 16,
+    minWidth: 12,
+    textAlign: 'center',
   },
-  proofPanel: {
+  summaryRow: {
     flexDirection: 'row',
     gap: 12,
-    alignItems: 'center',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
   },
-  proofTitle: {
+  summaryLabel: {
+    color: '#6B5A4D',
+    fontWeight: '700',
+    width: 84,
+  },
+  summaryValue: {
+    flex: 1,
+    color: palette.ink,
+    fontWeight: '700',
+    textAlign: 'right',
+    lineHeight: 19,
+  },
+  receiptRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  receiptLabel: {
+    color: '#6B5A4D',
+    flex: 1,
+    lineHeight: 19,
+  },
+  receiptValue: {
+    color: palette.ink,
+    fontWeight: '700',
+  },
+  receiptRowStrong: {
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#E4DBCF',
+  },
+  receiptStrongLabel: {
     color: palette.ink,
     fontSize: 16,
     fontWeight: '900',
   },
-  proofSubtitle: {
-    color: palette.inkMuted,
-    lineHeight: 20,
+  receiptStrongValue: {
+    color: palette.brandRed,
+    fontSize: 16,
+    fontWeight: '900',
   },
   previewImage: {
     width: '100%',
-    height: 180,
-    borderRadius: 22,
+    height: 200,
+    borderRadius: 18,
     resizeMode: 'cover',
-  },
-  totalAmount: {
-    color: palette.brandRed,
-    fontSize: 34,
-    fontWeight: '900',
-  },
-  summaryDetail: {
-    color: palette.inkMuted,
-    lineHeight: 20,
-  },
-  submitStack: {
-    gap: 12,
-    marginTop: 6,
   },
 });

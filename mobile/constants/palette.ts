@@ -1,6 +1,9 @@
 export const palette = {
   background: '#FFF8E7',
   backgroundMuted: '#FFECC0',
+  canvas: '#FFF9F1',
+  cream: '#FFF0BE',
+  creamStrong: '#FFE18E',
   surface: '#FFFDF8',
   surfaceStrong: '#FFFFFF',
   ink: '#23160B',
@@ -8,9 +11,18 @@ export const palette = {
   brandRed: '#DA291C',
   brandRedDark: '#9E1F12',
   brandYellow: '#FFC72C',
+  accentOrange: '#FF8A3D',
+  softPink: '#F8D8D8',
+  softPinkStrong: '#E88989',
+  softGreen: '#CFF2C8',
+  softGreenStrong: '#3C8F4E',
+  softBlue: '#DCECF7',
+  softGray: '#ECE7E1',
+  tabActive: '#F6D6D6',
   success: '#0B7A3E',
   warning: '#B75D00',
   border: '#F0D9B5',
+  line: '#E9E2D6',
   shadow: 'rgba(101, 56, 16, 0.12)',
 };
 

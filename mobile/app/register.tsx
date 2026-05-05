@@ -1,8 +1,18 @@
-import { router } from 'expo-router';
-import { useState } from 'react';
+import { Redirect, router } from 'expo-router';
+import { startTransition, useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 
-import { AppButton, AppScreen, Field, Panel, SectionHeading, Tag } from '@/components/mobile-ui';
+import {
+  CustomerButton,
+  CustomerCard,
+  CustomerChip,
+  CustomerField,
+  CustomerHeader,
+  CustomerPage,
+  McLogo,
+  SectionEyebrow,
+  SectionTitle,
+} from '@/components/customer-ui';
 import { palette } from '@/constants/palette';
 import { ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -15,7 +25,7 @@ const genders = [
 ];
 
 export default function RegisterScreen() {
-  const { signUp } = useAuth();
+  const { signUp, user, booting } = useAuth();
   const [form, setForm] = useState({
     name: '',
     email: '',
@@ -39,7 +49,9 @@ export default function RegisterScreen() {
     try {
       setSubmitting(true);
       await signUp(form);
-      router.replace('/(tabs)/dashboard');
+      startTransition(() => {
+        router.replace('/(tabs)/dashboard');
+      });
     } catch (error) {
       const message = error instanceof ApiError ? Object.values(error.errors ?? {})[0]?.[0] ?? error.message : 'Unable to create the account right now.';
       Alert.alert('Registration failed', message);
@@ -48,68 +60,120 @@ export default function RegisterScreen() {
     }
   }
 
+  if (!booting && user) {
+    return <Redirect href="/(tabs)/dashboard" />;
+  }
+
   return (
-    <AppScreen
-      eyebrow="New customer"
-      title="Create your mobile account"
-      subtitle="This uses the same reservation backend as your web app, with a token ready for Expo.">
-      <Panel>
-        <SectionHeading label="Profile" title="Customer details" />
-        <Field label="Full name" value={form.name} onChangeText={(value) => setValue('name', value)} placeholder="Your full name" />
-        <Field label="Email address" value={form.email} onChangeText={(value) => setValue('email', value)} placeholder="name@example.com" keyboardType="email-address" />
-        <Field label="Phone number" value={form.phone} onChangeText={(value) => setValue('phone', value)} placeholder="09xx xxx xxxx" keyboardType="phone-pad" />
-        <Field label="Birth date (YYYY-MM-DD)" value={form.birth_date} onChangeText={(value) => setValue('birth_date', value)} placeholder="2001-04-15" />
-        <View style={styles.genderRow}>
-          {genders.map((option) => (
-            <Tag
-              key={option.value}
-              label={option.label}
-              active={form.gender === option.value}
-              onPress={() => setValue('gender', option.value)}
-            />
-          ))}
-        </View>
-        <Field label="Street address" value={form.address_line} onChangeText={(value) => setValue('address_line', value)} placeholder="Street, barangay, landmark" />
-        <Field label="City" value={form.city} onChangeText={(value) => setValue('city', value)} placeholder="City" />
-        <Field label="Province" value={form.province} onChangeText={(value) => setValue('province', value)} placeholder="Province" />
-        <Field label="Postal code" value={form.postal_code} onChangeText={(value) => setValue('postal_code', value)} placeholder="Optional" keyboardType="numeric" />
-        <Field label="Password" value={form.password} onChangeText={(value) => setValue('password', value)} secureTextEntry placeholder="Minimum secure password" />
-        <Field
-          label="Confirm password"
-          value={form.password_confirmation}
-          onChangeText={(value) => setValue('password_confirmation', value)}
-          secureTextEntry
-          placeholder="Repeat your password"
-        />
-        <View style={styles.actions}>
-          <AppButton label="Create account" onPress={handleSubmit} loading={submitting} />
-          <AppButton label="I already have an account" onPress={() => router.replace('/login')} tone="secondary" />
-        </View>
-      </Panel>
-      <Text style={styles.note}>
-        Birth date should use the <Text style={styles.code}>YYYY-MM-DD</Text> format because the Laravel API validates it that way.
-      </Text>
-    </AppScreen>
+    <CustomerPage contentContainerStyle={styles.pageContent}>
+      <CustomerHeader title="Create account" subtitle="Set up your customer profile for mobile reservations." rightSlot={<McLogo />} />
+      <View style={styles.content}>
+        <CustomerCard tone="yellow">
+          <SectionEyebrow>New customer</SectionEyebrow>
+          <Text style={styles.heroTitle}>Create your mobile booking account</Text>
+          <Text style={styles.heroText}>This customer profile is stored in the same database your admin and reservation dashboard already use.</Text>
+        </CustomerCard>
+
+        <CustomerCard>
+          <SectionTitle>Customer details</SectionTitle>
+          <CustomerField label="Full name" value={form.name} onChangeText={(value) => setValue('name', value)} placeholder="Your full name" />
+          <CustomerField
+            label="Email address"
+            value={form.email}
+            onChangeText={(value) => setValue('email', value)}
+            placeholder="name@example.com"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+            autoComplete="email"
+            textContentType="emailAddress"
+          />
+          <CustomerField label="Phone number" value={form.phone} onChangeText={(value) => setValue('phone', value)} placeholder="09xx xxx xxxx" keyboardType="phone-pad" />
+          <CustomerField label="Birth date" value={form.birth_date} onChangeText={(value) => setValue('birth_date', value)} placeholder="YYYY-MM-DD" />
+          <View style={styles.genderRow}>
+            {genders.map((option) => (
+              <CustomerChip
+                key={option.value}
+                label={option.label}
+                active={form.gender === option.value}
+                onPress={() => setValue('gender', option.value)}
+              />
+            ))}
+          </View>
+          <CustomerField label="Street address" value={form.address_line} onChangeText={(value) => setValue('address_line', value)} placeholder="Street, barangay, landmark" />
+          <CustomerField label="City" value={form.city} onChangeText={(value) => setValue('city', value)} placeholder="City" />
+          <CustomerField label="Province" value={form.province} onChangeText={(value) => setValue('province', value)} placeholder="Province" />
+          <CustomerField label="Postal code" value={form.postal_code} onChangeText={(value) => setValue('postal_code', value)} placeholder="Optional" keyboardType="numeric" />
+          <CustomerField
+            label="Password"
+            value={form.password}
+            onChangeText={(value) => setValue('password', value)}
+            secureTextEntry
+            placeholder="Minimum secure password"
+            autoCapitalize="none"
+            autoCorrect={false}
+            autoComplete="new-password"
+            textContentType="newPassword"
+          />
+          <CustomerField
+            label="Confirm password"
+            value={form.password_confirmation}
+            onChangeText={(value) => setValue('password_confirmation', value)}
+            secureTextEntry
+            placeholder="Repeat your password"
+            autoCapitalize="none"
+            autoCorrect={false}
+            autoComplete="new-password"
+            textContentType="newPassword"
+          />
+          <View style={styles.actions}>
+            <CustomerButton label="Create account" onPress={handleSubmit} loading={submitting} />
+            <CustomerButton label="I already have an account" onPress={() => router.replace('/login')} tone="secondary" />
+          </View>
+        </CustomerCard>
+
+        <Text style={styles.note}>
+          Birth date should use the <Text style={styles.code}>YYYY-MM-DD</Text> format because the Laravel API validates it that way.
+        </Text>
+      </View>
+    </CustomerPage>
   );
 }
 
 const styles = StyleSheet.create({
+  pageContent: {
+    paddingHorizontal: 18,
+    gap: 16,
+  },
+  content: {
+    gap: 16,
+  },
+  heroTitle: {
+    color: palette.ink,
+    fontSize: 28,
+    fontWeight: '900',
+    lineHeight: 32,
+  },
+  heroText: {
+    color: '#665446',
+    lineHeight: 20,
+    fontSize: 14,
+  },
   genderRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
   },
   actions: {
-    gap: 12,
+    gap: 10,
   },
   note: {
-    color: palette.inkMuted,
+    color: '#6A5647',
     fontSize: 13,
     lineHeight: 20,
-    paddingHorizontal: 4,
   },
   code: {
-    fontWeight: '800',
     color: palette.brandRed,
+    fontWeight: '800',
   },
 });

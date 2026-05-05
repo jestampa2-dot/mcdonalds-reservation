@@ -2,8 +2,11 @@
 
 namespace Tests\Feature;
 
+use App\Models\Reservation;
 use App\Models\User;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -153,5 +156,76 @@ class MobileApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('profile.name', 'Updated Mobile Name')
             ->assertJsonPath('profile.city', 'Quezon City');
+    }
+
+    public function test_mobile_booking_flow_is_shared_with_admin_tools_and_the_customer_dashboard(): void
+    {
+        Storage::fake('public');
+
+        $customer = User::factory()->create();
+        $admin = User::factory()->create([
+            'role' => 'admin',
+        ]);
+
+        Sanctum::actingAs($customer);
+
+        $bookingOptions = $this->getJson('/api/mobile/booking-options')
+            ->assertOk()
+            ->json();
+
+        $eventType = array_key_first($bookingOptions['catalog']['eventTypes']);
+        $branch = collect($bookingOptions['catalog']['branches'])
+            ->first(fn (array $item) => (bool) ($item['supports'][$eventType] ?? false));
+        $packageCode = $bookingOptions['catalog']['packages'][$eventType][0]['code'];
+        $roomChoice = $bookingOptions['roomChoices'][0]['code'];
+
+        $response = $this->post('/api/mobile/reservations', [
+            'event_type' => $eventType,
+            'branch_code' => $branch['code'],
+            'event_date' => $bookingOptions['defaults']['event_date'],
+            'event_time' => $bookingOptions['defaults']['event_time'],
+            'duration_hours' => $bookingOptions['defaults']['duration_hours'],
+            'room_choice' => $roomChoice,
+            'guests' => 12,
+            'package_code' => $packageCode,
+            'payment_proof' => UploadedFile::fake()->image('payment-proof.jpg'),
+        ], [
+            'Accept' => 'application/json',
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('reservation.status', 'pending_review');
+
+        $reservationId = $response->json('reservation.id');
+        $bookingReference = $response->json('reservation.booking_reference');
+        $storedReservation = Reservation::findOrFail($reservationId);
+
+        $this->assertDatabaseHas('reservations', [
+            'id' => $reservationId,
+            'user_id' => $customer->id,
+            'booking_reference' => $bookingReference,
+            'status' => 'pending_review',
+        ]);
+        Storage::disk('public')->assertExists($storedReservation->payment_proof_path);
+
+        Sanctum::actingAs($admin);
+
+        $this->getJson('/api/mobile/operations')
+            ->assertOk()
+            ->assertJsonFragment([
+                'booking_reference' => $bookingReference,
+            ]);
+
+        $this->postJson("/api/mobile/admin/reservations/{$reservationId}/status", [
+            'status' => 'confirmed',
+        ])->assertOk()
+            ->assertJsonPath('reservation.status', 'confirmed');
+
+        Sanctum::actingAs($customer);
+
+        $this->getJson('/api/mobile/dashboard')
+            ->assertOk()
+            ->assertJsonPath('bookings.0.booking_reference', $bookingReference)
+            ->assertJsonPath('bookings.0.status', 'confirmed');
     }
 }

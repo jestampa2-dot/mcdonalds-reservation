@@ -1,5 +1,5 @@
-import { Tabs } from 'expo-router';
 import { FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Tabs } from 'expo-router';
 
 import { palette } from '@/constants/palette';
 
@@ -8,53 +8,58 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: palette.brandRed,
-        tabBarInactiveTintColor: '#8D6D52',
+        tabBarActiveTintColor: palette.ink,
+        tabBarInactiveTintColor: '#7D6755',
+        tabBarActiveBackgroundColor: palette.tabActive,
         tabBarStyle: {
-          backgroundColor: '#FFF9EE',
-          borderTopColor: palette.border,
-          height: 78,
+          backgroundColor: '#FFF7EE',
+          borderTopColor: '#E7DED1',
+          height: 74,
           paddingBottom: 10,
-          paddingTop: 10,
+          paddingTop: 8,
         },
         tabBarLabelStyle: {
-          fontSize: 12,
+          fontSize: 11,
           fontWeight: '700',
+        },
+        tabBarItemStyle: {
+          borderRadius: 12,
+          marginHorizontal: 4,
+          marginVertical: 6,
         },
       }}>
       <Tabs.Screen
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color, size }) => <FontAwesome5 size={size - 2} name="store" color={color} />,
+          tabBarIcon: ({ color, size }) => <FontAwesome5 size={size - 1} name="home" color={color} />,
         }}
       />
       <Tabs.Screen
         name="booking"
         options={{
-          title: 'Booking',
-          tabBarIcon: ({ color, size }) => <MaterialCommunityIcons size={size + 2} name="calendar-check" color={color} />,
+          title: 'Book',
+          tabBarIcon: ({ color, size }) => <MaterialCommunityIcons size={size + 1} name="calendar-check-outline" color={color} />,
         }}
       />
       <Tabs.Screen
         name="operations"
         options={{
-          title: 'Ops',
-          tabBarIcon: ({ color, size }) => <MaterialCommunityIcons size={size + 2} name="briefcase-variant" color={color} />,
+          href: null,
         }}
       />
       <Tabs.Screen
         name="dashboard"
         options={{
           title: 'Dashboard',
-          tabBarIcon: ({ color, size }) => <MaterialCommunityIcons size={size + 2} name="view-dashboard" color={color} />,
+          tabBarIcon: ({ color, size }) => <MaterialCommunityIcons size={size + 1} name="view-dashboard-outline" color={color} />,
         }}
       />
       <Tabs.Screen
         name="account"
         options={{
           title: 'Account',
-          tabBarIcon: ({ color, size }) => <MaterialCommunityIcons size={size + 2} name="account-circle" color={color} />,
+          tabBarIcon: ({ color, size }) => <MaterialCommunityIcons size={size + 1} name="account-circle-outline" color={color} />,
         }}
       />
     </Tabs>

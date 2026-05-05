@@ -7,9 +7,53 @@ import type {
   ProfilePayload,
   ReservationRecord,
 } from '@/lib/types';
+import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
+function apiBaseUrlFromHost(hostUri?: string | null) {
+  if (!hostUri) {
+    return null;
+  }
+
+  const host = hostUri
+    .replace(/^https?:\/\//, '')
+    .split('/')[0]
+    ?.split(':')[0];
+
+  if (!host || ['localhost', '127.0.0.1', '0.0.0.0'].includes(host)) {
+    return null;
+  }
+
+  return `http://${host}:8000`;
+}
+
+function getExpoDevServerApiBaseUrl() {
+  const constants = Constants as any;
+  const hostCandidates = [
+    Constants.expoConfig?.hostUri,
+    constants.expoGoConfig?.debuggerHost,
+    constants.manifest?.debuggerHost,
+    constants.manifest2?.extra?.expoGo?.debuggerHost,
+  ];
+
+  for (const candidate of hostCandidates) {
+    const baseUrl = apiBaseUrlFromHost(candidate);
+
+    if (baseUrl) {
+      return baseUrl;
+    }
+  }
+
+  return null;
+}
+
 function getDefaultApiBaseUrl() {
+  const expoDevServerBaseUrl = getExpoDevServerApiBaseUrl();
+
+  if (expoDevServerBaseUrl) {
+    return expoDevServerBaseUrl;
+  }
+
   if (Platform.OS === 'android') {
     return 'http://10.0.2.2:8000';
   }
@@ -60,7 +104,7 @@ async function requestJson<T>(path: string, options: ApiRequestOptions = {}): Pr
     });
   } catch {
     throw new ApiError(
-      `Unable to reach the reservation server at ${apiBaseUrl}. Start Laravel with "php artisan serve" and set EXPO_PUBLIC_API_BASE_URL in mobile/.env when testing on a real device.`,
+      `Unable to reach the reservation server at ${apiBaseUrl}. For a real phone, run Laravel with "php artisan serve --host=0.0.0.0 --port=8000", keep the phone on the same Wi-Fi, then restart Expo. If needed, set EXPO_PUBLIC_API_BASE_URL=http://YOUR_COMPUTER_IP:8000 in mobile/.env.`,
       0,
     );
   }

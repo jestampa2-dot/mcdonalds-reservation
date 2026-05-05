@@ -1,7 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, PropsWithChildren, useContext, useEffect, useState } from 'react';
 
-import { fetchCurrentUser, login, logout, register } from '@/lib/api';
+import { ApiError, fetchCurrentUser, fetchDashboard, fetchProfile, login, logout, register } from '@/lib/api';
+import { removeCaches, writeCache } from '@/lib/cache';
 import type { MobileUser } from '@/lib/types';
 
 type LoginPayload = {
@@ -34,6 +35,7 @@ type AuthContextValue = {
 };
 
 const tokenKey = 'mcd-mobile-token';
+const sessionKey = 'mcd-mobile-session';
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: PropsWithChildren) {
@@ -46,10 +48,28 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
     async function hydrate() {
       try {
-        const savedToken = await AsyncStorage.getItem(tokenKey);
+        const [savedToken, savedSession] = await Promise.all([
+          AsyncStorage.getItem(tokenKey),
+          AsyncStorage.getItem(sessionKey),
+        ]);
 
         if (!savedToken) {
+          setBooting(false);
           return;
+        }
+
+        if (savedSession) {
+          try {
+            const parsedSession = JSON.parse(savedSession) as { token: string; user: MobileUser | null };
+
+            if (parsedSession.user && active) {
+              setToken(parsedSession.token || savedToken);
+              setUser(parsedSession.user);
+              setBooting(false);
+            }
+          } catch {
+            // Ignore corrupted cached sessions and continue with server hydration.
+          }
         }
 
         const response = await fetchCurrentUser(savedToken);
@@ -60,8 +80,18 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
         setToken(savedToken);
         setUser(response.user);
-      } catch {
-        await AsyncStorage.removeItem(tokenKey);
+        await AsyncStorage.setItem(sessionKey, JSON.stringify({ token: savedToken, user: response.user }));
+      } catch (error) {
+        if (!active) {
+          return;
+        }
+
+        if (error instanceof ApiError && error.status === 401) {
+          await AsyncStorage.removeItem(tokenKey);
+          await AsyncStorage.removeItem(sessionKey);
+          setToken(null);
+          setUser(null);
+        }
       } finally {
         if (active) {
           setBooting(false);
@@ -76,10 +106,30 @@ export function AuthProvider({ children }: PropsWithChildren) {
     };
   }, []);
 
+  async function warmSessionData(nextToken: string, nextUser: MobileUser) {
+    try {
+      const [dashboardResponse, profileResponse] = await Promise.all([
+        fetchDashboard(nextToken),
+        fetchProfile(nextToken),
+      ]);
+
+      await Promise.all([
+        writeCache(`mobile-cache:dashboard:${nextUser.id}`, dashboardResponse),
+        writeCache(`mobile-cache:profile:${nextUser.id}`, profileResponse.profile),
+      ]);
+    } catch {
+      // Keep login fast and ignore prefetch failures.
+    }
+  }
+
   async function persistSession(nextToken: string, nextUser: MobileUser) {
     setToken(nextToken);
     setUser(nextUser);
-    await AsyncStorage.setItem(tokenKey, nextToken);
+    await Promise.all([
+      AsyncStorage.setItem(tokenKey, nextToken),
+      AsyncStorage.setItem(sessionKey, JSON.stringify({ token: nextToken, user: nextUser })),
+    ]);
+    void warmSessionData(nextToken, nextUser);
   }
 
   async function signIn(payload: LoginPayload) {
@@ -93,6 +143,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }
 
   async function signOut() {
+    const activeUserId = user?.id ?? null;
+
     if (token) {
       try {
         await logout(token);
@@ -103,7 +155,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
     setUser(null);
     setToken(null);
-    await AsyncStorage.removeItem(tokenKey);
+    await Promise.all([
+      AsyncStorage.removeItem(tokenKey),
+      AsyncStorage.removeItem(sessionKey),
+      removeCaches([
+        'mobile-cache:home',
+        'mobile-cache:booking-options',
+        ...(activeUserId ? [`mobile-cache:dashboard:${activeUserId}`, `mobile-cache:profile:${activeUserId}`] : []),
+      ]),
+    ]);
   }
 
   async function refreshUser() {
@@ -113,6 +173,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
     const response = await fetchCurrentUser(token);
     setUser(response.user);
+    await AsyncStorage.setItem(sessionKey, JSON.stringify({ token, user: response.user }));
   }
 
   return (

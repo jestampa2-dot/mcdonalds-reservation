@@ -1,11 +1,24 @@
-import { router } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, RefreshControl, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
-import { AppButton, AppScreen, Field, Panel, SectionHeading, Tag } from '@/components/mobile-ui';
+import {
+  AvatarBadge,
+  CustomerButton,
+  CustomerCard,
+  CustomerChip,
+  CustomerField,
+  CustomerHeader,
+  CustomerPage,
+  SectionEyebrow,
+  SectionTitle,
+  SheetSurface,
+} from '@/components/customer-ui';
 import { palette } from '@/constants/palette';
 import { ApiError, deleteProfile, fetchProfile, updateProfile, updateProfilePassword } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { readCache, writeCache } from '@/lib/cache';
+import { getInitials } from '@/lib/formatters';
 import type { ProfilePayload } from '@/lib/types';
 
 const genderOptions = [
@@ -19,6 +32,7 @@ export default function AccountScreen() {
   const { token, user, refreshUser, signOut } = useAuth();
   const [profile, setProfile] = useState<ProfilePayload | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
@@ -40,17 +54,30 @@ export default function AccountScreen() {
     password_confirmation: '',
     delete_password: '',
   });
+  const { width } = useWindowDimensions();
+  const isWide = width >= 760;
+  const hasProfileRef = useRef(false);
+  const profileCacheKey = user ? `mobile-cache:profile:${user.id}` : null;
 
-  const loadProfile = useCallback(async () => {
+  const loadProfile = useCallback(async (nextRefreshing = false) => {
     if (!token) {
       return;
     }
 
     try {
-      setLoading(true);
+      if (nextRefreshing) {
+        setRefreshing(true);
+      } else if (!hasProfileRef.current) {
+        setLoading(true);
+      }
+
       setErrorMessage('');
       const response = await fetchProfile(token);
+      hasProfileRef.current = true;
       setProfile(response.profile);
+      if (profileCacheKey) {
+        await writeCache(profileCacheKey, response.profile);
+      }
       setProfileForm({
         name: response.profile.name ?? '',
         email: response.profile.email ?? '',
@@ -63,11 +90,12 @@ export default function AccountScreen() {
         postal_code: response.profile.postal_code ?? '',
       });
     } catch (error) {
-      setErrorMessage(error instanceof ApiError ? error.message : 'Unable to load your profile right now.');
+      setErrorMessage(error instanceof ApiError ? error.message : 'Unable to load your account right now.');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  }, [token]);
+  }, [profileCacheKey, token]);
 
   useEffect(() => {
     if (!token) {
@@ -75,8 +103,45 @@ export default function AccountScreen() {
       return;
     }
 
-    void loadProfile();
-  }, [loadProfile, token]);
+    let active = true;
+
+    if (!profileCacheKey) {
+      return;
+    }
+
+    void (async () => {
+      const cachedProfile = await readCache<ProfilePayload>(profileCacheKey, 1000 * 60 * 10);
+
+      if (active && cachedProfile) {
+        hasProfileRef.current = true;
+        setProfile(cachedProfile);
+        setLoading(false);
+        setProfileForm({
+          name: cachedProfile.name ?? '',
+          email: cachedProfile.email ?? '',
+          phone: cachedProfile.phone ?? '',
+          birth_date: cachedProfile.birth_date ?? '',
+          gender: cachedProfile.gender ?? 'prefer_not_to_say',
+          address_line: cachedProfile.address_line ?? '',
+          city: cachedProfile.city ?? '',
+          province: cachedProfile.province ?? '',
+          postal_code: cachedProfile.postal_code ?? '',
+        });
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [profileCacheKey, token]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (token) {
+        void loadProfile();
+      }
+    }, [loadProfile, token]),
+  );
 
   function setProfileValue(key: keyof typeof profileForm, value: string) {
     setProfileForm((current) => ({ ...current, [key]: value }));
@@ -95,10 +160,13 @@ export default function AccountScreen() {
       setSavingProfile(true);
       const response = await updateProfile(token, profileForm);
       setProfile(response.profile);
+      if (profileCacheKey) {
+        await writeCache(profileCacheKey, response.profile);
+      }
       await refreshUser();
       Alert.alert('Profile updated', response.message);
     } catch (error) {
-      const message = error instanceof ApiError ? Object.values(error.errors ?? {})[0]?.[0] ?? error.message : 'Unable to update the profile right now.';
+      const message = error instanceof ApiError ? Object.values(error.errors ?? {})[0]?.[0] ?? error.message : 'Unable to update your profile right now.';
       Alert.alert('Update failed', message);
     } finally {
       setSavingProfile(false);
@@ -125,7 +193,7 @@ export default function AccountScreen() {
       }));
       Alert.alert('Password updated', response.message);
     } catch (error) {
-      const message = error instanceof ApiError ? Object.values(error.errors ?? {})[0]?.[0] ?? error.message : 'Unable to update the password right now.';
+      const message = error instanceof ApiError ? Object.values(error.errors ?? {})[0]?.[0] ?? error.message : 'Unable to update your password right now.';
       Alert.alert('Password update failed', message);
     } finally {
       setSavingPassword(false);
@@ -152,88 +220,195 @@ export default function AccountScreen() {
 
   if (!user || !token) {
     return (
-      <AppScreen eyebrow="Account" title="Sign in to manage your account" subtitle="Profile editing, password changes, and account deletion are available after mobile sign-in.">
-        <Panel>
-          <AppButton label="Open sign in" onPress={() => router.push('/login')} tone="secondary" />
-        </Panel>
-      </AppScreen>
+      <CustomerPage contentContainerStyle={styles.pageContent}>
+        <CustomerHeader title="My Account" subtitle="Sign in to manage your profile." rightSlot={<AvatarBadge label="?" />} />
+        <SheetSurface>
+          <CustomerCard>
+            <SectionEyebrow>Customer access</SectionEyebrow>
+            <SectionTitle>Sign in to manage your account</SectionTitle>
+            <Text style={styles.helperText}>Profile updates, password changes, and booking history stay tied to your mobile customer record.</Text>
+            <View style={styles.stack}>
+              <CustomerButton label="Open sign in" onPress={() => router.push('/login')} />
+              <CustomerButton label="Create account" onPress={() => router.push('/register')} tone="secondary" />
+            </View>
+          </CustomerCard>
+        </SheetSurface>
+      </CustomerPage>
     );
   }
 
   return (
-    <AppScreen
-      eyebrow="Account"
-      title={profile?.name ?? user.name}
-      subtitle={`${profile?.role ?? user.role} account · ${profile?.email_verified_at ? 'Verified email' : 'Verification pending'}`}
-      scroll={false}
-      rightSlot={<AppButton label="Sign out" onPress={() => void signOut()} tone="secondary" />}>
-      <ScrollView contentContainerStyle={{ gap: 20, paddingBottom: 32 }}>
+    <CustomerPage
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void loadProfile(true)} tintColor={palette.brandRed} />}
+      contentContainerStyle={styles.pageContent}>
+      <CustomerHeader
+        title="My Account"
+        subtitle="Profile, security, and verification details."
+        rightSlot={<AvatarBadge label={getInitials(profile?.name ?? user.name) || 'U'} />}
+      />
+      <SheetSurface>
         {errorMessage ? (
-          <Panel style={styles.errorPanel}>
-            <SectionHeading label="Connection issue" title="Profile data is unavailable right now" />
-            <Text style={styles.errorText}>{errorMessage}</Text>
-            <AppButton label="Reload profile" onPress={() => void loadProfile()} tone="secondary" />
-          </Panel>
+          <CustomerCard tone="pink">
+            <SectionEyebrow>Connection issue</SectionEyebrow>
+            <SectionTitle>Account data is unavailable</SectionTitle>
+            <Text style={styles.helperText}>{errorMessage}</Text>
+            <CustomerButton label="Reload profile" onPress={() => void loadProfile()} tone="ghost" />
+          </CustomerCard>
         ) : null}
 
-        <Panel>
-          <SectionHeading label="Profile" title="Personal details" />
-          {loading ? <Text style={styles.helper}>Loading your profile...</Text> : null}
-          <Field label="Full name" value={profileForm.name} onChangeText={(value) => setProfileValue('name', value)} />
-          <Field label="Email address" value={profileForm.email} onChangeText={(value) => setProfileValue('email', value)} keyboardType="email-address" />
-          <Field label="Phone number" value={profileForm.phone} onChangeText={(value) => setProfileValue('phone', value)} keyboardType="phone-pad" />
-          <Field label="Birth date (YYYY-MM-DD)" value={profileForm.birth_date} onChangeText={(value) => setProfileValue('birth_date', value)} />
-          <View style={styles.tagWrap}>
-            {genderOptions.map((option) => (
-              <Tag key={option.value} label={option.label} active={profileForm.gender === option.value} onPress={() => setProfileValue('gender', option.value)} />
-            ))}
+        <CustomerCard>
+          <View style={styles.summaryHeader}>
+            <View style={{ flex: 1, gap: 4 }}>
+              <Text style={styles.summaryName}>{profile?.name ?? user.name}</Text>
+              <Text style={styles.summaryEmail}>{profile?.email ?? user.email}</Text>
+            </View>
+            <CustomerButton label="Sign out" onPress={() => void signOut()} tone="ghost" compact />
           </View>
-          <Field label="Street address" value={profileForm.address_line} onChangeText={(value) => setProfileValue('address_line', value)} />
-          <Field label="City" value={profileForm.city} onChangeText={(value) => setProfileValue('city', value)} />
-          <Field label="Province" value={profileForm.province} onChangeText={(value) => setProfileValue('province', value)} />
-          <Field label="Postal code" value={profileForm.postal_code} onChangeText={(value) => setProfileValue('postal_code', value)} keyboardType="numeric" />
-          <AppButton label="Save profile" onPress={() => void saveProfile()} loading={savingProfile} />
-        </Panel>
 
-        <Panel>
-          <SectionHeading label="Security" title="Update password" />
-          <Field label="Current password" value={passwordForm.current_password} onChangeText={(value) => setPasswordValue('current_password', value)} secureTextEntry />
-          <Field label="New password" value={passwordForm.password} onChangeText={(value) => setPasswordValue('password', value)} secureTextEntry />
-          <Field label="Confirm new password" value={passwordForm.password_confirmation} onChangeText={(value) => setPasswordValue('password_confirmation', value)} secureTextEntry />
-          <AppButton label="Update password" onPress={() => void savePassword()} loading={savingPassword} />
-        </Panel>
+          <View style={styles.summaryGrid}>
+            <CustomerCard tone="cream" style={styles.infoPill}>
+              <Text style={styles.infoLabel}>Role</Text>
+              <Text style={styles.infoValue}>{profile?.role ?? user.role}</Text>
+            </CustomerCard>
+            <CustomerCard tone="cream" style={styles.infoPill}>
+              <Text style={styles.infoLabel}>Status</Text>
+              <Text style={styles.infoValue}>{profile?.email_verified_at ? 'Verified' : 'Verification pending'}</Text>
+            </CustomerCard>
+            <CustomerCard tone="cream" style={styles.infoPill}>
+              <Text style={styles.infoLabel}>Location</Text>
+              <Text style={styles.infoValue}>{profile?.city || profile?.province ? profile?.full_address : 'Add your location'}</Text>
+            </CustomerCard>
+          </View>
+        </CustomerCard>
 
-        <Panel style={styles.dangerPanel}>
-          <SectionHeading label="Danger zone" title="Delete account" />
-          <Text style={styles.helper}>Enter your current password to permanently remove this account.</Text>
-          <Field label="Current password" value={passwordForm.delete_password} onChangeText={(value) => setPasswordValue('delete_password', value)} secureTextEntry />
-          <AppButton label="Delete account" onPress={() => void removeAccount()} loading={deleting} tone="ghost" />
-        </Panel>
-      </ScrollView>
-    </AppScreen>
+        {loading ? <Text style={styles.helperText}>Loading your profile details...</Text> : null}
+
+        <View style={[styles.panelGrid, isWide ? styles.panelGridWide : null]}>
+          <CustomerCard style={[styles.panelCard, isWide ? styles.panelCardWide : null]}>
+            <SectionEyebrow>Profile</SectionEyebrow>
+            <SectionTitle>Account details</SectionTitle>
+            <CustomerField label="Full name" value={profileForm.name} onChangeText={(value) => setProfileValue('name', value)} />
+            <CustomerField label="Email" value={profileForm.email} onChangeText={(value) => setProfileValue('email', value)} keyboardType="email-address" />
+            <CustomerField label="Phone number" value={profileForm.phone} onChangeText={(value) => setProfileValue('phone', value)} keyboardType="phone-pad" />
+            <CustomerField label="Birth date" value={profileForm.birth_date} onChangeText={(value) => setProfileValue('birth_date', value)} placeholder="YYYY-MM-DD" />
+            <View style={styles.chipRow}>
+              {genderOptions.map((option) => (
+                <CustomerChip
+                  key={option.value}
+                  label={option.label}
+                  active={profileForm.gender === option.value}
+                  onPress={() => setProfileValue('gender', option.value)}
+                />
+              ))}
+            </View>
+            <CustomerField label="Street address" value={profileForm.address_line} onChangeText={(value) => setProfileValue('address_line', value)} />
+            <CustomerField label="City" value={profileForm.city} onChangeText={(value) => setProfileValue('city', value)} />
+            <CustomerField label="Province" value={profileForm.province} onChangeText={(value) => setProfileValue('province', value)} />
+            <CustomerField label="Postal code" value={profileForm.postal_code} onChangeText={(value) => setProfileValue('postal_code', value)} keyboardType="numeric" />
+            <CustomerButton label="Save account details" onPress={() => void saveProfile()} loading={savingProfile} />
+          </CustomerCard>
+
+          <CustomerCard style={[styles.panelCard, isWide ? styles.panelCardWide : null]}>
+            <SectionEyebrow>Security</SectionEyebrow>
+            <SectionTitle>Update password</SectionTitle>
+            <CustomerField label="Current password" value={passwordForm.current_password} onChangeText={(value) => setPasswordValue('current_password', value)} secureTextEntry />
+            <CustomerField label="New password" value={passwordForm.password} onChangeText={(value) => setPasswordValue('password', value)} secureTextEntry />
+            <CustomerField
+              label="Confirm password"
+              value={passwordForm.password_confirmation}
+              onChangeText={(value) => setPasswordValue('password_confirmation', value)}
+              secureTextEntry
+            />
+            <CustomerButton label="Update password" onPress={() => void savePassword()} loading={savingPassword} />
+
+            {user.role !== 'customer' ? (
+              <CustomerCard tone="cream">
+                <SectionEyebrow>Role tools</SectionEyebrow>
+                <SectionTitle>Operations workspace</SectionTitle>
+                <Text style={styles.helperText}>You still have access to the hidden staff/admin mobile tools from here.</Text>
+                <CustomerButton label="Open operations" onPress={() => router.push('/(tabs)/operations')} tone="secondary" />
+              </CustomerCard>
+            ) : null}
+          </CustomerCard>
+        </View>
+
+        <CustomerCard tone="pink">
+          <SectionEyebrow>Danger zone</SectionEyebrow>
+          <SectionTitle>Delete account</SectionTitle>
+          <Text style={styles.helperText}>Enter your current password to permanently remove this customer account and its access token.</Text>
+          <CustomerField
+            label="Current password"
+            value={passwordForm.delete_password}
+            onChangeText={(value) => setPasswordValue('delete_password', value)}
+            secureTextEntry
+          />
+          <CustomerButton label="Delete account" onPress={() => void removeAccount()} loading={deleting} tone="danger" />
+        </CustomerCard>
+      </SheetSurface>
+    </CustomerPage>
   );
 }
 
 const styles = StyleSheet.create({
-  helper: {
-    color: palette.inkMuted,
+  pageContent: {
+    gap: 0,
+  },
+  stack: {
+    gap: 10,
+  },
+  helperText: {
+    color: '#675446',
     lineHeight: 20,
+    fontSize: 14,
   },
-  errorPanel: {
-    borderColor: '#F2B5AA',
-    backgroundColor: '#FFF4F2',
+  summaryHeader: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'flex-start',
   },
-  errorText: {
-    color: palette.brandRedDark,
-    lineHeight: 20,
+  summaryName: {
+    color: palette.ink,
+    fontSize: 30,
+    fontWeight: '900',
+    lineHeight: 34,
   },
-  tagWrap: {
+  summaryEmail: {
+    color: '#675446',
+    fontSize: 15,
+  },
+  summaryGrid: {
+    gap: 10,
+  },
+  infoPill: {
+    paddingVertical: 12,
+  },
+  infoLabel: {
+    color: '#7A604B',
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  infoValue: {
+    color: palette.ink,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  panelGrid: {
+    gap: 12,
+  },
+  panelGridWide: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  panelCard: {
+    gap: 12,
+  },
+  panelCardWide: {
+    flex: 1,
+  },
+  chipRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-  },
-  dangerPanel: {
-    borderColor: '#F2B5AA',
-    backgroundColor: '#FFF4F2',
   },
 });
