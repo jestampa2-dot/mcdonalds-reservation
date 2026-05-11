@@ -1,6 +1,6 @@
 import { Redirect, router } from 'expo-router';
 import { startTransition, useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Alert, Keyboard, StyleSheet, Text, View } from 'react-native';
 
 import {
   CustomerButton,
@@ -31,6 +31,7 @@ export default function LoginScreen() {
     }
 
     try {
+      Keyboard.dismiss();
       setSubmitting(true);
       await signIn({ email: normalizedEmail, password });
       startTransition(() => {

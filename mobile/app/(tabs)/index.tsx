@@ -16,12 +16,13 @@ import {
 import { palette } from '@/constants/palette';
 import { ApiError, fetchHome } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { readCache, writeCache } from '@/lib/cache';
+import { readCacheEnvelope, writeCache } from '@/lib/cache';
 import { formatCurrency } from '@/lib/formatters';
 import type { HomePayload } from '@/lib/types';
 
 const homeCacheKey = 'mobile-cache:home';
 const homeCacheTtlMs = 1000 * 60 * 30;
+const homeRefreshIntervalMs = 1000 * 60 * 5;
 
 function ShowcaseTile({
   icon,
@@ -52,6 +53,7 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const hasPayloadRef = useRef(false);
+  const lastLoadedAtRef = useRef(0);
   const { width } = useWindowDimensions();
   const isWide = width >= 760;
 
@@ -66,6 +68,7 @@ export default function HomeScreen() {
       setErrorMessage('');
       const response = await fetchHome();
       hasPayloadRef.current = true;
+      lastLoadedAtRef.current = Date.now();
       setPayload(response);
       await writeCache(homeCacheKey, response);
     } catch (error) {
@@ -82,11 +85,12 @@ export default function HomeScreen() {
     let active = true;
 
     void (async () => {
-      const cachedPayload = await readCache<HomePayload>(homeCacheKey, homeCacheTtlMs);
+      const cachedPayload = await readCacheEnvelope<HomePayload>(homeCacheKey, homeCacheTtlMs);
 
       if (active && cachedPayload) {
         hasPayloadRef.current = true;
-        setPayload(cachedPayload);
+        lastLoadedAtRef.current = cachedPayload.savedAt;
+        setPayload(cachedPayload.data);
         setLoading(false);
       }
     })();
@@ -98,7 +102,9 @@ export default function HomeScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      void loadHome();
+      if (Date.now() - lastLoadedAtRef.current > homeRefreshIntervalMs) {
+        void loadHome();
+      }
     }, [loadHome]),
   );
 

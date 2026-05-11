@@ -17,7 +17,7 @@ import {
 import { palette } from '@/constants/palette';
 import { ApiError, deleteProfile, fetchProfile, updateProfile, updateProfilePassword } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { readCache, writeCache } from '@/lib/cache';
+import { readCacheEnvelope, writeCache } from '@/lib/cache';
 import { getInitials } from '@/lib/formatters';
 import type { ProfilePayload } from '@/lib/types';
 
@@ -27,6 +27,7 @@ const genderOptions = [
   { label: 'Non-binary', value: 'non_binary' },
   { label: 'Prefer not to say', value: 'prefer_not_to_say' },
 ];
+const profileRefreshIntervalMs = 1000 * 60;
 
 export default function AccountScreen() {
   const { token, user, refreshUser, signOut } = useAuth();
@@ -57,6 +58,7 @@ export default function AccountScreen() {
   const { width } = useWindowDimensions();
   const isWide = width >= 760;
   const hasProfileRef = useRef(false);
+  const lastLoadedAtRef = useRef(0);
   const profileCacheKey = user ? `mobile-cache:profile:${user.id}` : null;
 
   const loadProfile = useCallback(async (nextRefreshing = false) => {
@@ -74,6 +76,7 @@ export default function AccountScreen() {
       setErrorMessage('');
       const response = await fetchProfile(token);
       hasProfileRef.current = true;
+      lastLoadedAtRef.current = Date.now();
       setProfile(response.profile);
       if (profileCacheKey) {
         await writeCache(profileCacheKey, response.profile);
@@ -110,22 +113,23 @@ export default function AccountScreen() {
     }
 
     void (async () => {
-      const cachedProfile = await readCache<ProfilePayload>(profileCacheKey, 1000 * 60 * 10);
+      const cachedProfile = await readCacheEnvelope<ProfilePayload>(profileCacheKey, 1000 * 60 * 10);
 
       if (active && cachedProfile) {
         hasProfileRef.current = true;
-        setProfile(cachedProfile);
+        lastLoadedAtRef.current = cachedProfile.savedAt;
+        setProfile(cachedProfile.data);
         setLoading(false);
         setProfileForm({
-          name: cachedProfile.name ?? '',
-          email: cachedProfile.email ?? '',
-          phone: cachedProfile.phone ?? '',
-          birth_date: cachedProfile.birth_date ?? '',
-          gender: cachedProfile.gender ?? 'prefer_not_to_say',
-          address_line: cachedProfile.address_line ?? '',
-          city: cachedProfile.city ?? '',
-          province: cachedProfile.province ?? '',
-          postal_code: cachedProfile.postal_code ?? '',
+          name: cachedProfile.data.name ?? '',
+          email: cachedProfile.data.email ?? '',
+          phone: cachedProfile.data.phone ?? '',
+          birth_date: cachedProfile.data.birth_date ?? '',
+          gender: cachedProfile.data.gender ?? 'prefer_not_to_say',
+          address_line: cachedProfile.data.address_line ?? '',
+          city: cachedProfile.data.city ?? '',
+          province: cachedProfile.data.province ?? '',
+          postal_code: cachedProfile.data.postal_code ?? '',
         });
       }
     })();
@@ -137,7 +141,7 @@ export default function AccountScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      if (token) {
+      if (token && Date.now() - lastLoadedAtRef.current > profileRefreshIntervalMs) {
         void loadProfile();
       }
     }, [loadProfile, token]),
@@ -160,6 +164,7 @@ export default function AccountScreen() {
       setSavingProfile(true);
       const response = await updateProfile(token, profileForm);
       setProfile(response.profile);
+      lastLoadedAtRef.current = Date.now();
       if (profileCacheKey) {
         await writeCache(profileCacheKey, response.profile);
       }

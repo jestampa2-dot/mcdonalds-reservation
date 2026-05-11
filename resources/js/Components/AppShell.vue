@@ -1,4 +1,5 @@
 <script setup>
+import ApplicationLogo from '@/Components/ApplicationLogo.vue'
 import { computed } from 'vue'
 import { Head, Link, usePage } from '@inertiajs/vue3'
 import FlashToast from '@/Components/FlashToast.vue'
@@ -122,7 +123,7 @@ const isLinkActive = (link) => {
     <div class="mcd-shell__layout">
       <aside class="mcd-sidebar">
         <Link :href="route('home')" prefetch class="mcd-brand">
-          <span class="mcd-brand__arches">M</span>
+          <ApplicationLogo class="mcd-brand__arches" />
           <span>
             <strong>McDonald's Reservations</strong>
             <small>Event booking</small>

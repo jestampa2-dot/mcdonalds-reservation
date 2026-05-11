@@ -1,4 +1,5 @@
 <script setup>
+import ApplicationLogo from '@/Components/ApplicationLogo.vue'
 import { Link, useForm } from '@inertiajs/vue3'
 
 const form = useForm({
@@ -25,7 +26,10 @@ const submit = () => {
 <template>
   <div class="page">
     <nav class="navbar">
-      <div class="logo">McDonald's Reservations</div>
+      <Link href="/" prefetch class="logo">
+        <ApplicationLogo class="logo-mark" />
+        <span>McDonald's Reservations</span>
+      </Link>
       <div class="nav-links">
         <Link href="/" prefetch>Home</Link>
         <Link href="/reservations/birthday" prefetch>Birthday</Link>
@@ -118,7 +122,8 @@ const submit = () => {
 * { box-sizing: border-box; }
 .page { min-height: 100vh; background: #fff8e7; }
 .navbar { background: #d9230f; color: white; padding: 18px 40px; display: flex; justify-content: space-between; align-items: center; }
-.logo { font-size: 28px; font-weight: 800; }
+.logo { display: inline-flex; align-items: center; gap: 12px; color: white; text-decoration: none; font-size: 28px; font-weight: 800; }
+.logo-mark { width: 2.75rem; height: 2.75rem; flex-shrink: 0; }
 .nav-links a { color: white; text-decoration: none; margin-left: 22px; font-weight: 700; }
 .hero {
   min-height: calc(100vh - 72px);

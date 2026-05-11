@@ -1,4 +1,5 @@
 <script setup>
+import ApplicationLogo from '@/Components/ApplicationLogo.vue'
 import { Link } from '@inertiajs/vue3'
 import FlashToast from '@/Components/FlashToast.vue'
 
@@ -52,7 +53,7 @@ defineProps({
       <section class="auth-shell__hero">
         <div class="auth-shell__hero-stack">
           <Link href="/" prefetch class="auth-shell__brand">
-            <span class="auth-shell__brand-mark">M</span>
+            <ApplicationLogo class="auth-shell__brand-mark" />
             <span>
               <strong>McDonald's Reservations</strong>
               <small>Event booking</small>

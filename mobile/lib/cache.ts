@@ -5,7 +5,15 @@ type CacheEnvelope<T> = {
   data: T;
 };
 
+export type CachedValue<T> = CacheEnvelope<T>;
+
 export async function readCache<T>(key: string, maxAgeMs?: number): Promise<T | null> {
+  const envelope = await readCacheEnvelope<T>(key, maxAgeMs);
+
+  return envelope?.data ?? null;
+}
+
+export async function readCacheEnvelope<T>(key: string, maxAgeMs?: number): Promise<CachedValue<T> | null> {
   try {
     const raw = await AsyncStorage.getItem(key);
 
@@ -19,7 +27,7 @@ export async function readCache<T>(key: string, maxAgeMs?: number): Promise<T | 
       return null;
     }
 
-    return envelope.data;
+    return envelope;
   } catch {
     return null;
   }

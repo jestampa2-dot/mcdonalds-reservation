@@ -110,16 +110,10 @@
   }
 
   .mcd-brand__arches {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
     width: 2.8rem;
     height: 2.8rem;
-    border-radius: 999px;
-    background: var(--mcd-gold);
-    color: var(--mcd-red);
-    font-family: "Arial Black", sans-serif;
-    font-size: 1.6rem;
+    display: block;
+    flex-shrink: 0;
   }
 
   .mcd-sidebar__meta {
@@ -1160,16 +1154,10 @@
   }
 
   .auth-shell__brand-mark {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
     width: 3rem;
     height: 3rem;
-    border-radius: 999px;
-    background: #ffc72c;
-    color: #da291c;
-    font-family: "Arial Black", sans-serif;
-    font-size: 1.65rem;
+    display: block;
+    flex-shrink: 0;
   }
 
   .auth-shell__brand strong,

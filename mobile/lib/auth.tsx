@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, PropsWithChildren, useContext, useEffect, useState } from 'react';
+import { InteractionManager } from 'react-native';
 
 import { ApiError, fetchCurrentUser, fetchDashboard, fetchProfile, login, logout, register } from '@/lib/api';
 import { removeCaches, writeCache } from '@/lib/cache';
@@ -122,24 +123,30 @@ export function AuthProvider({ children }: PropsWithChildren) {
     }
   }
 
-  async function persistSession(nextToken: string, nextUser: MobileUser) {
+  function persistSession(nextToken: string, nextUser: MobileUser) {
     setToken(nextToken);
     setUser(nextUser);
-    await Promise.all([
+
+    void Promise.all([
       AsyncStorage.setItem(tokenKey, nextToken),
       AsyncStorage.setItem(sessionKey, JSON.stringify({ token: nextToken, user: nextUser })),
-    ]);
-    void warmSessionData(nextToken, nextUser);
+    ]).catch(() => {
+      // Session is already in memory; storage failure should not block navigation.
+    });
+
+    InteractionManager.runAfterInteractions(() => {
+      void warmSessionData(nextToken, nextUser);
+    });
   }
 
   async function signIn(payload: LoginPayload) {
     const response = await login(payload);
-    await persistSession(response.token, response.user);
+    persistSession(response.token, response.user);
   }
 
   async function signUp(payload: RegisterPayload) {
     const response = await register(payload);
-    await persistSession(response.token, response.user);
+    persistSession(response.token, response.user);
   }
 
   async function signOut() {

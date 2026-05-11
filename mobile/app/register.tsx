@@ -1,6 +1,6 @@
 import { Redirect, router } from 'expo-router';
 import { startTransition, useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Alert, Keyboard, StyleSheet, Text, View } from 'react-native';
 
 import {
   CustomerButton,
@@ -45,10 +45,62 @@ export default function RegisterScreen() {
     setForm((current) => ({ ...current, [key]: value }));
   }
 
+  function getRegistrationError(nextForm = form) {
+    const requiredFields: (keyof typeof form)[] = [
+      'name',
+      'email',
+      'phone',
+      'birth_date',
+      'address_line',
+      'city',
+      'province',
+      'password',
+      'password_confirmation',
+    ];
+    const missingField = requiredFields.find((key) => !nextForm[key].trim());
+
+    if (missingField) {
+      return 'Complete all required customer details before creating the account.';
+    }
+
+    if (!nextForm.email.includes('@')) {
+      return 'Enter a valid email address.';
+    }
+
+    if (nextForm.password !== nextForm.password_confirmation) {
+      return 'Password and confirm password must match.';
+    }
+
+    if (nextForm.password.length < 8) {
+      return 'Password must be at least 8 characters.';
+    }
+
+    return '';
+  }
+
   async function handleSubmit() {
+    const normalizedForm = {
+      ...form,
+      email: form.email.trim().toLowerCase(),
+      name: form.name.trim(),
+      phone: form.phone.trim(),
+      birth_date: form.birth_date.trim(),
+      address_line: form.address_line.trim(),
+      city: form.city.trim(),
+      province: form.province.trim(),
+      postal_code: form.postal_code.trim(),
+    };
+    const validationError = getRegistrationError(normalizedForm);
+
+    if (validationError) {
+      Alert.alert('Check your details', validationError);
+      return;
+    }
+
     try {
+      Keyboard.dismiss();
       setSubmitting(true);
-      await signUp(form);
+      await signUp(normalizedForm);
       startTransition(() => {
         router.replace('/(tabs)/dashboard');
       });
@@ -63,6 +115,8 @@ export default function RegisterScreen() {
   if (!booting && user) {
     return <Redirect href="/(tabs)/dashboard" />;
   }
+
+  const canSubmit = !getRegistrationError();
 
   return (
     <CustomerPage contentContainerStyle={styles.pageContent}>
@@ -81,7 +135,7 @@ export default function RegisterScreen() {
             label="Email address"
             value={form.email}
             onChangeText={(value) => setValue('email', value)}
-            placeholder="name@example.com"
+            placeholder="name@gmail.com"
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
@@ -100,7 +154,7 @@ export default function RegisterScreen() {
               />
             ))}
           </View>
-          <CustomerField label="Street address" value={form.address_line} onChangeText={(value) => setValue('address_line', value)} placeholder="Street, barangay, landmark" />
+          <CustomerField label="Street address" value={form.address_line} onChangeText={(value) => setValue('address_line', value)} placeholder="Street, barangay, municipal" />
           <CustomerField label="City" value={form.city} onChangeText={(value) => setValue('city', value)} placeholder="City" />
           <CustomerField label="Province" value={form.province} onChangeText={(value) => setValue('province', value)} placeholder="Province" />
           <CustomerField label="Postal code" value={form.postal_code} onChangeText={(value) => setValue('postal_code', value)} placeholder="Optional" keyboardType="numeric" />
@@ -127,7 +181,7 @@ export default function RegisterScreen() {
             textContentType="newPassword"
           />
           <View style={styles.actions}>
-            <CustomerButton label="Create account" onPress={handleSubmit} loading={submitting} />
+            <CustomerButton label="Create account" onPress={handleSubmit} loading={submitting} disabled={!canSubmit} />
             <CustomerButton label="I already have an account" onPress={() => router.replace('/login')} tone="secondary" />
           </View>
         </CustomerCard>

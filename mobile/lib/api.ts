@@ -47,7 +47,36 @@ function getExpoDevServerApiBaseUrl() {
   return null;
 }
 
-function getDefaultApiBaseUrl() {
+function isLocalDevelopmentApiBaseUrl(apiBaseUrl?: string | null) {
+  if (!apiBaseUrl) {
+    return false;
+  }
+
+  try {
+    const hostname = new URL(apiBaseUrl).hostname;
+
+    if (['localhost', '127.0.0.1', '0.0.0.0', '10.0.2.2'].includes(hostname)) {
+      return true;
+    }
+
+    if (hostname.startsWith('10.') || hostname.startsWith('192.168.')) {
+      return true;
+    }
+
+    const private172Range = hostname.match(/^172\.(\d{1,2})\./);
+
+    if (private172Range) {
+      const secondOctet = Number(private172Range[1]);
+      return secondOctet >= 16 && secondOctet <= 31;
+    }
+  } catch {
+    return false;
+  }
+
+  return false;
+}
+
+function getFallbackApiBaseUrl() {
   const expoDevServerBaseUrl = getExpoDevServerApiBaseUrl();
 
   if (expoDevServerBaseUrl) {
@@ -61,10 +90,22 @@ function getDefaultApiBaseUrl() {
   return 'http://127.0.0.1:8000';
 }
 
-const apiBaseUrl = (process.env.EXPO_PUBLIC_API_BASE_URL?.trim() || getDefaultApiBaseUrl()).replace(/\/$/, '');
+function resolveApiBaseUrl() {
+  const configuredApiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim() || '';
+  const expoDevServerBaseUrl = getExpoDevServerApiBaseUrl();
+
+  if (expoDevServerBaseUrl && (!configuredApiBaseUrl || isLocalDevelopmentApiBaseUrl(configuredApiBaseUrl))) {
+    return expoDevServerBaseUrl;
+  }
+
+  return configuredApiBaseUrl || getFallbackApiBaseUrl();
+}
+
+const apiBaseUrl = resolveApiBaseUrl().replace(/\/$/, '');
 
 type ApiRequestOptions = RequestInit & {
   token?: string | null;
+  timeoutMs?: number;
 };
 
 export class ApiError extends Error {
@@ -80,7 +121,7 @@ export class ApiError extends Error {
 }
 
 async function requestJson<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
-  const { token, headers, body, ...rest } = options;
+  const { token, headers, body, timeoutMs = 20000, ...rest } = options;
   const requestHeaders: Record<string, string> = {
     Accept: 'application/json',
     ...(headers as Record<string, string> | undefined),
@@ -95,18 +136,30 @@ async function requestJson<T>(path: string, options: ApiRequestOptions = {}): Pr
   }
 
   let response: Response;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     response = await fetch(`${apiBaseUrl}${path}`, {
       ...rest,
       headers: requestHeaders,
       body,
+      signal: controller.signal,
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new ApiError(
+        `The reservation server at ${apiBaseUrl} is taking too long to respond. Check that Laravel is running and that your phone can reach this address.`,
+        0,
+      );
+    }
+
     throw new ApiError(
       `Unable to reach the reservation server at ${apiBaseUrl}. For a real phone, run Laravel with "php artisan serve --host=0.0.0.0 --port=8000", keep the phone on the same Wi-Fi, then restart Expo. If needed, set EXPO_PUBLIC_API_BASE_URL=http://YOUR_COMPUTER_IP:8000 in mobile/.env.`,
       0,
     );
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   const raw = await response.text();
@@ -167,6 +220,7 @@ export function login(payload: { email: string; password: string }) {
   return requestJson<{ message: string; token: string; user: MobileUser }>('/api/mobile/login', {
     method: 'POST',
     body: JSON.stringify(payload),
+    timeoutMs: 8000,
   });
 }
 
@@ -174,6 +228,7 @@ export function register(payload: Record<string, string>) {
   return requestJson<{ message: string; token: string; user: MobileUser }>('/api/mobile/register', {
     method: 'POST',
     body: JSON.stringify(payload),
+    timeoutMs: 10000,
   });
 }
 
@@ -189,6 +244,7 @@ export function createReservation(payload: FormData, token: string) {
     method: 'POST',
     body: payload,
     token,
+    timeoutMs: 60000,
   });
 }
 

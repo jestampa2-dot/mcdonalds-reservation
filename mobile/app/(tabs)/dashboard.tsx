@@ -18,7 +18,7 @@ import {
 import { palette } from '@/constants/palette';
 import { ApiError, cancelReservation, fetchDashboard, rescheduleReservation } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { readCache, writeCache } from '@/lib/cache';
+import { readCacheEnvelope, writeCache } from '@/lib/cache';
 import { formatLongDate, formatStatusLabel, formatTimeLabel } from '@/lib/formatters';
 import type { DashboardPayload } from '@/lib/types';
 
@@ -27,6 +27,7 @@ const metricIcons: Record<string, 'calendar-clock' | 'cash-multiple' | 'check-de
   'Confirmed spend': 'cash-multiple',
   'Pending approvals': 'check-decagram',
 };
+const dashboardRefreshIntervalMs = 1000 * 30;
 
 function statusTone(status: string): 'yellow' | 'green' | 'pink' | 'neutral' {
   if (['confirmed', 'checked_in', 'completed'].includes(status)) {
@@ -52,6 +53,7 @@ export default function DashboardScreen() {
   const [errorMessage, setErrorMessage] = useState('');
   const [rescheduleForms, setRescheduleForms] = useState<Record<number, { event_date: string; event_time: string }>>({});
   const hasPayloadRef = useRef(false);
+  const lastLoadedAtRef = useRef(0);
   const dashboardCacheKey = user ? `mobile-cache:dashboard:${user.id}` : null;
 
   const loadDashboard = useCallback(async (nextRefreshing = false) => {
@@ -69,6 +71,7 @@ export default function DashboardScreen() {
       setErrorMessage('');
       const response = await fetchDashboard(token);
       hasPayloadRef.current = true;
+      lastLoadedAtRef.current = Date.now();
       setPayload(response);
       if (dashboardCacheKey) {
         await writeCache(dashboardCacheKey, response);
@@ -100,15 +103,16 @@ export default function DashboardScreen() {
     }
 
     void (async () => {
-      const cachedPayload = await readCache<DashboardPayload>(dashboardCacheKey, 1000 * 60 * 10);
+      const cachedPayload = await readCacheEnvelope<DashboardPayload>(dashboardCacheKey, 1000 * 60 * 10);
 
       if (active && cachedPayload) {
         hasPayloadRef.current = true;
-        setPayload(cachedPayload);
+        lastLoadedAtRef.current = cachedPayload.savedAt;
+        setPayload(cachedPayload.data);
         setLoading(false);
         setRescheduleForms(
           Object.fromEntries(
-            cachedPayload.bookings.map((booking) => [
+            cachedPayload.data.bookings.map((booking) => [
               booking.id,
               {
                 event_date: booking.event_date,
@@ -127,7 +131,7 @@ export default function DashboardScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      if (token) {
+      if (token && Date.now() - lastLoadedAtRef.current > dashboardRefreshIntervalMs) {
         void loadDashboard();
       }
     }, [loadDashboard, token]),

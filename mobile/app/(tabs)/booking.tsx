@@ -30,7 +30,7 @@ import {
 import { palette } from '@/constants/palette';
 import { ApiError, createReservation, fetchBookingOptions } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { readCache, writeCache } from '@/lib/cache';
+import { readCacheEnvelope, writeCache } from '@/lib/cache';
 import { addHoursToTime, formatCurrency, formatLongDate, formatMonthLabel, formatTimeLabel } from '@/lib/formatters';
 import type { AvailabilityDate, BookingOptionsPayload } from '@/lib/types';
 
@@ -141,39 +141,38 @@ export default function BookingScreen() {
     let active = true;
 
     void (async () => {
-      const cachedPayload = await readCache<BookingOptionsPayload>(bookingOptionsCacheKey, bookingOptionsCacheTtlMs);
+      const cachedPayload = await readCacheEnvelope<BookingOptionsPayload>(bookingOptionsCacheKey, bookingOptionsCacheTtlMs);
 
       if (!active || !cachedPayload) {
+        void loadBookingOptions();
         return;
       }
 
-      const eventTypes = Object.keys(cachedPayload.catalog.eventTypes);
+      const eventTypes = Object.keys(cachedPayload.data.catalog.eventTypes);
       const nextEventType = eventTypes[0] ?? 'birthday';
-      const supportedCachedBranches = Object.values(cachedPayload.catalog.branches).filter((branch) => branch.supports[nextEventType]);
-      const nextBranch = supportedCachedBranches[0]?.code ?? Object.keys(cachedPayload.catalog.branches)[0] ?? '';
-      const nextPackages = cachedPayload.catalog.packages[nextEventType] ?? [];
+      const supportedCachedBranches = Object.values(cachedPayload.data.catalog.branches).filter((branch) => branch.supports[nextEventType]);
+      const nextBranch = supportedCachedBranches[0]?.code ?? Object.keys(cachedPayload.data.catalog.branches)[0] ?? '';
+      const nextPackages = cachedPayload.data.catalog.packages[nextEventType] ?? [];
 
       hasPayloadRef.current = true;
-      setPayload(cachedPayload);
+      setPayload(cachedPayload.data);
       setEventType(nextEventType);
       setBranchCode(nextBranch);
-      setEventDate(cachedPayload.defaults.event_date);
-      setCalendarMonth(monthFromDate(cachedPayload.defaults.event_date));
-      setEventTime(cachedPayload.defaults.event_time);
-      setDurationHours(cachedPayload.defaults.duration_hours);
-      setRoomChoice(cachedPayload.defaults.room_choice);
+      setEventDate(cachedPayload.data.defaults.event_date);
+      setCalendarMonth(monthFromDate(cachedPayload.data.defaults.event_date));
+      setEventTime(cachedPayload.data.defaults.event_time);
+      setDurationHours(cachedPayload.data.defaults.duration_hours);
+      setRoomChoice(cachedPayload.data.defaults.room_choice);
       setPackageCode(nextPackages[0]?.code ?? '');
-      setMenuBundles(cachedPayload.catalog.menuBundles[0] ? [cachedPayload.catalog.menuBundles[0].code] : []);
+      setMenuBundles(cachedPayload.data.catalog.menuBundles[0] ? [cachedPayload.data.catalog.menuBundles[0].code] : []);
       setAddOns([]);
       setManualSelections([]);
       setNotes('');
       setGuests('10');
       setPaymentProof(null);
-      setActiveCategory(cachedPayload.catalog.menuCategories[0]?.code ?? null);
+      setActiveCategory(cachedPayload.data.catalog.menuCategories[0]?.code ?? null);
       setLoading(false);
     })();
-
-    void loadBookingOptions();
 
     return () => {
       active = false;

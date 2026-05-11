@@ -2,6 +2,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { ReactNode } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   ScrollView,
   StyleProp,
@@ -17,6 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { palette } from '@/constants/palette';
 
 type CustomerButtonTone = 'primary' | 'secondary' | 'ghost' | 'danger';
+const brandLogoCircle = require('../assets/images/brand-logo-circle.png');
 
 export function CustomerPage({
   children,
@@ -278,9 +280,11 @@ export function CustomerField({
 
 export function McLogo({ size = 56 }: { size?: number }) {
   return (
-    <View style={[styles.logoWrap, { width: size, height: size, borderRadius: size / 2 }]}>
-      <Text style={[styles.logoText, { fontSize: size * 0.54 }]}>M</Text>
-    </View>
+    <Image
+      source={brandLogoCircle}
+      style={{ width: size, height: size }}
+      resizeMode="contain"
+    />
   );
 }
 
@@ -558,16 +562,6 @@ const styles = StyleSheet.create({
     minHeight: 96,
     paddingTop: 12,
     textAlignVertical: 'top',
-  },
-  logoWrap: {
-    backgroundColor: palette.brandRed,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logoText: {
-    color: palette.brandYellow,
-    fontWeight: '900',
-    marginTop: -2,
   },
   avatarWrap: {
     backgroundColor: '#FFF6EF',
