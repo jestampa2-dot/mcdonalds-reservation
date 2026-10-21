@@ -1,5 +1,5 @@
 import { Redirect, router } from 'expo-router';
-import { startTransition, useState } from 'react';
+import { startTransition, useMemo, useState } from 'react';
 import { Alert, Keyboard, StyleSheet, Text, View } from 'react-native';
 
 import {
@@ -12,11 +12,13 @@ import {
   SectionEyebrow,
   SectionTitle,
 } from '@/components/customer-ui';
-import { palette } from '@/constants/palette';
 import { ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { AppThemeColors, useAppTheme } from '@/lib/theme';
 
 export default function LoginScreen() {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const { signIn, user, booting } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -102,7 +104,7 @@ export default function LoginScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: AppThemeColors) => StyleSheet.create({
   pageContent: {
     paddingHorizontal: 18,
     gap: 16,
@@ -111,13 +113,13 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   heroTitle: {
-    color: palette.ink,
+    color: colors.text,
     fontSize: 28,
     fontWeight: '900',
     lineHeight: 32,
   },
   heroText: {
-    color: '#665446',
+    color: colors.textMuted,
     lineHeight: 20,
     fontSize: 14,
   },
@@ -125,12 +127,12 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   tip: {
-    color: '#6A5647',
+    color: colors.textMuted,
     fontSize: 13,
     lineHeight: 20,
   },
   code: {
-    color: palette.brandRed,
+    color: colors.brandText,
     fontWeight: '800',
   },
 });

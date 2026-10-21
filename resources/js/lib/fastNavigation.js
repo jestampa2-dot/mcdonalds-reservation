@@ -10,7 +10,17 @@ let currentVersion = null
 let isInstalled = false
 let warmupQueued = false
 
-const clonePayload = (payload) => JSON.parse(JSON.stringify(payload))
+const clonePayload = (payload) => {
+  if (typeof structuredClone === 'function') {
+    return structuredClone(payload)
+  }
+
+  if (payload === undefined || payload === null) {
+    return payload
+  }
+
+  return JSON.parse(JSON.stringify(payload))
+}
 
 const normalizeUrl = (url) => {
   const absoluteUrl = new URL(url, window.location.origin)
@@ -29,6 +39,17 @@ const isSameOriginPage = (url) => {
   }
 }
 
+const shouldPrefetchAnchor = (anchor) => {
+  const href = anchor.getAttribute('href')
+
+  return Boolean(href)
+    && !href.startsWith('#')
+    && !anchor.hasAttribute('download')
+    && !anchor.target
+    && anchor.dataset.fastPrefetch !== 'false'
+    && isSameOriginPage(anchor.href)
+}
+
 const isFresh = (entry) => entry && (Date.now() - entry.timestamp) < CACHE_TTL
 
 const readInitialPage = () => {
@@ -45,12 +66,24 @@ const readInitialPage = () => {
   }
 }
 
+const readHeader = (headers, name) => (
+  headers?.get?.(name)
+    ?? headers?.[name]
+    ?? headers?.[name.toLowerCase()]
+)
+
 const isCacheableRequest = (config) => {
   const method = String(config.method ?? 'get').toLowerCase()
   const headers = config.headers ?? {}
+  const isPartialReload = Boolean(readHeader(headers, 'X-Inertia-Partial-Data'))
+  const isCurrentPage = typeof window !== 'undefined'
+    && Boolean(config.url)
+    && normalizeUrl(config.url) === normalizeUrl(window.location.href)
 
   return method === 'get'
-    && Boolean(headers['X-Inertia'] || headers['x-inertia'])
+    && Boolean(readHeader(headers, 'X-Inertia'))
+    && !isPartialReload
+    && !isCurrentPage
     && Boolean(config.url)
 }
 
@@ -111,9 +144,7 @@ export const prefetchPage = async (url) => {
 const warmVisibleLinks = () => {
   const anchors = Array.from(document.querySelectorAll('a[href]'))
     .filter((anchor) => {
-      const href = anchor.getAttribute('href')
-
-      if (!href || href.startsWith('#') || !isSameOriginPage(anchor.href)) {
+      if (!shouldPrefetchAnchor(anchor)) {
         return false
       }
 
@@ -151,7 +182,7 @@ const queueWarmVisibleLinks = () => {
 const handleLinkIntent = (event) => {
   const anchor = event.target?.closest?.('a[href]')
 
-  if (!anchor) {
+  if (!anchor || !shouldPrefetchAnchor(anchor)) {
     return
   }
 

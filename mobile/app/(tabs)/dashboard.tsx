@@ -1,6 +1,6 @@
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Image, Linking, RefreshControl, StyleSheet, Text, View } from 'react-native';
 
 import {
   CustomerButton,
@@ -16,10 +16,20 @@ import {
   SheetSurface,
 } from '@/components/customer-ui';
 import { palette } from '@/constants/palette';
-import { ApiError, cancelReservation, fetchDashboard, rescheduleReservation } from '@/lib/api';
+import {
+  ApiError,
+  cancelReservation,
+  fetchDashboard,
+  getReservationPassUrl,
+  getReservationPaymentProofUrl,
+  resolveApiUrl,
+  rescheduleReservation,
+} from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { readCacheEnvelope, writeCache } from '@/lib/cache';
 import { formatLongDate, formatStatusLabel, formatTimeLabel } from '@/lib/formatters';
+import { useAppPreferences } from '@/lib/preferences';
+import { AppThemeColors, useAppTheme } from '@/lib/theme';
 import type { DashboardPayload } from '@/lib/types';
 
 const metricIcons: Record<string, 'calendar-clock' | 'cash-multiple' | 'check-decagram'> = {
@@ -46,6 +56,9 @@ function statusTone(status: string): 'yellow' | 'green' | 'pink' | 'neutral' {
 }
 
 export default function DashboardScreen() {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const { preferences, syncReservationReminders } = useAppPreferences();
   const { user, token, booting } = useAuth();
   const [payload, setPayload] = useState<DashboardPayload | null>(null);
   const [loading, setLoading] = useState(false);
@@ -73,6 +86,7 @@ export default function DashboardScreen() {
       hasPayloadRef.current = true;
       lastLoadedAtRef.current = Date.now();
       setPayload(response);
+      void syncReservationReminders(response.bookings).catch(() => undefined);
       if (dashboardCacheKey) {
         await writeCache(dashboardCacheKey, response);
       }
@@ -93,7 +107,7 @@ export default function DashboardScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [dashboardCacheKey, token]);
+  }, [dashboardCacheKey, syncReservationReminders, token]);
 
   useEffect(() => {
     let active = true;
@@ -109,6 +123,7 @@ export default function DashboardScreen() {
         hasPayloadRef.current = true;
         lastLoadedAtRef.current = cachedPayload.savedAt;
         setPayload(cachedPayload.data);
+        void syncReservationReminders(cachedPayload.data.bookings).catch(() => undefined);
         setLoading(false);
         setRescheduleForms(
           Object.fromEntries(
@@ -127,7 +142,7 @@ export default function DashboardScreen() {
     return () => {
       active = false;
     };
-  }, [dashboardCacheKey]);
+  }, [dashboardCacheKey, syncReservationReminders]);
 
   useFocusEffect(
     useCallback(() => {
@@ -207,7 +222,7 @@ export default function DashboardScreen() {
 
   return (
     <CustomerPage
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void loadDashboard(true)} tintColor={palette.brandRed} />}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void loadDashboard(true)} tintColor={colors.brandText} />}
       contentContainerStyle={styles.pageContent}>
       <CustomerHeader title="My Dashboard" subtitle="Booking, payments, and event details." rightSlot={<McLogo />} />
       <SheetSurface>
@@ -256,8 +271,14 @@ export default function DashboardScreen() {
                       <Text style={styles.bookingTitle}>{booking.package_name}</Text>
                       <Text style={styles.bookingMeta}>{booking.branch}</Text>
                       <Text style={styles.bookingMeta}>
-                        {formatLongDate(booking.event_date)} - {booking.event_start_label ?? formatTimeLabel(booking.event_start_time)} to{' '}
-                        {booking.event_end_label ?? formatTimeLabel(booking.event_end_time)}
+                        {formatLongDate(booking.event_date, preferences.dateFormat, preferences.language)} -{' '}
+                        {preferences.timeFormat === '24-hour'
+                          ? formatTimeLabel(booking.event_start_time, '24-hour')
+                          : booking.event_start_label ?? formatTimeLabel(booking.event_start_time)}{' '}
+                        to{' '}
+                        {preferences.timeFormat === '24-hour'
+                          ? formatTimeLabel(booking.event_end_time, '24-hour')
+                          : booking.event_end_label ?? formatTimeLabel(booking.event_end_time)}
                       </Text>
                     </View>
                     <CustomerChip label={formatStatusLabel(booking.status)} tone={statusTone(booking.status)} />
@@ -275,6 +296,57 @@ export default function DashboardScreen() {
                       <Text style={styles.receiptTotalValue}>{booking.receipt.total}</Text>
                     </View>
                   </View>
+
+                  <View style={styles.reservationDetails}>
+                    <Text style={styles.detailLabel}>Guests</Text>
+                    <Text style={styles.detailValue}>{booking.guests}</Text>
+                    <Text style={styles.detailLabel}>Check-in code</Text>
+                    <Text style={styles.detailValue}>{booking.check_in_code || 'Available after confirmation'}</Text>
+                  </View>
+
+                  {booking.can_show_qr_pass ? (
+                    <View style={styles.mediaPanel}>
+                      <SectionEyebrow>Event start QR pass</SectionEyebrow>
+                      <Image
+                        source={{
+                          uri: getReservationPassUrl(booking.id),
+                          headers: { Authorization: `Bearer ${token}` },
+                        }}
+                        style={styles.qrImage}
+                        resizeMode="contain"
+                      />
+                      <Text style={styles.mediaHelp}>
+                        Show this pass to staff when the party is ready. A successful scan marks the event as ongoing for admin.
+                      </Text>
+                      {booking.qr_check_in_url ? (
+                        <CustomerButton
+                          label={booking.status === 'checked_in' ? 'Event is ongoing' : 'Start on this device'}
+                          onPress={() => {
+                            const url = resolveApiUrl(booking.qr_check_in_url);
+                            if (url) void Linking.openURL(url);
+                          }}
+                          tone="secondary"
+                          disabled={booking.status === 'checked_in'}
+                        />
+                      ) : null}
+                    </View>
+                  ) : booking.status === 'pending_review' ? (
+                    <Text style={styles.pendingPass}>Your QR pass will appear after the booking is confirmed.</Text>
+                  ) : null}
+
+                  {booking.payment_proof_preview_url ? (
+                    <View style={styles.mediaPanel}>
+                      <SectionEyebrow>Proof of payment</SectionEyebrow>
+                      <Image
+                        source={{
+                          uri: getReservationPaymentProofUrl(booking.id),
+                          headers: { Authorization: `Bearer ${token}` },
+                        }}
+                        style={styles.proofImage}
+                        resizeMode="cover"
+                      />
+                    </View>
+                  ) : null}
 
                   <Text style={styles.adminSyncText}>This reservation stays in sync with your admin review and database updates.</Text>
 
@@ -308,12 +380,12 @@ export default function DashboardScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: AppThemeColors) => StyleSheet.create({
   pageContent: {
     gap: 0,
   },
   helperText: {
-    color: '#655244',
+    color: colors.textMuted,
     fontSize: 14,
     lineHeight: 20,
   },
@@ -327,7 +399,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   toolbarTitle: {
-    color: palette.ink,
+    color: colors.text,
     fontSize: 14,
     fontWeight: '700',
   },
@@ -352,24 +424,24 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 16,
-    backgroundColor: '#F1ECE6',
+    backgroundColor: colors.surfaceMuted,
     alignItems: 'center',
     justifyContent: 'center',
     borderTopWidth: 10,
     borderTopColor: palette.brandYellow,
   },
   emptyCalendar: {
-    color: '#D0C8BD',
+    color: colors.textSubtle,
     fontWeight: '900',
     fontSize: 20,
   },
   emptyTitle: {
-    color: palette.ink,
+    color: colors.text,
     fontSize: 22,
     fontWeight: '900',
   },
   emptyText: {
-    color: '#6B5A4D',
+    color: colors.textMuted,
     textAlign: 'center',
     lineHeight: 20,
     maxWidth: 260,
@@ -378,7 +450,7 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   bookingCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
   },
   bookingHeader: {
     flexDirection: 'row',
@@ -386,26 +458,63 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   bookingReference: {
-    color: palette.brandRed,
+    color: colors.brandText,
     fontSize: 12,
     fontWeight: '900',
     letterSpacing: 0.6,
   },
   bookingTitle: {
-    color: palette.ink,
+    color: colors.text,
     fontSize: 20,
     fontWeight: '900',
   },
   bookingMeta: {
-    color: '#6B5A4D',
+    color: colors.textMuted,
     lineHeight: 19,
     fontSize: 13,
   },
   receiptBox: {
     borderRadius: 16,
-    backgroundColor: '#F8F4EE',
+    backgroundColor: colors.surfaceMuted,
     padding: 12,
     gap: 8,
+  },
+  reservationDetails: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    alignItems: 'center',
+  },
+  detailLabel: { color: colors.textMuted, fontSize: 12, fontWeight: '800' },
+  detailValue: { color: colors.text, fontSize: 13, fontWeight: '900', marginRight: 10 },
+  mediaPanel: {
+    gap: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
+    paddingTop: 14,
+  },
+  qrImage: {
+    width: '100%',
+    maxWidth: 280,
+    aspectRatio: 1,
+    alignSelf: 'center',
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+  },
+  proofImage: {
+    width: '100%',
+    height: 220,
+    borderRadius: 8,
+    backgroundColor: colors.surfaceMuted,
+  },
+  mediaHelp: { color: colors.textMuted, fontSize: 13, lineHeight: 19 },
+  pendingPass: {
+    color: colors.text,
+    backgroundColor: colors.warningSurface,
+    borderLeftWidth: 4,
+    borderLeftColor: palette.brandYellow,
+    padding: 12,
+    lineHeight: 19,
   },
   receiptRow: {
     flexDirection: 'row',
@@ -413,33 +522,33 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   receiptLabel: {
-    color: '#6B5A4D',
+    color: colors.textMuted,
     flex: 1,
     lineHeight: 18,
     fontSize: 13,
   },
   receiptValue: {
-    color: palette.ink,
+    color: colors.text,
     fontWeight: '700',
     fontSize: 13,
   },
   receiptTotalRow: {
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: '#E4DBCF',
+    borderTopColor: colors.line,
   },
   receiptTotalLabel: {
-    color: palette.ink,
+    color: colors.text,
     fontWeight: '900',
     fontSize: 14,
   },
   receiptTotalValue: {
-    color: palette.brandRed,
+    color: colors.brandText,
     fontWeight: '900',
     fontSize: 14,
   },
   adminSyncText: {
-    color: '#7A604B',
+    color: colors.textMuted,
     fontSize: 12,
     lineHeight: 18,
   },

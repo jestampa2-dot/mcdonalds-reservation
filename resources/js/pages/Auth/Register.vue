@@ -12,10 +12,6 @@ const form = useForm({
   phone: '',
   birth_date: '',
   gender: 'prefer_not_to_say',
-  address_line: '',
-  city: '',
-  province: '',
-  postal_code: '',
   password: '',
   password_confirmation: '',
 })
@@ -116,66 +112,6 @@ const submit = () => {
                 <option value="prefer_not_to_say">Prefer not to say</option>
               </select>
               <InputError class="mt-2" :message="form.errors.gender" />
-            </div>
-          </div>
-        </section>
-
-        <section class="auth-form__section">
-          <div>
-            <p class="auth-form__section-label">Address details</p>
-            <h3>Address</h3>
-          </div>
-
-          <div class="auth-form__field">
-            <InputLabel for="address_line" value="Street address" />
-            <textarea
-              id="address_line"
-              v-model="form.address_line"
-              class="auth-form__input auth-form__textarea"
-              rows="3"
-              required
-              autocomplete="street-address"
-            ></textarea>
-            <InputError class="mt-2" :message="form.errors.address_line" />
-          </div>
-
-          <div class="auth-form__split auth-form__split--three">
-            <div class="auth-form__field">
-              <InputLabel for="city" value="City / Municipality" />
-              <TextInput
-                id="city"
-                v-model="form.city"
-                type="text"
-                class="auth-form__input"
-                required
-                autocomplete="address-level2"
-              />
-              <InputError class="mt-2" :message="form.errors.city" />
-            </div>
-
-            <div class="auth-form__field">
-              <InputLabel for="province" value="Province" />
-              <TextInput
-                id="province"
-                v-model="form.province"
-                type="text"
-                class="auth-form__input"
-                required
-                autocomplete="address-level1"
-              />
-              <InputError class="mt-2" :message="form.errors.province" />
-            </div>
-
-            <div class="auth-form__field">
-              <InputLabel for="postal_code" value="Postal code" />
-              <TextInput
-                id="postal_code"
-                v-model="form.postal_code"
-                type="text"
-                class="auth-form__input"
-                autocomplete="postal-code"
-              />
-              <InputError class="mt-2" :message="form.errors.postal_code" />
             </div>
           </div>
         </section>

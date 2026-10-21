@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\Response;
 
 class MobileReservationController extends ReservationController
@@ -80,6 +81,16 @@ class MobileReservationController extends ReservationController
         ]);
     }
 
+    public function mobilePaymentProof(Request $request, Reservation $reservation): BinaryFileResponse
+    {
+        return $this->paymentProof($request, $reservation);
+    }
+
+    public function mobilePass(Request $request, Reservation $reservation): Response
+    {
+        return $this->pass($request, $reservation);
+    }
+
     public function mobileStore(Request $request): JsonResponse
     {
         $catalog = $this->catalog();
@@ -101,10 +112,23 @@ class MobileReservationController extends ReservationController
             'manual_menu_items.*.option_code' => ['required', 'string'],
             'manual_menu_items.*.quantity' => ['required', 'integer', 'min:1', 'max:99'],
             'add_ons' => ['array'],
-            'add_ons.*' => ['string'],
+            'add_ons.*' => ['string', Rule::in(collect($catalog['addOns'])->pluck('code')->all())],
             'notes' => ['nullable', 'string', 'max:1000'],
             'payment_proof' => ['required', 'image', 'max:4096'],
         ]);
+
+        $themeCodes = collect($catalog['addOns'])
+            ->where('kind', 'theme')
+            ->pluck('code');
+
+        if ($themeCodes->intersect($validated['add_ons'] ?? [])->count() > 1) {
+            return response()->json([
+                'message' => 'Please choose only one decoration theme.',
+                'errors' => [
+                    'add_ons' => ['Please choose only one decoration theme.'],
+                ],
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
 
         $branch = $catalog['branches'][$validated['branch_code']];
 

@@ -16,5 +16,10 @@
     "resources/js/**/*.js",
     "resources/js/**/*.vue",
     "env.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "public",
+    "mobile"
   ]
 }

@@ -177,12 +177,22 @@ const refreshBookings = () => {
                               <p class="font-black uppercase tracking-[0.15em] text-red-700">Proof of payment</p>
                               <a :href="booking.payment_proof_url" class="text-sm font-bold text-red-700">Download proof</a>
                             </div>
-                            <img
+                            <a
                               v-if="booking.payment_proof_preview_url"
-                              :src="booking.payment_proof_preview_url"
-                              :alt="`Payment proof ${booking.booking_reference}`"
-                              class="mt-3 h-40 w-full rounded-2xl object-cover"
-                            />
+                              :href="booking.payment_proof_preview_url"
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              <img
+                                :src="booking.payment_proof_preview_url"
+                                :alt="`Payment proof ${booking.booking_reference}`"
+                                class="mt-3 h-40 w-full rounded-2xl object-cover"
+                                loading="lazy"
+                              />
+                            </a>
+                            <p v-else class="mt-3 rounded-2xl bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-500">
+                              No payment proof image attached.
+                            </p>
                           </div>
                         </div>
                       </div>

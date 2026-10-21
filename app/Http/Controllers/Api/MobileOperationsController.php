@@ -15,6 +15,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
@@ -167,6 +168,10 @@ class MobileOperationsController extends ReservationController
             return response()->json([
                 'message' => 'At least one admin account must remain in the system.',
             ], 422);
+        }
+
+        if ($user->profile_photo_path) {
+            Storage::disk('public')->delete($user->profile_photo_path);
         }
 
         $user->delete();
@@ -708,6 +713,7 @@ class MobileOperationsController extends ReservationController
             'email' => $user->email,
             'phone' => $user->phone,
             'role' => $user->role,
+            'profile_photo_url' => $user->profile_photo_url,
             'created_at' => optional($user->created_at)->format('M j, Y g:i A'),
         ];
     }

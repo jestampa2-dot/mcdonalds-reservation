@@ -10,6 +10,7 @@ export type MobileUser = {
   city: string | null;
   province: string | null;
   postal_code: string | null;
+  profile_photo_url?: string | null;
   full_address: string;
 };
 
@@ -48,6 +49,10 @@ export type AddOn = {
   code: string;
   name: string;
   price: number;
+  kind: 'theme' | 'service';
+  description?: string | null;
+  image_url?: string | null;
+  badge?: string | null;
 };
 
 export type ManualMenuOption = {
@@ -148,7 +153,7 @@ export type HomePayload = {
   eventTypes: EventType[];
   branches: Branch[];
   featuredPackages: PackageOption[];
-  stats: Array<{ label: string; value: string | number }>;
+  stats: { label: string; value: string | number }[];
 };
 
 export type ReceiptLine = {
@@ -187,14 +192,19 @@ export type ReservationRecord = {
     pricing_rule: string;
     line_items: ReceiptLine[];
   };
+  check_in_code?: string | null;
+  can_show_qr_pass?: boolean;
   pass_url?: string | null;
+  pass_preview_url?: string | null;
+  qr_check_in_url?: string | null;
+  payment_proof_url?: string | null;
   payment_proof_preview_url?: string | null;
 };
 
 export type DashboardPayload = {
   bookings: ReservationRecord[];
   slotOptions: string[];
-  stats: Array<{ label: string; value: string | number }>;
+  stats: { label: string; value: string | number }[];
 };
 
 export type OperationsPayload = {
@@ -207,12 +217,14 @@ export type ProfilePayload = {
   name: string;
   email: string;
   phone: string;
+  sms_notifications_enabled: boolean;
   birth_date: string | null;
   gender: string | null;
   address_line: string | null;
   city: string | null;
   province: string | null;
   postal_code: string | null;
+  profile_photo_url: string | null;
   email_verified_at: string | null;
   role: string;
   full_address: string;

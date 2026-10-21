@@ -19,6 +19,11 @@ use App\Models\RoomOption;
 use App\Models\User;
 use App\Support\MenuCatalogSynchronizer;
 use App\Support\Timeline\ReservationTimelineBuilder;
+use Endroid\QrCode\Builder\Builder;
+use Endroid\QrCode\Encoding\Encoding;
+use Endroid\QrCode\ErrorCorrectionLevel\ErrorCorrectionLevelMedium;
+use Endroid\QrCode\RoundBlockSizeMode\RoundBlockSizeModeMargin;
+use Endroid\QrCode\Writer\PngWriter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -29,11 +34,13 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
 use Inertia\Response as InertiaResponse;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Throwable;
 
 class ReservationController extends Controller
@@ -41,6 +48,7 @@ class ReservationController extends Controller
     protected ?bool $databaseAvailable = null;
     protected ?array $catalogCache = null;
     protected bool $databaseDefaultsEnsured = false;
+    protected array $tableAvailability = [];
 
     protected function reservationTimelineBuilder(): ReservationTimelineBuilder
     {
@@ -73,7 +81,7 @@ class ReservationController extends Controller
         return Inertia::render('Reservations/Create', [
             'catalog' => $catalog,
             'roomChoices' => $catalog['roomChoices'],
-            'availability' => $this->availabilityPayload($catalog, 366),
+            'availability' => $this->availabilityPayload($catalog, 60),
             'defaults' => [
                 'event_date' => now()->addDays(3)->toDateString(),
                 'event_time' => '10:00',
@@ -104,10 +112,20 @@ class ReservationController extends Controller
             'manual_menu_items.*.option_code' => ['required', 'string'],
             'manual_menu_items.*.quantity' => ['required', 'integer', 'min:1', 'max:99'],
             'add_ons' => ['array'],
-            'add_ons.*' => ['string'],
+            'add_ons.*' => ['string', Rule::in(collect($catalog['addOns'])->pluck('code')->all())],
             'notes' => ['nullable', 'string', 'max:1000'],
             'payment_proof' => ['required', 'image', 'max:4096'],
         ]);
+
+        $themeCodes = collect($catalog['addOns'])
+            ->where('kind', 'theme')
+            ->pluck('code');
+
+        if ($themeCodes->intersect($validated['add_ons'] ?? [])->count() > 1) {
+            return back()->withErrors([
+                'add_ons' => 'Please choose only one decoration theme.',
+            ])->withInput();
+        }
 
         $branch = $catalog['branches'][$validated['branch_code']];
 
@@ -269,17 +287,27 @@ class ReservationController extends Controller
     public function adminConfirmedEvents(Request $request): InertiaResponse
     {
         $this->authorizeRoles($request, ['admin', 'manager']);
-        $catalog = $this->catalog();
         $bookings = $this->adminReservations(['user', 'assignedStaff'], ['confirmed', 'rescheduled', 'checked_in']);
+        $requestedProps = collect(explode(',', (string) $request->header('X-Inertia-Partial-Data')))
+            ->filter();
+        $needsCatalog = $requestedProps->isEmpty()
+            || $requestedProps->contains('menuBundles')
+            || $requestedProps->contains('addOns');
 
-        return Inertia::render('Admin/ConfirmedEvents', [
+        $props = [
             'stats' => $this->adminStats($this->adminStatsBookings()),
             'confirmedEvents' => $bookings->map(fn (Reservation $reservation) => $this->serializeReservation($reservation))->values(),
             'staffUsers' => $this->adminStaffUsers(),
-            'menuBundles' => $catalog['menuBundles'],
-            'addOns' => $catalog['addOns'],
             'durationOptions' => range(1, 16),
-        ]);
+        ];
+
+        if ($needsCatalog) {
+            $catalog = $this->catalog();
+            $props['menuBundles'] = $catalog['menuBundles'];
+            $props['addOns'] = $catalog['addOns'];
+        }
+
+        return Inertia::render('Admin/ConfirmedEvents', $props);
     }
 
     public function adminAvailability(Request $request): InertiaResponse
@@ -625,6 +653,10 @@ class ReservationController extends Controller
 
         if ($user->role === 'admin' && User::query()->where('role', 'admin')->count() <= 1) {
             return back()->with('error', 'At least one admin account must remain in the system.');
+        }
+
+        if ($user->profile_photo_path) {
+            Storage::disk('public')->delete($user->profile_photo_path);
         }
 
         $user->delete();
@@ -986,30 +1018,129 @@ class ReservationController extends Controller
     {
         $this->authorizeRoles($request, ['customer', 'staff', 'manager', 'admin']);
 
-        return response()->json($this->availabilityPayload($this->catalog(), 366));
+        $days = $request->integer('days', 60);
+
+        return response()->json($this->availabilityPayload($this->catalog(), $days));
     }
 
-    public function paymentProof(Request $request, Reservation $reservation)
+    public function paymentProof(Request $request, Reservation $reservation): BinaryFileResponse
     {
         $this->authorizeReservationAccess($request, $reservation, true);
 
         abort_unless($reservation->payment_proof_path && Storage::disk('public')->exists($reservation->payment_proof_path), 404);
 
-        $filePath = storage_path('app/public/'.ltrim($reservation->payment_proof_path, '/\\'));
+        $filePath = Storage::disk('public')->path($reservation->payment_proof_path);
+        $downloadName = $reservation->booking_reference.'-payment-proof.'.pathinfo($reservation->payment_proof_path, PATHINFO_EXTENSION);
 
-        return response()->download(
-            $filePath,
-            $reservation->booking_reference.'-payment-proof.'.pathinfo($reservation->payment_proof_path, PATHINFO_EXTENSION)
-        );
+        if ($request->boolean('download')) {
+            return response()->download($filePath, $downloadName);
+        }
+
+        return response()->file($filePath, [
+            'Content-Disposition' => 'inline; filename="'.$downloadName.'"',
+        ]);
     }
 
     public function pass(Request $request, Reservation $reservation): Response
     {
         $this->authorizeReservationAccess($request, $reservation, true);
 
-        return response($this->buildPassSvg($reservation), 200, [
-            'Content-Type' => 'image/svg+xml',
-            'Content-Disposition' => 'attachment; filename="'.$reservation->booking_reference.'-pass.svg"',
+        $disposition = $request->boolean('download') ? 'attachment' : 'inline';
+
+        return response($this->buildPassQr($reservation), 200, [
+            'Content-Type' => 'image/png',
+            'Content-Disposition' => $disposition.'; filename="'.$reservation->booking_reference.'-qr-pass.png"',
+        ]);
+    }
+
+    public function qrCheckIn(Request $request, Reservation $reservation): InertiaResponse
+    {
+        abort_unless(
+            $reservation->check_in_code
+                && hash_equals((string) $reservation->check_in_code, (string) $request->query('code')),
+            403
+        );
+
+        $timezone = config('app.timezone');
+        $eventStartsAt = Carbon::parse(
+            $reservation->event_date?->toDateString().' '.substr($reservation->event_time, 0, 5),
+            $timezone
+        );
+        $eventEndsAt = $eventStartsAt->copy()->addHours((int) ($reservation->duration_hours ?? 4));
+        $checkInOpensAt = $eventStartsAt->copy()->subHour();
+        $now = now($timezone);
+        $result = 'not_confirmed';
+        $title = 'Booking is not ready for check-in';
+        $message = 'An admin must confirm this booking before the event can begin.';
+        $success = false;
+
+        if ($reservation->status === 'checked_in') {
+            $result = 'already_active';
+            $title = 'Event already ongoing';
+            $message = 'This booking has already been checked in. The admin and service teams can see it as ongoing.';
+            $success = true;
+        } elseif ($reservation->status === 'completed') {
+            $result = 'completed';
+            $title = 'Event already completed';
+            $message = 'This event has already been marked as completed.';
+        } elseif ($reservation->status === 'cancelled') {
+            $result = 'cancelled';
+            $title = 'Booking cancelled';
+            $message = 'A cancelled booking cannot be checked in.';
+        } elseif (! in_array($reservation->status, ['confirmed', 'rescheduled'], true)) {
+            $result = 'not_confirmed';
+        } elseif ($now->lt($checkInOpensAt)) {
+            $result = 'too_early';
+            $title = 'Check-in is not open yet';
+            $message = 'Scan this pass again from '.$checkInOpensAt->format('M j, Y g:i A').'.';
+        } elseif ($now->gt($eventEndsAt)) {
+            $result = 'closed';
+            $title = 'Check-in window closed';
+            $message = 'The scheduled event window has already ended. Please ask the branch team for assistance.';
+        } else {
+            $activated = Reservation::query()
+                ->whereKey($reservation->id)
+                ->whereIn('status', ['confirmed', 'rescheduled'])
+                ->update([
+                    'status' => 'checked_in',
+                    'checked_in_at' => now(),
+                    'checked_in_by' => 'Customer QR scan',
+                    'service_status' => 'in_progress',
+                ]) === 1;
+
+            $reservation->refresh();
+
+            if ($activated) {
+                $result = 'active';
+                $title = 'Your event is now ongoing';
+                $message = 'Check-in is complete. The admin and service teams have been notified through the live event status.';
+                $success = true;
+            } elseif ($reservation->status === 'checked_in') {
+                $result = 'already_active';
+                $title = 'Event already ongoing';
+                $message = 'This booking has already been checked in. The admin and service teams can see it as ongoing.';
+                $success = true;
+            }
+        }
+
+        return Inertia::render('Reservations/CheckInResult', [
+            'result' => $result,
+            'success' => $success,
+            'title' => $title,
+            'message' => $message,
+            'booking' => [
+                'reference' => $reservation->booking_reference,
+                'branch' => $reservation->branch,
+                'event_date' => $reservation->event_date?->format('M j, Y'),
+                'event_time' => $this->formatTimeRange(
+                    substr($reservation->event_time, 0, 5),
+                    (int) ($reservation->duration_hours ?? 4)
+                ),
+                'status' => $reservation->status,
+                'service_status' => $reservation->service_status,
+                'checked_in_at' => $reservation->checked_in_at?->timezone($timezone)->format('M j, Y g:i A'),
+            ],
+            'viewerAuthenticated' => $request->user() !== null,
         ]);
     }
 
@@ -1028,6 +1159,7 @@ class ReservationController extends Controller
                     ->orderBy('sort_order')
                     ->get();
                 $eventTypeCodes = $eventTypes->pluck('code')->all();
+                $addOnPresentation = collect(config('booking.add_ons'))->keyBy('code');
                 $pricing = PricingSetting::query()
                     ->where('is_active', true)
                     ->latest('id')
@@ -1070,11 +1202,19 @@ class ReservationController extends Controller
                         ->where('is_active', true)
                         ->orderBy('sort_order')
                         ->get()
-                        ->map(fn (AddOn $addOn) => [
-                            'code' => $addOn->code,
-                            'name' => $addOn->name,
-                            'price' => (float) $addOn->price,
-                        ])->values()->all(),
+                        ->map(function (AddOn $addOn) use ($addOnPresentation) {
+                            $presentation = $addOnPresentation->get($addOn->code, []);
+
+                            return [
+                                'code' => $addOn->code,
+                                'name' => $addOn->name,
+                                'price' => (float) $addOn->price,
+                                'kind' => $presentation['kind'] ?? 'service',
+                                'description' => $presentation['description'] ?? null,
+                                'image_url' => $presentation['image_url'] ?? null,
+                                'badge' => $presentation['badge'] ?? null,
+                            ];
+                        })->values()->all(),
                     'menuCategories' => $this->menuCategoryCatalog(),
                     'roomChoices' => $this->roomChoices(),
                     'bookingWindow' => $this->bookingWindowSettings(),
@@ -1128,13 +1268,14 @@ class ReservationController extends Controller
         return User::query()
             ->orderByRaw("CASE role WHEN 'admin' THEN 1 WHEN 'manager' THEN 2 WHEN 'staff' THEN 3 ELSE 4 END")
             ->orderBy('name')
-            ->get(['id', 'name', 'email', 'phone', 'role', 'created_at'])
+            ->get(['id', 'name', 'email', 'phone', 'role', 'profile_photo_path', 'created_at'])
             ->map(fn (User $user) => [
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
                 'phone' => $user->phone,
                 'role' => $user->role,
+                'profile_photo_url' => $user->profile_photo_url,
                 'created_at' => optional($user->created_at)->format('M j, Y g:i A'),
             ]);
     }
@@ -1332,10 +1473,12 @@ class ReservationController extends Controller
         );
     }
 
-    protected function bookedSlots(): array
+    protected function bookedSlots(?string $startDate = null, ?string $endDate = null): array
     {
         return $this->runDatabaseCheck(fn () => Reservation::query()
             ->whereIn('status', ['pending_review', 'confirmed', 'rescheduled', 'checked_in'])
+            ->when($startDate, fn ($query) => $query->whereDate('event_date', '>=', $startDate))
+            ->when($endDate, fn ($query) => $query->whereDate('event_date', '<=', $endDate))
             ->get(['branch_code', 'event_date', 'event_time', 'duration_hours'])
             ->flatMap(function (Reservation $reservation) {
                 $hours = range(0, max(((int) ($reservation->duration_hours ?? 4)) - 1, 0));
@@ -1369,7 +1512,14 @@ class ReservationController extends Controller
 
     protected function hasTableSafely(string $table): bool
     {
-        return $this->runDatabaseCheck(fn () => Schema::hasTable($table), false);
+        if (! array_key_exists($table, $this->tableAvailability)) {
+            $this->tableAvailability[$table] = $this->runDatabaseCheck(
+                fn () => Schema::hasTable($table),
+                false
+            );
+        }
+
+        return $this->tableAvailability[$table];
     }
 
     protected function runDatabaseCheck(callable $callback, mixed $fallback)
@@ -1388,17 +1538,22 @@ class ReservationController extends Controller
     protected function availabilityPayload(array $catalog, int $days): array
     {
         $days = max(28, min($days, 366));
-        $bookedSlots = collect($this->bookedSlots())->groupBy(fn ($slot) => $slot['branch_code'].'|'.$slot['event_date'].'|'.$slot['event_time']);
+        $startDate = now()->toDateString();
+        $endDate = now()->addDays($days - 1)->toDateString();
+        $slotOptions = $catalog['slotOptions'] ?? [];
+        $durationOptions = range(1, 16);
+        $bookedSlotCounts = collect($this->bookedSlots($startDate, $endDate))
+            ->countBy(fn ($slot) => $slot['branch_code'].'|'.$slot['event_date'].'|'.$slot['event_time']);
 
         return [
             'generated_at' => now()->toDateTimeString(),
-            'slotOptions' => $catalog['slotOptions'],
-            'branches' => collect($catalog['branches'])->map(function ($branch) use ($catalog, $days, $bookedSlots) {
-                $dates = collect(range(0, $days - 1))->map(function ($offset) use ($branch, $catalog, $bookedSlots) {
+            'slotOptions' => $slotOptions,
+            'branches' => collect($catalog['branches'] ?? [])->map(function ($branch) use ($days, $slotOptions, $durationOptions, $bookedSlotCounts) {
+                $dates = collect(range(0, $days - 1))->map(function ($offset) use ($branch, $slotOptions, $durationOptions, $bookedSlotCounts) {
                     $date = now()->addDays($offset)->toDateString();
-                    $slots = collect($catalog['slotOptions'])->map(function ($time) use ($branch, $date, $bookedSlots) {
+                    $slots = collect($slotOptions)->map(function ($time) use ($branch, $date, $bookedSlotCounts) {
                         $key = $branch['code'].'|'.$date.'|'.$time;
-                        $booked = $bookedSlots->get($key, collect())->count();
+                        $booked = (int) $bookedSlotCounts->get($key, 0);
                         $remaining = $booked > 0 ? 0 : 1;
 
                         return [
@@ -1410,9 +1565,10 @@ class ReservationController extends Controller
                         ];
                     })->values();
 
+                    $slotLookup = $slots->keyBy('time');
                     $availableSlots = $slots
-                        ->filter(fn ($slot) => collect(range(1, 16))->contains(
-                            fn ($duration) => $this->isStartSlotOpen($slot['time'], $duration, $slots)
+                        ->filter(fn ($slot) => collect($durationOptions)->contains(
+                            fn ($duration) => $this->isStartSlotOpen($slot['time'], $duration, $slotLookup)
                         ))
                         ->count();
 
@@ -1757,6 +1913,7 @@ class ReservationController extends Controller
                 'city' => $customer?->city,
                 'province' => $customer?->province,
                 'postal_code' => $customer?->postal_code,
+                'profile_photo_url' => $customer?->profile_photo_url,
                 'full_address' => $customerAddress,
             ],
             'event_type' => $reservation->reservation_type,
@@ -1786,9 +1943,12 @@ class ReservationController extends Controller
             'check_in_code' => $reservation->check_in_code,
             'checked_in_at' => $reservation->checked_in_at?->toDateTimeString(),
             'checked_in_by' => $reservation->checked_in_by,
-            'pass_url' => route('reservations.pass', $reservation),
-            'payment_proof_url' => route('reservations.payment-proof', $reservation),
-            'payment_proof_preview_url' => $reservation->payment_proof_path ? asset('storage/'.$reservation->payment_proof_path) : null,
+            'pass_url' => route('reservations.pass', [$reservation, 'download' => 1]),
+            'pass_preview_url' => route('reservations.pass', $reservation),
+            'qr_check_in_url' => $this->qrCheckInUrl($reservation),
+            'can_show_qr_pass' => in_array($reservation->status, ['confirmed', 'rescheduled', 'checked_in'], true),
+            'payment_proof_url' => route('reservations.payment-proof', $reservation, ['download' => 1]),
+            'payment_proof_preview_url' => $reservation->payment_proof_path ? route('reservations.payment-proof', $reservation) : null,
         ];
     }
 
@@ -2214,7 +2374,7 @@ class ReservationController extends Controller
             'cancelledEvents' => $this->cancelledEvents($bookings),
             'inventory' => $this->inventorySnapshot($catalog, $bookings),
             'staffAssignments' => $this->staffAssignments($catalog, $bookings),
-            'availability' => $this->availabilityPayload($catalog, 366),
+            'availability' => $this->availabilityPayload($catalog, 60),
             'pricing' => $catalog['pricing'],
             'report' => $this->analyticsReport($bookings),
             'menuBundles' => $catalog['menuBundles'],
@@ -2463,70 +2623,41 @@ class ReservationController extends Controller
 
     protected function authorizeReservationAccess(Request $request, Reservation $reservation, bool $allowOperations = false): void
     {
-        if ($request->user()?->id === $reservation->user_id) {
+        $user = $request->user();
+
+        if ($user && (string) $user->getAuthIdentifier() === (string) $reservation->user_id) {
             return;
         }
 
-        if ($allowOperations && in_array($request->user()?->role, ['admin', 'manager', 'staff'], true)) {
+        if ($allowOperations && in_array($user?->role, ['admin', 'manager', 'staff'], true)) {
             return;
         }
 
         abort(403);
     }
 
-    protected function buildPassSvg(Reservation $reservation): string
+    protected function buildPassQr(Reservation $reservation): string
     {
-        $size = 21;
-        $cell = 8;
-        $hash = hash('sha256', $reservation->booking_reference.$reservation->check_in_code);
-        $bits = str_split(base_convert(substr($hash, 0, 16), 16, 2));
-        $cursor = 0;
-        $squares = [];
+        $checkInUrl = $this->qrCheckInUrl($reservation);
 
-        for ($row = 0; $row < $size; $row++) {
-            for ($col = 0; $col < $size; $col++) {
-                $isFinder = ($row < 5 && $col < 5) || ($row < 5 && $col > 15) || ($row > 15 && $col < 5);
-                $filled = $isFinder || (($bits[$cursor % max(count($bits), 1)] ?? '0') === '1');
-
-                if ($filled) {
-                    $x = 40 + ($col * $cell);
-                    $y = 40 + ($row * $cell);
-                    $squares[] = '<rect x="'.$x.'" y="'.$y.'" width="'.$cell.'" height="'.$cell.'" rx="1" fill="#1f1f1f" />';
-                }
-
-                $cursor++;
-            }
-        }
-
-        $squareMarkup = implode('', $squares);
-        $eventDate = $reservation->event_date?->format('M d, Y');
-        $eventTime = $this->formatTimeRange(substr($reservation->event_time, 0, 5), (int) ($reservation->duration_hours ?? 4));
-
-        return <<<SVG
-<svg xmlns="http://www.w3.org/2000/svg" width="420" height="280" viewBox="0 0 420 280" fill="none">
-  <rect width="420" height="280" rx="28" fill="#FFC72C"/>
-  <rect x="18" y="18" width="384" height="244" rx="22" fill="#FFF7E6"/>
-  <rect x="18" y="18" width="384" height="54" rx="22" fill="#DA291C"/>
-  <text x="36" y="52" fill="#FFF7E6" font-size="24" font-family="Arial, sans-serif" font-weight="700">McDonald's Event Check-In Pass</text>
-  <g>
-    <rect x="34" y="34" width="184" height="184" rx="18" fill="#FFFFFF"/>
-    {$this->finderPatterns()}
-    {$this->finderPatterns(168, 40)}
-    {$this->finderPatterns(40, 168)}
-    {$squareMarkup}
-  </g>
-  <text x="244" y="106" fill="#1F1F1F" font-size="18" font-family="Arial, sans-serif" font-weight="700">{$reservation->booking_reference}</text>
-  <text x="244" y="136" fill="#4A4A4A" font-size="14" font-family="Arial, sans-serif">Check-in code: {$reservation->check_in_code}</text>
-  <text x="244" y="164" fill="#4A4A4A" font-size="14" font-family="Arial, sans-serif">{$reservation->branch}</text>
-  <text x="244" y="192" fill="#4A4A4A" font-size="14" font-family="Arial, sans-serif">{$eventDate} at {$eventTime}</text>
-  <text x="244" y="220" fill="#4A4A4A" font-size="14" font-family="Arial, sans-serif">Present this pass at the counter or staff scanner.</text>
-</svg>
-SVG;
+        return Builder::create()
+            ->writer(new PngWriter())
+            ->data($checkInUrl)
+            ->encoding(new Encoding('ISO-8859-1'))
+            ->errorCorrectionLevel(new ErrorCorrectionLevelMedium())
+            ->size(640)
+            ->margin(32)
+            ->roundBlockSizeMode(new RoundBlockSizeModeMargin())
+            ->build()
+            ->getString();
     }
 
-    protected function finderPatterns(int $x = 40, int $y = 40): string
+    protected function qrCheckInUrl(Reservation $reservation): string
     {
-        return '<rect x="'.$x.'" y="'.$y.'" width="40" height="40" rx="6" fill="#1F1F1F" /><rect x="'.($x + 8).'" y="'.($y + 8).'" width="24" height="24" rx="4" fill="#FFF7E6" /><rect x="'.($x + 14).'" y="'.($y + 14).'" width="12" height="12" rx="2" fill="#1F1F1F" />';
+        return URL::signedRoute('reservations.qr-check-in', [
+            'reservation' => $reservation,
+            'code' => $reservation->check_in_code,
+        ]);
     }
 
     protected function formatTimeLabel(string $time): string
@@ -2591,7 +2722,9 @@ SVG;
             return false;
         }
 
-        $slotLookup = collect($slots)->keyBy('time');
+        $slotLookup = $slots instanceof \Illuminate\Support\Collection && $slots->has($time)
+            ? $slots
+            : collect($slots)->keyBy('time');
 
         foreach (range(0, $durationHours - 1) as $offset) {
             $slot = $slotLookup->get($this->addHoursToTime($time, $offset));

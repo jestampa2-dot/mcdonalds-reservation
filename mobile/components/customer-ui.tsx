@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { ReactNode } from 'react';
+import { ReactNode, useMemo } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { palette } from '@/constants/palette';
+import { AppThemeColors, useAppTheme } from '@/lib/theme';
 
 type CustomerButtonTone = 'primary' | 'secondary' | 'ghost' | 'danger';
 const brandLogoCircle = require('../assets/images/brand-logo-circle.png');
@@ -31,6 +32,8 @@ export function CustomerPage({
   contentContainerStyle?: StyleProp<ViewStyle>;
   refreshControl?: any;
 }) {
+  const styles = useCustomerStyles();
+
   if (!scroll) {
     return (
       <SafeAreaView style={styles.page} edges={['top', 'left', 'right']}>
@@ -66,10 +69,12 @@ export function CustomerHeader({
   rightSlot?: ReactNode;
   centered?: boolean;
 }) {
+  const styles = useCustomerStyles();
+
   return (
     <View style={styles.header}>
       <View style={styles.headerBar}>
-        <View style={styles.headerSide}>{leftSlot}</View>
+        <View style={styles.headerSide}>{leftSlot ?? <ThemeToggleButton />}</View>
         <View style={[styles.headerCopy, centered ? styles.headerCopyCentered : null]}>
           {eyebrow ? <Text style={styles.headerEyebrow}>{eyebrow}</Text> : null}
           <Text style={[styles.headerTitle, centered ? styles.headerTitleCentered : null]}>{title}</Text>
@@ -88,6 +93,7 @@ export function SheetSurface({
   children: ReactNode;
   style?: StyleProp<ViewStyle>;
 }) {
+  const styles = useCustomerStyles();
   return <View style={[styles.sheetSurface, style]}>{children}</View>;
 }
 
@@ -100,6 +106,7 @@ export function CustomerCard({
   style?: StyleProp<ViewStyle>;
   tone?: 'white' | 'cream' | 'yellow' | 'pink' | 'green';
 }) {
+  const styles = useCustomerStyles();
   const toneStyle =
     tone === 'cream'
       ? styles.cardCream
@@ -115,10 +122,12 @@ export function CustomerCard({
 }
 
 export function SectionEyebrow({ children }: { children: ReactNode }) {
+  const styles = useCustomerStyles();
   return <Text style={styles.sectionEyebrow}>{children}</Text>;
 }
 
 export function SectionTitle({ children }: { children: ReactNode }) {
+  const styles = useCustomerStyles();
   return <Text style={styles.sectionTitle}>{children}</Text>;
 }
 
@@ -139,6 +148,8 @@ export function CustomerButton({
   icon?: keyof typeof MaterialCommunityIcons.glyphMap;
   compact?: boolean;
 }) {
+  const styles = useCustomerStyles();
+  const { colors } = useAppTheme();
   const buttonStyle =
     tone === 'secondary'
       ? styles.buttonSecondary
@@ -163,10 +174,10 @@ export function CustomerButton({
         disabled ? styles.buttonDisabled : null,
       ]}>
       {loading ? (
-        <ActivityIndicator color={tone === 'secondary' ? palette.brandRed : '#FFFFFF'} />
+        <ActivityIndicator color={tone === 'secondary' ? colors.brandText : '#FFFFFF'} />
       ) : (
         <View style={styles.buttonContent}>
-          {icon ? <MaterialCommunityIcons name={icon} size={compact ? 15 : 16} color={tone === 'secondary' ? palette.brandRed : tone === 'ghost' ? palette.ink : '#FFFFFF'} /> : null}
+          {icon ? <MaterialCommunityIcons name={icon} size={compact ? 15 : 16} color={tone === 'secondary' ? colors.brandText : tone === 'ghost' ? colors.text : '#FFFFFF'} /> : null}
           <Text style={textStyle}>{label}</Text>
         </View>
       )}
@@ -177,14 +188,34 @@ export function CustomerButton({
 export function HeaderIconButton({
   icon,
   onPress,
+  accessibilityLabel,
 }: {
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
   onPress: () => void;
+  accessibilityLabel?: string;
 }) {
+  const styles = useCustomerStyles();
+
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.headerIconButton, pressed ? styles.buttonPressed : null]}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      onPress={onPress}
+      style={({ pressed }) => [styles.headerIconButton, pressed ? styles.buttonPressed : null]}>
       <MaterialCommunityIcons name={icon} size={22} color={palette.ink} />
     </Pressable>
+  );
+}
+
+export function ThemeToggleButton() {
+  const { isDark, toggleTheme } = useAppTheme();
+
+  return (
+    <HeaderIconButton
+      icon={isDark ? 'weather-sunny' : 'moon-waning-crescent'}
+      onPress={toggleTheme}
+      accessibilityLabel={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+    />
   );
 }
 
@@ -199,6 +230,7 @@ export function CustomerChip({
   onPress?: () => void;
   tone?: 'yellow' | 'pink' | 'green' | 'neutral';
 }) {
+  const styles = useCustomerStyles();
   const toneStyle =
     tone === 'pink' ? styles.chipPink : tone === 'green' ? styles.chipGreen : tone === 'neutral' ? styles.chipNeutral : styles.chipYellow;
   const activeStyle =
@@ -254,6 +286,9 @@ export function CustomerField({
   returnKeyType?: TextInputProps['returnKeyType'];
   onSubmitEditing?: TextInputProps['onSubmitEditing'];
 }) {
+  const styles = useCustomerStyles();
+  const { colors } = useAppTheme();
+
   return (
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
@@ -261,7 +296,7 @@ export function CustomerField({
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor="#A19488"
+        placeholderTextColor={colors.inputPlaceholder}
         secureTextEntry={secureTextEntry}
         multiline={multiline}
         keyboardType={keyboardType}
@@ -290,14 +325,21 @@ export function McLogo({ size = 56 }: { size?: number }) {
 
 export function AvatarBadge({
   label,
+  imageUrl,
   size = 48,
 }: {
   label: string;
+  imageUrl?: string | null;
   size?: number;
 }) {
+  const styles = useCustomerStyles();
   return (
     <View style={[styles.avatarWrap, { width: size, height: size, borderRadius: size / 2 }]}>
-      <Text style={[styles.avatarText, { fontSize: size * 0.38 }]}>{label}</Text>
+      {imageUrl ? (
+        <Image source={{ uri: imageUrl }} style={{ width: size, height: size, borderRadius: size / 2 }} resizeMode="cover" />
+      ) : (
+        <Text style={[styles.avatarText, { fontSize: size * 0.38 }]}>{label}</Text>
+      )}
     </View>
   );
 }
@@ -311,10 +353,13 @@ export function MetricTile({
   label: string;
   value: string | number;
 }) {
+  const styles = useCustomerStyles();
+  const { colors } = useAppTheme();
+
   return (
     <CustomerCard style={styles.metricTile}>
       <View style={styles.metricIconWrap}>
-        <MaterialCommunityIcons name={icon} size={18} color={palette.ink} />
+        <MaterialCommunityIcons name={icon} size={18} color={colors.text} />
       </View>
       <Text style={styles.metricLabel}>{label}</Text>
       <Text style={styles.metricValue}>{value}</Text>
@@ -322,15 +367,21 @@ export function MetricTile({
   );
 }
 
-const styles = StyleSheet.create({
+function useCustomerStyles() {
+  const { colors, fontScale } = useAppTheme();
+  return useMemo(() => createStyles(colors, fontScale), [colors, fontScale]);
+}
+
+const createStyles = (colors: AppThemeColors, fontScale: number) => StyleSheet.create({
   page: {
     flex: 1,
-    backgroundColor: palette.brandYellow,
+    backgroundColor: colors.background,
   },
   pageContent: {
     paddingBottom: 32,
   },
   header: {
+    backgroundColor: palette.brandYellow,
     paddingHorizontal: 20,
     paddingTop: 6,
     paddingBottom: 12,
@@ -361,33 +412,33 @@ const styles = StyleSheet.create({
   },
   headerEyebrow: {
     color: '#8B5B00',
-    fontSize: 11,
+    fontSize: 11 * fontScale,
     fontWeight: '800',
     letterSpacing: 1.1,
     textTransform: 'uppercase',
   },
   headerTitle: {
     color: palette.ink,
-    fontSize: 34,
+    fontSize: 34 * fontScale,
     fontWeight: '900',
-    lineHeight: 38,
+    lineHeight: 38 * fontScale,
   },
   headerTitleCentered: {
-    fontSize: 24,
-    lineHeight: 28,
+    fontSize: 24 * fontScale,
+    lineHeight: 28 * fontScale,
     textAlign: 'center',
   },
   headerSubtitle: {
     color: '#6A4F1B',
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 14 * fontScale,
+    lineHeight: 20 * fontScale,
   },
   headerSubtitleCentered: {
     textAlign: 'center',
   },
   sheetSurface: {
     marginTop: 12,
-    backgroundColor: palette.surfaceStrong,
+    backgroundColor: colors.canvas,
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
     paddingHorizontal: 16,
@@ -400,35 +451,35 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     padding: 16,
     gap: 12,
-    boxShadow: '0px 12px 30px rgba(35, 22, 11, 0.08)',
+    boxShadow: `0px 12px 30px ${colors.shadow}`,
   },
   cardWhite: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
   },
   cardCream: {
-    backgroundColor: '#FFF7E4',
+    backgroundColor: colors.cardCream,
   },
   cardYellow: {
-    backgroundColor: '#FFE689',
+    backgroundColor: colors.cardYellow,
   },
   cardPink: {
-    backgroundColor: '#FBE0DF',
+    backgroundColor: colors.cardPink,
   },
   cardGreen: {
-    backgroundColor: '#E0F6D9',
+    backgroundColor: colors.cardGreen,
   },
   sectionEyebrow: {
-    color: '#A36B00',
-    fontSize: 11,
+    color: colors.brandText,
+    fontSize: 11 * fontScale,
     fontWeight: '800',
     letterSpacing: 1,
     textTransform: 'uppercase',
   },
   sectionTitle: {
-    color: palette.ink,
-    fontSize: 18,
+    color: colors.text,
+    fontSize: 18 * fontScale,
     fontWeight: '900',
-    lineHeight: 22,
+    lineHeight: 22 * fontScale,
   },
   buttonBase: {
     minHeight: 52,
@@ -445,14 +496,14 @@ const styles = StyleSheet.create({
     backgroundColor: palette.brandRed,
   },
   buttonSecondary: {
-    backgroundColor: '#FFF3CE',
+    backgroundColor: colors.cardYellow,
     borderWidth: 1,
-    borderColor: '#F2D58A',
+    borderColor: colors.border,
   },
   buttonGhost: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: palette.line,
+    borderColor: colors.line,
   },
   buttonDanger: {
     backgroundColor: '#FF4D4D',
@@ -460,17 +511,17 @@ const styles = StyleSheet.create({
   buttonPrimaryText: {
     color: '#FFFFFF',
     fontWeight: '800',
-    fontSize: 15,
+    fontSize: 15 * fontScale,
   },
   buttonSecondaryText: {
-    color: palette.brandRed,
+    color: colors.brandText,
     fontWeight: '800',
-    fontSize: 15,
+    fontSize: 15 * fontScale,
   },
   buttonGhostText: {
-    color: palette.ink,
+    color: colors.text,
     fontWeight: '800',
-    fontSize: 15,
+    fontSize: 15 * fontScale,
   },
   buttonContent: {
     flexDirection: 'row',
@@ -490,7 +541,7 @@ const styles = StyleSheet.create({
     borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.45)',
+    backgroundColor: 'rgba(255, 255, 255, 0.55)',
   },
   chip: {
     borderRadius: 999,
@@ -499,20 +550,20 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   chipYellow: {
-    backgroundColor: '#FFF4C9',
-    borderColor: '#F4D98D',
+    backgroundColor: colors.cardYellow,
+    borderColor: colors.border,
   },
   chipPink: {
-    backgroundColor: '#FBE1E0',
-    borderColor: '#F2B6B1',
+    backgroundColor: colors.cardPink,
+    borderColor: colors.dangerBorder,
   },
   chipGreen: {
-    backgroundColor: '#D7F3D0',
-    borderColor: '#A9E19D',
+    backgroundColor: colors.cardGreen,
+    borderColor: colors.border,
   },
   chipNeutral: {
-    backgroundColor: '#F6F2ED',
-    borderColor: '#E3DBD2',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.line,
   },
   chipYellowActive: {
     backgroundColor: palette.brandRed,
@@ -527,12 +578,12 @@ const styles = StyleSheet.create({
     borderColor: palette.softGreenStrong,
   },
   chipNeutralActive: {
-    backgroundColor: palette.ink,
-    borderColor: palette.ink,
+    backgroundColor: colors.text,
+    borderColor: colors.text,
   },
   chipText: {
-    color: palette.ink,
-    fontSize: 12,
+    color: colors.text,
+    fontSize: 12 * fontScale,
     fontWeight: '700',
   },
   chipTextActive: {
@@ -542,8 +593,8 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   fieldLabel: {
-    color: '#7A604B',
-    fontSize: 11,
+    color: colors.textMuted,
+    fontSize: 11 * fontScale,
     fontWeight: '800',
     textTransform: 'uppercase',
     letterSpacing: 0.8,
@@ -552,11 +603,11 @@ const styles = StyleSheet.create({
     minHeight: 46,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: palette.line,
-    backgroundColor: '#FAF8F4',
+    borderColor: colors.line,
+    backgroundColor: colors.input,
     paddingHorizontal: 14,
-    color: palette.ink,
-    fontSize: 14,
+    color: colors.text,
+    fontSize: 14 * fontScale,
   },
   fieldInputMultiline: {
     minHeight: 96,
@@ -564,12 +615,13 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   avatarWrap: {
-    backgroundColor: '#FFF6EF',
+    backgroundColor: colors.surfaceMuted,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   avatarText: {
-    color: palette.ink,
+    color: colors.text,
     fontWeight: '900',
   },
   metricTile: {
@@ -583,19 +635,19 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: '#F2EEE8',
+    backgroundColor: colors.surfaceMuted,
     alignItems: 'center',
     justifyContent: 'center',
   },
   metricLabel: {
-    color: '#776251',
-    fontSize: 12,
+    color: colors.textMuted,
+    fontSize: 12 * fontScale,
     fontWeight: '600',
     textAlign: 'center',
   },
   metricValue: {
-    color: palette.ink,
-    fontSize: 28,
+    color: colors.text,
+    fontSize: 28 * fontScale,
     fontWeight: '900',
     textAlign: 'center',
   },

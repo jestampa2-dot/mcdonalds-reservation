@@ -2,6 +2,7 @@
 import { reactive, ref, watch } from 'vue'
 import { useForm, router } from '@inertiajs/vue3'
 import AppShell from '@/Components/AppShell.vue'
+import QrCameraScanner from '@/Components/QrCameraScanner.vue'
 import StatusBadge from '@/Components/StatusBadge.vue'
 import EventHistoryPanel from '@/features/timeline/components/EventHistoryPanel.vue'
 
@@ -28,13 +29,41 @@ const adjustmentState = reactive(Object.fromEntries(props.todayBookings.map((boo
 }])))
 const notificationItems = ref(props.notifications)
 const historyItems = ref(props.history)
+const cameraScannerOpen = ref(false)
 
 const checkIn = () => {
+  checkInForm.code = checkInForm.code.trim()
+
+  if (!checkInForm.code) {
+    checkInForm.setError('code', 'Enter a booking code or scan the customer QR pass.')
+    return
+  }
+
+  checkInForm.clearErrors()
   checkInForm.post(route('staff.check-in'), {
     preserveScroll: true,
     preserveState: true,
-    onSuccess: () => checkInForm.reset(),
+    onSuccess: (page) => {
+      if (!page.props.flash?.error) {
+        checkInForm.reset()
+      }
+    },
   })
+}
+
+const openCameraScanner = () => {
+  checkInForm.clearErrors()
+  cameraScannerOpen.value = true
+}
+
+const closeCameraScanner = () => {
+  cameraScannerOpen.value = false
+}
+
+const checkInFromCamera = (code) => {
+  cameraScannerOpen.value = false
+  checkInForm.code = code
+  checkIn()
 }
 
 const updateStatus = (id) => {
@@ -113,11 +142,22 @@ const refreshStaffView = () => {
 
         <article class="mcd-panel mcd-panel--dark p-8">
           <p class="text-sm uppercase tracking-[0.2em] text-amber-300">Check-in scanner</p>
-          <div class="mt-5 flex flex-col gap-3">
-            <input v-model="checkInForm.code" type="text" class="mcd-input" placeholder="Enter booking reference or check-in code" />
-            <button type="button" class="mcd-button" @click="checkIn">Check in guest</button>
+          <button type="button" class="mcd-button mt-5 w-full" :disabled="checkInForm.processing" @click="openCameraScanner">
+            Scan customer QR
+          </button>
+          <div class="my-4 flex items-center gap-3 text-xs font-black uppercase text-white/50">
+            <span class="h-px flex-1 bg-white/20" />
+            <span>or enter code</span>
+            <span class="h-px flex-1 bg-white/20" />
           </div>
-          <p class="mt-3 text-sm text-white/70">Admin confirmation required.</p>
+          <form class="flex flex-col gap-3" @submit.prevent="checkIn">
+            <input v-model="checkInForm.code" type="text" class="mcd-input" autocomplete="off" placeholder="Booking reference or check-in code" />
+            <p v-if="checkInForm.errors.code" class="text-sm font-bold text-red-300">{{ checkInForm.errors.code }}</p>
+            <button type="submit" class="mcd-button mcd-button--ghost" :disabled="checkInForm.processing">
+              {{ checkInForm.processing ? 'Checking in...' : 'Check in guest' }}
+            </button>
+          </form>
+          <p class="mt-3 text-sm text-white/70">Only admin-confirmed bookings can start.</p>
         </article>
       </div>
     </section>
@@ -241,5 +281,11 @@ const refreshStaffView = () => {
         <div v-else class="mcd-empty mt-5">No active events.</div>
       </article>
     </section>
+
+    <QrCameraScanner
+      :show="cameraScannerOpen"
+      @close="closeCameraScanner"
+      @decoded="checkInFromCamera"
+    />
   </AppShell>
 </template>

@@ -26,10 +26,6 @@ class RegistrationTest extends TestCase
             'phone' => '+63 917 555 0199',
             'birth_date' => '2000-05-20',
             'gender' => 'prefer_not_to_say',
-            'address_line' => '123 Test Street',
-            'city' => 'Quezon City',
-            'province' => 'Metro Manila',
-            'postal_code' => '1100',
             'password' => 'password',
             'password_confirmation' => 'password',
         ]);
@@ -41,15 +37,17 @@ class RegistrationTest extends TestCase
             'email' => 'test@example.com',
             'phone' => '+63 917 555 0199',
             'gender' => 'prefer_not_to_say',
-            'address_line' => '123 Test Street',
-            'city' => 'Quezon City',
-            'province' => 'Metro Manila',
-            'postal_code' => '1100',
+            'address_line' => null,
+            'city' => null,
+            'province' => null,
+            'postal_code' => null,
             'role' => 'customer',
+            'sms_notifications_enabled' => false,
         ]);
         $user = User::where('email', 'test@example.com')->firstOrFail();
 
         $this->assertSame('customer', $user->role);
+        $this->assertFalse($user->sms_notifications_enabled);
         $this->assertSame('2000-05-20', optional($user->birth_date)->format('Y-m-d'));
     }
 }

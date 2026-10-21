@@ -40,6 +40,10 @@ defineProps({
     type: Function,
     required: true,
   },
+  paymentProofPreviewUrl: {
+    type: String,
+    default: '',
+  },
 })
 </script>
 
@@ -53,7 +57,21 @@ defineProps({
       <div class="mt-6 mcd-field">
         <label>Upload proof of payment</label>
         <input type="file" accept="image/*" class="mcd-input" @input="form.payment_proof = $event.target.files[0]" />
+        <p class="text-xs text-slate-500">JPG, PNG, or another image format up to 4 MB.</p>
         <p v-if="form.errors.payment_proof" class="text-sm text-red-700">{{ form.errors.payment_proof }}</p>
+
+        <div v-if="form.payment_proof" class="booking-payment-proof">
+          <img
+            v-if="paymentProofPreviewUrl"
+            :src="paymentProofPreviewUrl"
+            alt="Selected payment proof preview"
+          />
+          <div>
+            <span>Selected image</span>
+            <strong>{{ form.payment_proof.name }}</strong>
+            <small>{{ (form.payment_proof.size / 1024 / 1024).toFixed(2) }} MB</small>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -63,7 +81,7 @@ defineProps({
         <div class="space-y-3 text-sm text-white/80">
           <div class="flex items-center justify-between">
             <span>Event type</span>
-            <strong class="text-white">{{ catalog.eventTypes[form.event_type].label }}</strong>
+            <strong class="text-white">{{ catalog.eventTypes?.[form.event_type]?.label ?? 'Selected event' }}</strong>
           </div>
           <div class="flex items-center justify-between">
             <span>Branch</span>

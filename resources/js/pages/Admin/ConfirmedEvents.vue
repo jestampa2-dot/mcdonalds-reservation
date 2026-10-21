@@ -1,5 +1,5 @@
 <script setup>
-import { reactive, ref, watch } from 'vue'
+import { onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { router } from '@inertiajs/vue3'
 import AppShell from '@/Components/AppShell.vue'
 import AdminQuickLinks from '@/Components/AdminQuickLinks.vue'
@@ -17,6 +17,8 @@ const props = defineProps({
 })
 
 const searchQuery = ref('')
+const isRefreshing = ref(false)
+let refreshTimer = null
 
 const filteredConfirmedEvents = useSearchCollection(
   () => props.confirmedEvents,
@@ -89,12 +91,37 @@ const updateServiceAdjustments = (id) => {
 }
 
 const refreshConfirmed = () => {
+  if (isRefreshing.value) return
+
+  isRefreshing.value = true
   router.reload({
     only: ['stats', 'confirmedEvents', 'staffUsers'],
     preserveScroll: true,
     preserveState: true,
+    onFinish: () => {
+      isRefreshing.value = false
+    },
   })
 }
+
+const refreshWhenAvailable = () => {
+  const activeElement = document.activeElement
+  const isEditing = activeElement?.matches('input, select, textarea')
+
+  if (!isEditing) refreshConfirmed()
+}
+
+onMounted(() => {
+  refreshTimer = window.setInterval(refreshWhenAvailable, 10000)
+  window.addEventListener('focus', refreshWhenAvailable)
+  document.addEventListener('visibilitychange', refreshWhenAvailable)
+})
+
+onBeforeUnmount(() => {
+  if (refreshTimer) window.clearInterval(refreshTimer)
+  window.removeEventListener('focus', refreshWhenAvailable)
+  document.removeEventListener('visibilitychange', refreshWhenAvailable)
+})
 </script>
 
 <template>
@@ -106,7 +133,9 @@ const refreshConfirmed = () => {
             <p class="mcd-chip">Confirmed events</p>
             <h1 class="mt-4 text-4xl">Confirmed events</h1>
           </div>
-          <button type="button" class="mcd-button mcd-button--ghost" @click="refreshConfirmed">Refresh events</button>
+          <button type="button" class="mcd-button mcd-button--ghost" :disabled="isRefreshing" @click="refreshConfirmed">
+            {{ isRefreshing ? 'Refreshing' : 'Refresh events' }}
+          </button>
         </div>
         <div class="mt-6">
           <AdminQuickLinks current="confirmed" />
@@ -164,7 +193,7 @@ const refreshConfirmed = () => {
                 <select v-model="statusState[booking.id]" class="mcd-select">
                   <option value="confirmed">confirmed</option>
                   <option value="rescheduled">rescheduled</option>
-                  <option value="checked_in">checked in</option>
+                  <option value="checked_in">ongoing</option>
                   <option value="completed">completed</option>
                   <option value="cancelled">cancelled</option>
                 </select>

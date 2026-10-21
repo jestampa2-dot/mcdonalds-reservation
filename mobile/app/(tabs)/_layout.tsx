@@ -1,27 +1,29 @@
 import { FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 
-import { palette } from '@/constants/palette';
+import { useAppTheme } from '@/lib/theme';
 
 export default function TabLayout() {
+  const { colors, fontScale } = useAppTheme();
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
         lazy: true,
         freezeOnBlur: true,
-        tabBarActiveTintColor: palette.ink,
-        tabBarInactiveTintColor: '#7D6755',
-        tabBarActiveBackgroundColor: palette.tabActive,
+        tabBarActiveTintColor: colors.text,
+        tabBarInactiveTintColor: colors.tabInactive,
+        tabBarActiveBackgroundColor: colors.tabActive,
         tabBarStyle: {
-          backgroundColor: '#FFF7EE',
-          borderTopColor: '#E7DED1',
+          backgroundColor: colors.tabBar,
+          borderTopColor: colors.line,
           height: 74,
           paddingBottom: 10,
           paddingTop: 8,
         },
         tabBarLabelStyle: {
-          fontSize: 11,
+          fontSize: 11 * fontScale,
           fontWeight: '700',
         },
         tabBarItemStyle: {

@@ -30,6 +30,14 @@ return [
 
     'connections' => [
 
+        'sms' => [
+            'driver' => 'database',
+            'table' => 'sms_jobs',
+            'queue' => 'sms',
+            'retry_after' => 90,
+            'after_commit' => false,
+        ],
+
         'sync' => [
             'driver' => 'sync',
         ],

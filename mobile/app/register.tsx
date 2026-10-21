@@ -1,5 +1,5 @@
 import { Redirect, router } from 'expo-router';
-import { startTransition, useState } from 'react';
+import { startTransition, useMemo, useState } from 'react';
 import { Alert, Keyboard, StyleSheet, Text, View } from 'react-native';
 
 import {
@@ -13,9 +13,9 @@ import {
   SectionEyebrow,
   SectionTitle,
 } from '@/components/customer-ui';
-import { palette } from '@/constants/palette';
 import { ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { AppThemeColors, useAppTheme } from '@/lib/theme';
 
 const genders = [
   { label: 'Male', value: 'male' },
@@ -25,6 +25,8 @@ const genders = [
 ];
 
 export default function RegisterScreen() {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const { signUp, user, booting } = useAuth();
   const [form, setForm] = useState({
     name: '',
@@ -32,10 +34,6 @@ export default function RegisterScreen() {
     phone: '',
     birth_date: '',
     gender: 'prefer_not_to_say',
-    address_line: '',
-    city: '',
-    province: '',
-    postal_code: '',
     password: '',
     password_confirmation: '',
   });
@@ -51,9 +49,6 @@ export default function RegisterScreen() {
       'email',
       'phone',
       'birth_date',
-      'address_line',
-      'city',
-      'province',
       'password',
       'password_confirmation',
     ];
@@ -85,10 +80,6 @@ export default function RegisterScreen() {
       name: form.name.trim(),
       phone: form.phone.trim(),
       birth_date: form.birth_date.trim(),
-      address_line: form.address_line.trim(),
-      city: form.city.trim(),
-      province: form.province.trim(),
-      postal_code: form.postal_code.trim(),
     };
     const validationError = getRegistrationError(normalizedForm);
 
@@ -125,7 +116,6 @@ export default function RegisterScreen() {
         <CustomerCard tone="yellow">
           <SectionEyebrow>New customer</SectionEyebrow>
           <Text style={styles.heroTitle}>Create your mobile booking account</Text>
-          <Text style={styles.heroText}>This customer profile is stored in the same database your admin and reservation dashboard already use.</Text>
         </CustomerCard>
 
         <CustomerCard>
@@ -154,10 +144,6 @@ export default function RegisterScreen() {
               />
             ))}
           </View>
-          <CustomerField label="Street address" value={form.address_line} onChangeText={(value) => setValue('address_line', value)} placeholder="Street, barangay, municipal" />
-          <CustomerField label="City" value={form.city} onChangeText={(value) => setValue('city', value)} placeholder="City" />
-          <CustomerField label="Province" value={form.province} onChangeText={(value) => setValue('province', value)} placeholder="Province" />
-          <CustomerField label="Postal code" value={form.postal_code} onChangeText={(value) => setValue('postal_code', value)} placeholder="Optional" keyboardType="numeric" />
           <CustomerField
             label="Password"
             value={form.password}
@@ -194,7 +180,7 @@ export default function RegisterScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: AppThemeColors) => StyleSheet.create({
   pageContent: {
     paddingHorizontal: 18,
     gap: 16,
@@ -203,13 +189,13 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   heroTitle: {
-    color: palette.ink,
+    color: colors.text,
     fontSize: 28,
     fontWeight: '900',
     lineHeight: 32,
   },
   heroText: {
-    color: '#665446',
+    color: colors.textMuted,
     lineHeight: 20,
     fontSize: 14,
   },
@@ -222,12 +208,12 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   note: {
-    color: '#6A5647',
+    color: colors.textMuted,
     fontSize: 13,
     lineHeight: 20,
   },
   code: {
-    color: palette.brandRed,
+    color: colors.brandText,
     fontWeight: '800',
   },
 });

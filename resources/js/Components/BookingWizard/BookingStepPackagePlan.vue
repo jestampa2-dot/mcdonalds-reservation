@@ -22,13 +22,13 @@ defineProps({
 <template>
   <div class="space-y-5">
     <section class="mcd-panel p-6">
-      <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">2. Package and bundle plan</p>
+      <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">3. Package and bundle plan</p>
       <h2 class="mt-3 text-3xl">Pick the core package.</h2>
       <p class="mt-2 text-sm text-slate-500">Set the guest count, choose a package, and add bundle plans for the event.</p>
 
       <div class="mt-6 mcd-field">
         <label>Guest count</label>
-        <input v-model="form.guests" type="number" min="2" max="120" class="mcd-input" />
+        <input v-model="form.guests" type="number" min="2" max="60" class="mcd-input" />
       </div>
 
       <div class="mt-6 grid gap-4">

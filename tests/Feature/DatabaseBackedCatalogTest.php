@@ -35,6 +35,11 @@ class DatabaseBackedCatalogTest extends TestCase
             'name' => 'Dedicated Party Host',
         ]);
 
+        $this->assertDatabaseHas('add_ons', [
+            'code' => 'grimace-appearance',
+            'name' => 'Grimace Appearance',
+        ]);
+
         $this->assertDatabaseHas('branches', [
             'code' => 'mnl-bgc',
             'name' => "McDonald's BGC High Street",

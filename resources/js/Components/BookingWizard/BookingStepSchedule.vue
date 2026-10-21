@@ -108,7 +108,7 @@ defineProps({
     <section class="mcd-panel p-6">
       <div class="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">6. Date, time, and branch</p>
+          <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">2. Date, time, and branch</p>
           <h2 class="mt-3 text-3xl">Set the schedule and location.</h2>
           <p class="mt-2 text-sm text-slate-500">Choose the branch, room, and exact schedule for the event.</p>
         </div>

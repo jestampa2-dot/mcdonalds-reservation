@@ -5,6 +5,9 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\ReservationController;
 
 Route::get('/', [ReservationController::class, 'home'])->name('home');
+Route::get('/event-check-in/{reservation}', [ReservationController::class, 'qrCheckIn'])
+    ->middleware(['signed', 'throttle:12,1'])
+    ->name('reservations.qr-check-in');
 
 Route::middleware('auth')->group(function () {
     Route::get('/dashboard', [ReservationController::class, 'dashboard'])->name('dashboard');

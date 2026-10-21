@@ -118,9 +118,51 @@ const refreshDashboard = () => {
               <p class="mt-1 text-sm leading-6 text-slate-600">Check-in code: {{ booking.check_in_code }}</p>
               <p v-if="booking.notes" class="mt-1 text-sm leading-6 text-slate-600">Notes: {{ booking.notes }}</p>
 
+              <section v-if="booking.can_show_qr_pass" class="customer-event-pass">
+                <div class="customer-event-pass__image-wrap">
+                  <img
+                    :src="booking.pass_preview_url"
+                    :alt="`Scannable event pass for ${booking.booking_reference}`"
+                    class="customer-event-pass__image"
+                    loading="lazy"
+                  />
+                </div>
+                <div class="customer-event-pass__copy">
+                  <span class="customer-event-pass__status" :class="{ 'is-ongoing': booking.status === 'checked_in' }">
+                    {{ booking.status === 'checked_in' ? 'Event ongoing' : 'Ready to scan' }}
+                  </span>
+                  <h4>Event start QR pass</h4>
+                  <p>
+                    Present this pass when the party is ready to start. A successful scan automatically marks the event as ongoing for admin and service staff.
+                  </p>
+                  <div class="customer-event-pass__actions">
+                    <a :href="booking.pass_url" class="mcd-button">Download QR pass</a>
+                    <a :href="booking.qr_check_in_url" class="mcd-button mcd-button--ghost">Start on this device</a>
+                  </div>
+                </div>
+              </section>
+
+              <div v-else-if="booking.status === 'pending_review'" class="customer-event-pass__pending">
+                The event QR pass will appear here after the booking is confirmed.
+              </div>
+
+              <div v-if="booking.payment_proof_preview_url" class="mt-5 rounded-2xl bg-white p-3 shadow-sm">
+                <div class="flex items-center justify-between gap-3">
+                  <p class="text-xs font-black uppercase tracking-[0.18em] text-red-700">Proof of payment</p>
+                  <a :href="booking.payment_proof_url" class="text-xs font-bold text-red-700">Download</a>
+                </div>
+                <a :href="booking.payment_proof_preview_url" target="_blank" rel="noreferrer">
+                  <img
+                    :src="booking.payment_proof_preview_url"
+                    :alt="`Payment proof ${booking.booking_reference}`"
+                    class="mt-3 h-52 w-full rounded-2xl object-cover"
+                    loading="lazy"
+                  />
+                </a>
+              </div>
+
               <div class="mt-5 flex flex-wrap gap-3">
-                <a :href="booking.pass_url" class="mcd-button">Download QR Pass</a>
-                <a :href="booking.payment_proof_url" class="mcd-button mcd-button--ghost">Payment Proof</a>
+                <a :href="booking.payment_proof_preview_url || booking.payment_proof_url" target="_blank" rel="noreferrer" class="mcd-button mcd-button--ghost">View Payment Proof</a>
               </div>
             </div>
 
@@ -145,3 +187,83 @@ const refreshDashboard = () => {
     </section>
   </AppShell>
 </template>
+
+<style scoped>
+.customer-event-pass {
+  display: grid;
+  grid-template-columns: minmax(12rem, 15rem) minmax(0, 1fr);
+  align-items: center;
+  gap: 1.25rem;
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(36, 23, 20, 0.1);
+}
+
+.customer-event-pass__image-wrap {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  background: #ffffff;
+}
+
+.customer-event-pass__image {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: contain;
+}
+
+.customer-event-pass__copy {
+  display: grid;
+  min-width: 0;
+  justify-items: start;
+  gap: 0.55rem;
+}
+
+.customer-event-pass__copy h4 {
+  color: #241714;
+  font-size: 1.15rem;
+}
+
+.customer-event-pass__copy p,
+.customer-event-pass__pending {
+  color: #64748b;
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+
+.customer-event-pass__status {
+  padding: 0.3rem 0.55rem;
+  border-radius: 999px;
+  background: #fff4c7;
+  color: #854d0e;
+  font-size: 0.65rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.customer-event-pass__status.is-ongoing {
+  background: #e9f8ee;
+  color: #12642f;
+}
+
+.customer-event-pass__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.customer-event-pass__pending {
+  margin-top: 1.25rem;
+  padding: 0.85rem 1rem;
+  border-left: 4px solid #f2b900;
+  background: #fff9e6;
+}
+
+@media (max-width: 640px) {
+  .customer-event-pass {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+</style>

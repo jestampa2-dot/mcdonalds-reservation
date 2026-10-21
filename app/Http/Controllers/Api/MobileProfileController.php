@@ -7,6 +7,7 @@ use App\Http\Requests\ProfileUpdateRequest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rules\Password;
 
 class MobileProfileController extends Controller
@@ -20,17 +21,29 @@ class MobileProfileController extends Controller
 
     public function update(ProfileUpdateRequest $request): JsonResponse
     {
-        $request->user()->fill($request->validated());
+        $validated = $request->validated();
+        unset($validated['profile_photo']);
 
-        if ($request->user()->isDirty('email')) {
-            $request->user()->email_verified_at = null;
+        $user = $request->user();
+        $user->fill($validated);
+
+        if ($user->isDirty('email')) {
+            $user->email_verified_at = null;
         }
 
-        $request->user()->save();
+        if ($request->hasFile('profile_photo')) {
+            if ($user->profile_photo_path) {
+                Storage::disk('public')->delete($user->profile_photo_path);
+            }
+
+            $user->profile_photo_path = $request->file('profile_photo')->store('profile-photos', 'public');
+        }
+
+        $user->save();
 
         return response()->json([
             'message' => 'Personal information updated successfully.',
-            'profile' => $this->profilePayload($request->user()->fresh()),
+            'profile' => $this->profilePayload($user->fresh()),
         ]);
     }
 
@@ -58,6 +71,11 @@ class MobileProfileController extends Controller
 
         $user = $request->user();
         $user->tokens()->delete();
+
+        if ($user->profile_photo_path) {
+            Storage::disk('public')->delete($user->profile_photo_path);
+        }
+
         $user->delete();
 
         return response()->json([
@@ -71,12 +89,14 @@ class MobileProfileController extends Controller
             'name' => $user->name,
             'email' => $user->email,
             'phone' => $user->phone,
+            'sms_notifications_enabled' => (bool) $user->sms_notifications_enabled,
             'birth_date' => optional($user->birth_date)->format('Y-m-d'),
             'gender' => $user->gender,
             'address_line' => $user->address_line,
             'city' => $user->city,
             'province' => $user->province,
             'postal_code' => $user->postal_code,
+            'profile_photo_url' => $user->profile_photo_url,
             'email_verified_at' => $user->email_verified_at,
             'role' => $user->role,
             'full_address' => collect([

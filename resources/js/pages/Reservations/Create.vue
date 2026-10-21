@@ -1,9 +1,16 @@
 <script setup>
 import axios from 'axios'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useForm } from '@inertiajs/vue3'
 import AppShell from '@/Components/AppShell.vue'
-import ManualMenuBoard from '@/Components/ManualMenuBoard.vue'
+import BookingStepAddOns from '@/Components/BookingWizard/BookingStepAddOns.vue'
+import BookingStepEventType from '@/Components/BookingWizard/BookingStepEventType.vue'
+import BookingStepManualMenu from '@/Components/BookingWizard/BookingStepManualMenu.vue'
+import BookingStepNotes from '@/Components/BookingWizard/BookingStepNotes.vue'
+import BookingStepPackagePlan from '@/Components/BookingWizard/BookingStepPackagePlan.vue'
+import BookingStepPayment from '@/Components/BookingWizard/BookingStepPayment.vue'
+import BookingStepSchedule from '@/Components/BookingWizard/BookingStepSchedule.vue'
+import BookingWizardProgress from '@/Components/BookingWizard/BookingWizardProgress.vue'
 
 const props = defineProps({
   catalog: Object,
@@ -12,8 +19,26 @@ const props = defineProps({
   defaults: Object,
 })
 
-const availabilityState = ref(props.availability)
-const eventTypeKeys = Object.keys(props.catalog.eventTypes)
+const catalogEventTypes = props.catalog?.eventTypes ?? {}
+const catalogBranches = props.catalog?.branches ?? {}
+const catalogPackages = props.catalog?.packages ?? {}
+const catalogMenuBundles = props.catalog?.menuBundles ?? []
+const catalogPricing = props.catalog?.pricing ?? {
+  weekend_multiplier: 1.15,
+  holiday_multiplier: 1.25,
+  extension_hourly_rate: 450,
+  holidays: [],
+}
+const defaultEventDate = props.defaults?.event_date ?? new Date().toISOString().slice(0, 10)
+const defaultEventTime = props.defaults?.event_time ?? '10:00'
+const defaultDurationHours = Number(props.defaults?.duration_hours ?? props.catalog?.bookingWindow?.default_duration_hours ?? 4)
+const eventTypeKeys = Object.keys(catalogEventTypes)
+const branchKeys = Object.keys(catalogBranches)
+const initialEventType = eventTypeKeys[0] ?? ''
+const initialBranchCode = branchKeys[0] ?? ''
+const initialPackageCode = catalogPackages[initialEventType]?.[0]?.code ?? ''
+const initialMenuBundleCode = catalogMenuBundles[0]?.code
+const availabilityState = ref(props.availability ?? { branches: [] })
 const availabilityNotice = ref('')
 const plannerMode = ref('date')
 const activeTimeField = ref('start')
@@ -21,16 +46,16 @@ const flexibleDurationOptions = Array.from({ length: 16 }, (_, index) => index +
 let availabilityTimer = null
 
 const form = useForm({
-  event_type: eventTypeKeys[0],
-  branch_code: Object.keys(props.catalog.branches)[0],
-  event_date: props.defaults.event_date,
-  event_time: props.defaults.event_time,
+  event_type: initialEventType,
+  branch_code: initialBranchCode,
+  event_date: defaultEventDate,
+  event_time: defaultEventTime,
   event_end_time: '',
-  duration_hours: props.defaults.duration_hours,
-  room_choice: props.defaults.room_choice,
+  duration_hours: defaultDurationHours,
+  room_choice: props.defaults?.room_choice ?? '',
   guests: 10,
-  package_code: props.catalog.packages[eventTypeKeys[0]][0].code,
-  menu_bundles: ['burger-10'],
+  package_code: initialPackageCode,
+  menu_bundles: initialMenuBundleCode ? [initialMenuBundleCode] : [],
   manual_menu_items: [],
   add_ons: [],
   notes: '',
@@ -38,15 +63,15 @@ const form = useForm({
 })
 
 const supportedBranches = computed(() =>
-  Object.values(props.catalog.branches).filter((branch) => branch.supports[form.event_type]),
+  Object.values(catalogBranches).filter((branch) => branch.supports?.[form.event_type]),
 )
 
-const branch = computed(() => props.catalog.branches[form.branch_code])
-const packages = computed(() => props.catalog.packages[form.event_type] ?? [])
+const branch = computed(() => catalogBranches[form.branch_code])
+const packages = computed(() => catalogPackages[form.event_type] ?? [])
 const selectedPackage = computed(() => packages.value.find((item) => item.code === form.package_code))
-const selectedBundles = computed(() => props.catalog.menuBundles.filter((item) => form.menu_bundles.includes(item.code)))
+const selectedBundles = computed(() => (props.catalog?.menuBundles ?? []).filter((item) => form.menu_bundles.includes(item.code)))
 const menuOptionIndex = computed(() =>
-  (props.catalog.menuCategories ?? []).flatMap((category) =>
+  (props.catalog?.menuCategories ?? []).flatMap((category) =>
     (category.items ?? []).flatMap((item) =>
       (item.options ?? []).map((option) => ({
         ...option,
@@ -84,10 +109,10 @@ const selectedManualMenuItems = computed(() =>
     })
     .filter(Boolean),
 )
-const selectedAddOns = computed(() => props.catalog.addOns.filter((item) => form.add_ons.includes(item.code)))
+const selectedAddOns = computed(() => (props.catalog?.addOns ?? []).filter((item) => form.add_ons.includes(item.code)))
 
 const branchAvailability = computed(() =>
-  availabilityState.value.branches.find((item) => item.code === form.branch_code),
+  (availabilityState.value?.branches ?? []).find((item) => item.code === form.branch_code),
 )
 
 const dateCards = computed(() => branchAvailability.value?.dates ?? [])
@@ -97,19 +122,33 @@ const selectedDateAvailability = computed(() =>
 )
 
 const formatTimeLabel = (time) => {
-  if (!time) {
+  if (!time || !String(time).includes(':')) {
     return '--'
   }
 
-  const [hours, minutes] = time.split(':').map(Number)
+  const [hours, minutes] = String(time).split(':').map(Number)
+
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) {
+    return '--'
+  }
+
   const meridian = hours >= 12 ? 'PM' : 'AM'
   const hour12 = hours % 12 || 12
   return `${hour12}:${String(minutes).padStart(2, '0')} ${meridian}`
 }
 
 const addHoursToTime = (time, hoursToAdd) => {
-  const [hours, minutes] = time.split(':').map(Number)
-  const totalMinutes = (hours * 60) + minutes + (hoursToAdd * 60)
+  if (!time || !String(time).includes(':')) {
+    return ''
+  }
+
+  const [hours, minutes] = String(time).split(':').map(Number)
+
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) {
+    return ''
+  }
+
+  const totalMinutes = (hours * 60) + minutes + (Number(hoursToAdd) * 60)
   const nextHours = Math.floor(totalMinutes / 60) % 24
   const nextMinutes = totalMinutes % 60
   return `${String(nextHours).padStart(2, '0')}:${String(nextMinutes).padStart(2, '0')}`
@@ -148,8 +187,8 @@ const startDateLabel = computed(() => {
 })
 const additionalHours = computed(() => Math.max(Number(form.duration_hours) - 4, 0))
 const bookingWindowLabel = computed(() => {
-  const openingHour = Number(props.catalog.bookingWindow?.opening_hour ?? 7)
-  const closingHour = Number(props.catalog.bookingWindow?.closing_hour ?? 23)
+  const openingHour = Number(props.catalog?.bookingWindow?.opening_hour ?? 7)
+  const closingHour = Number(props.catalog?.bookingWindow?.closing_hour ?? 23)
 
   return `${formatTimeLabel(`${String(openingHour).padStart(2, '0')}:00`)} to ${formatTimeLabel(`${String(closingHour).padStart(2, '0')}:00`)}`
 })
@@ -158,8 +197,8 @@ const formatCurrency = (value) =>
   `\u20B1${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 const defaultRoomChoiceForEventType = (eventType) => {
-  return props.roomChoices.find((item) => item.preferred_event_type === eventType)?.code
-    ?? props.roomChoices[0]?.code
+  return (props.roomChoices ?? []).find((item) => item.preferred_event_type === eventType)?.code
+    ?? (props.roomChoices ?? [])[0]?.code
     ?? ''
 }
 
@@ -167,13 +206,30 @@ const scrollToSection = (id) => {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
-const canStartAt = (time, dateAvailability = selectedDateAvailability.value, durationHours = Number(form.duration_hours)) => {
+const slotMapsByDate = computed(() =>
+  Object.fromEntries(dateCards.value.map((item) => [
+    item.date,
+    Object.fromEntries((item.slots ?? []).map((slot) => [slot.time, slot])),
+  ])),
+)
+
+const slotMapForDateAvailability = (dateAvailability) => {
   if (!dateAvailability) {
+    return {}
+  }
+
+  return slotMapsByDate.value[dateAvailability.date]
+    ?? Object.fromEntries((dateAvailability.slots ?? []).map((slot) => [slot.time, slot]))
+}
+
+const canStartAt = (time, dateAvailability = selectedDateAvailability.value, durationHours = Number(form.duration_hours)) => {
+  const duration = Number(durationHours)
+
+  if (!time || !dateAvailability || !Number.isInteger(duration) || duration < 1) {
     return false
   }
 
-  const duration = Number(durationHours)
-  const slotMap = Object.fromEntries((dateAvailability.slots ?? []).map((slot) => [slot.time, slot]))
+  const slotMap = slotMapForDateAvailability(dateAvailability)
 
   for (let offset = 0; offset < duration; offset += 1) {
     const slot = slotMap[addHoursToTime(time, offset)]
@@ -189,11 +245,15 @@ const availableDurationsForStart = (time, dateAvailability = selectedDateAvailab
   flexibleDurationOptions.filter((duration) => canStartAt(time, dateAvailability, duration))
 
 const selectableStartSlots = computed(() =>
-  (selectedDateAvailability.value?.slots ?? []).map((slot) => ({
-    ...slot,
-    validDurations: availableDurationsForStart(slot.time),
-    startable: availableDurationsForStart(slot.time).length > 0,
-  })),
+  (selectedDateAvailability.value?.slots ?? []).map((slot) => {
+    const validDurations = availableDurationsForStart(slot.time)
+
+    return {
+      ...slot,
+      validDurations,
+      startable: validDurations.length > 0,
+    }
+  }),
 )
 
 const selectableStartSlotOptions = computed(() =>
@@ -238,7 +298,7 @@ const selectedDateCard = computed(() =>
   dateCardsView.value.find((item) => item.date === form.event_date),
 )
 
-const monthCursor = ref(form.event_date.slice(0, 7))
+const monthCursor = ref((form.event_date || defaultEventDate).slice(0, 7))
 
 const availableMonthKeys = computed(() =>
   [...new Set(dateCardsView.value.map((item) => item.date.slice(0, 7)))],
@@ -341,10 +401,10 @@ const selectPlannerTime = (value) => {
 }
 
 const pricingRule = computed(() => {
-  if (props.catalog.pricing.holidays.includes(form.event_date)) {
+  if ((catalogPricing.holidays ?? []).includes(form.event_date)) {
     return {
       label: 'Holiday rate',
-      multiplier: props.catalog.pricing.holiday_multiplier,
+      multiplier: catalogPricing.holiday_multiplier,
     }
   }
 
@@ -353,7 +413,7 @@ const pricingRule = computed(() => {
   if ([0, 6].includes(day)) {
     return {
       label: 'Weekend rate',
-      multiplier: props.catalog.pricing.weekend_multiplier,
+      multiplier: catalogPricing.weekend_multiplier,
     }
   }
 
@@ -375,7 +435,7 @@ const receiptPreview = computed(() => {
   if (extensionHours > 0) {
     lineItems.push({
       label: `Extended event time (${extensionHours} hour${extensionHours > 1 ? 's' : ''})`,
-      amount: extensionHours * Number(props.catalog.pricing.extension_hourly_rate),
+      amount: extensionHours * Number(catalogPricing.extension_hourly_rate),
     })
   }
 
@@ -426,7 +486,10 @@ const syncEndTimeSelection = () => {
     return
   }
 
-  const fallbackOption = selectableEndSlotOptions.value[0]
+  const preferredDuration = Number(form.duration_hours || defaultDurationHours)
+  const fallbackOption = selectableEndSlotOptions.value.find((option) => option.duration === preferredDuration)
+    ?? selectableEndSlotOptions.value.find((option) => option.duration === defaultDurationHours)
+    ?? selectableEndSlotOptions.value[0]
 
   if (fallbackOption) {
     form.event_end_time = fallbackOption.value
@@ -534,9 +597,186 @@ watch(
 )
 
 const refreshAvailability = async () => {
-  const { data } = await axios.get(route('availability.index'))
+  const { data } = await axios.get(route('availability.index'), { params: { days: 60 } })
   availabilityState.value = data
   initializeAvailabilitySelection()
+}
+
+const wizardSteps = [
+  { order: 1, label: 'Event', hint: 'Choose the occasion.' },
+  { order: 2, label: 'Schedule', hint: 'Set the branch, room, date, and time.' },
+  { order: 3, label: 'Package', hint: 'Choose guest count and package.' },
+  { order: 4, label: 'Menu', hint: 'Add exact food and drink items.' },
+  { order: 5, label: 'Theme & extras', hint: 'Choose decor and optional character services.' },
+  { order: 6, label: 'Notes', hint: 'Share requests with the branch.' },
+  { order: 7, label: 'Payment', hint: 'Upload proof and confirm.' },
+]
+const currentStep = ref(1)
+const highestStepVisited = ref(1)
+const isWizardOpen = ref(true)
+const stepError = ref('')
+const stepContent = ref(null)
+const closeButton = ref(null)
+const paymentProofPreviewUrl = ref('')
+const currentStepDetails = computed(() => wizardSteps.find((step) => step.order === currentStep.value) ?? wizardSteps[0])
+const progressPercent = computed(() => Math.round((currentStep.value / wizardSteps.length) * 100))
+
+const scrollStepToTop = () => {
+  nextTick(() => stepContent.value?.scrollTo({ top: 0, behavior: 'smooth' }))
+}
+
+const focusWizard = () => {
+  nextTick(() => closeButton.value?.focus())
+}
+
+const openWizard = () => {
+  isWizardOpen.value = true
+  focusWizard()
+}
+
+const closeWizard = () => {
+  if (!form.processing) {
+    isWizardOpen.value = false
+  }
+}
+
+const validationMessageForStep = (step) => {
+  if (step === 1 && !catalogEventTypes[form.event_type]) {
+    return 'Choose an event type before continuing.'
+  }
+
+  if (step === 2) {
+    if (!supportedBranches.value.some((item) => item.code === form.branch_code)) {
+      return 'Choose a branch that supports this event type.'
+    }
+    if (!(props.roomChoices ?? []).some((item) => item.code === form.room_choice)) {
+      return 'Choose a room for the event.'
+    }
+    if (!selectedDateCard.value || selectedDateCard.value.computed_status === 'full') {
+      return 'Choose an available reservation date.'
+    }
+    if (!selectedTimeRangeIsAvailable.value) {
+      return availabilityNotice.value || 'Choose an available start and end time.'
+    }
+  }
+
+  if (step === 3) {
+    const guests = Number(form.guests)
+    if (!Number.isInteger(guests) || guests < 2 || guests > 60) {
+      return 'Guest count must be between 2 and 60.'
+    }
+    if (!selectedPackage.value) {
+      return 'Choose a package before continuing.'
+    }
+  }
+
+  if (step === 4 && (form.manual_menu_items ?? []).some((item) => !item.option_code || Number(item.quantity) < 1)) {
+    return 'Check the quantities in your food and drinks selection.'
+  }
+
+  if (step === 6 && String(form.notes ?? '').length > 1000) {
+    return 'Special notes must be 1,000 characters or fewer.'
+  }
+
+  if (step === 7) {
+    if (!form.payment_proof) {
+      return 'Upload an image of your payment proof before confirming.'
+    }
+    if (!String(form.payment_proof.type ?? '').startsWith('image/')) {
+      return 'Payment proof must be an image file.'
+    }
+    if (Number(form.payment_proof.size ?? 0) > 4 * 1024 * 1024) {
+      return 'Payment proof must be 4 MB or smaller.'
+    }
+  }
+
+  return ''
+}
+
+const showStepError = (message) => {
+  stepError.value = message
+  scrollStepToTop()
+}
+
+const goToStep = (step) => {
+  const nextStep = Number(step)
+
+  if (nextStep < 1 || nextStep > highestStepVisited.value) {
+    return
+  }
+
+  currentStep.value = nextStep
+  stepError.value = ''
+  scrollStepToTop()
+}
+
+const continueWizard = () => {
+  const message = validationMessageForStep(currentStep.value)
+
+  if (message) {
+    showStepError(message)
+    return
+  }
+
+  const nextStep = Math.min(currentStep.value + 1, wizardSteps.length)
+  currentStep.value = nextStep
+  highestStepVisited.value = Math.max(highestStepVisited.value, nextStep)
+  stepError.value = ''
+  scrollStepToTop()
+}
+
+const previousStep = () => {
+  if (currentStep.value > 1) {
+    currentStep.value -= 1
+    stepError.value = ''
+    scrollStepToTop()
+  }
+}
+
+const stepForServerErrors = (errors) => {
+  const errorFields = Object.keys(errors ?? {})
+  const groups = [
+    { step: 1, fields: ['event_type'] },
+    { step: 2, fields: ['branch_code', 'room_choice', 'event_date', 'event_time', 'event_end_time', 'duration_hours'] },
+    { step: 3, fields: ['guests', 'package_code', 'menu_bundles'] },
+    { step: 4, fields: ['manual_menu_items'] },
+    { step: 5, fields: ['add_ons'] },
+    { step: 6, fields: ['notes'] },
+    { step: 7, fields: ['payment_proof'] },
+  ]
+
+  return groups.find((group) => group.fields.some((field) => errorFields.some((key) => key === field || key.startsWith(`${field}.`))))?.step ?? 7
+}
+
+const releasePaymentProofPreview = () => {
+  if (paymentProofPreviewUrl.value) {
+    URL.revokeObjectURL(paymentProofPreviewUrl.value)
+    paymentProofPreviewUrl.value = ''
+  }
+}
+
+watch(
+  () => form.payment_proof,
+  (file) => {
+    releasePaymentProofPreview()
+    if (file && String(file.type ?? '').startsWith('image/')) {
+      paymentProofPreviewUrl.value = URL.createObjectURL(file)
+    }
+    stepError.value = ''
+  },
+)
+
+watch(isWizardOpen, (isOpen) => {
+  document.documentElement.classList.toggle('booking-wizard-open', isOpen)
+  if (isOpen) {
+    focusWizard()
+  }
+})
+
+const handleWizardKeydown = (event) => {
+  if (event.key === 'Escape' && isWizardOpen.value) {
+    closeWizard()
+  }
 }
 
 onMounted(() => {
@@ -548,18 +788,41 @@ onMounted(() => {
     refreshAvailability()
   }, 45000)
   initializeAvailabilitySelection()
+  document.documentElement.classList.add('booking-wizard-open')
+  window.addEventListener('keydown', handleWizardKeydown)
+  focusWizard()
 })
 
 onBeforeUnmount(() => {
   if (availabilityTimer) {
     window.clearInterval(availabilityTimer)
   }
+  releasePaymentProofPreview()
+  document.documentElement.classList.remove('booking-wizard-open')
+  window.removeEventListener('keydown', handleWizardKeydown)
 })
 
 const submit = () => {
+  for (const step of wizardSteps) {
+    const message = validationMessageForStep(step.order)
+    if (message) {
+      currentStep.value = step.order
+      highestStepVisited.value = Math.max(highestStepVisited.value, step.order)
+      showStepError(message)
+      return
+    }
+  }
+
   form.post(route('reservations.store'), {
     preserveScroll: true,
     preserveState: true,
+    onError: (errors) => {
+      const errorStep = stepForServerErrors(errors)
+      currentStep.value = errorStep
+      highestStepVisited.value = Math.max(highestStepVisited.value, errorStep)
+      isWizardOpen.value = true
+      showStepError(Object.values(errors)[0] ?? 'Check this step and try again.')
+    },
   })
 }
 </script>
@@ -567,428 +830,188 @@ const submit = () => {
 <template>
   <AppShell title="Book Event">
     <section class="mcd-section">
-      <div class="mcd-panel p-8">
-        <div class="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <p class="mcd-chip">Booking</p>
-            <h1 class="mt-4 text-4xl">Book your event</h1>
-          </div>
-          <div class="rounded-3xl bg-red-50 px-5 py-4 text-sm text-red-800">
-            Hours: {{ bookingWindowLabel }}
-          </div>
+      <div class="mcd-panel booking-wizard-launcher">
+        <div class="booking-wizard-launcher__copy">
+          <p class="mcd-chip">Guided booking</p>
+          <h1>Plan your event one step at a time.</h1>
+          <p>Your selections stay saved while you move between the seven short steps.</p>
+        </div>
+        <div class="booking-wizard-launcher__action">
+          <span>{{ highestStepVisited > 1 ? `Step ${currentStep} of ${wizardSteps.length}` : 'Ready when you are' }}</span>
+          <strong>{{ currentStepDetails.label }}</strong>
+          <button type="button" class="mcd-button" @click="openWizard">
+            {{ highestStepVisited > 1 ? 'Continue booking' : 'Start booking' }}
+          </button>
         </div>
       </div>
-
-      <form class="space-y-5" @submit.prevent="submit">
-        <div class="mcd-grid mcd-grid--2">
-          <div class="space-y-5">
-            <section class="mcd-panel p-6">
-            <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">1. Event type</p>
-            <div class="mt-5 grid gap-3">
-              <label
-                v-for="(type, key) in catalog.eventTypes"
-                :key="key"
-                class="rounded-3xl border p-4 transition"
-                :class="form.event_type === key ? 'border-red-500 bg-red-50' : 'border-slate-200 bg-white'"
-              >
-                <input v-model="form.event_type" type="radio" :value="key" class="hidden" />
-                <p class="text-xl">{{ type.label }}</p>
-                <p class="mt-2 text-sm text-slate-600">{{ type.description }}</p>
-              </label>
-            </div>
-            </section>
-
-            <section class="mcd-panel p-6">
-            <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">2. Date, time, and branch</p>
-
-            <div class="mt-5 grid gap-4">
-              <div class="mcd-field">
-                <label>Guest count</label>
-                <input v-model="form.guests" type="number" min="2" max="60" class="mcd-input" />
-              </div>
-
-              <div class="mcd-field">
-                <label>Event duration</label>
-                <div class="rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-sm">
-                  <div class="flex flex-wrap items-center justify-between gap-4">
-                    <div>
-                      <p class="text-xs font-black uppercase tracking-[0.16em] text-slate-400">Selected duration</p>
-                      <p class="mt-2 text-3xl font-black text-slate-800">{{ durationLabel }}</p>
-                      <p class="mt-1 text-sm text-slate-500">Total updates automatically.</p>
-                    </div>
-                    <div class="grid gap-2 text-right">
-                      <span class="rounded-full bg-amber-50 px-4 py-2 text-sm font-black uppercase tracking-[0.14em] text-amber-700">Flexible timing</span>
-                      <span class="rounded-full bg-red-50 px-4 py-2 text-sm font-black uppercase tracking-[0.14em] text-red-700">Schedule</span>
-                    </div>
-                  </div>
-                </div>
-                <p class="mt-2 text-xs text-slate-500">Extra time is charged at {{ formatCurrency(catalog.pricing.extension_hourly_rate) }}/hour.</p>
-                <p v-if="form.errors.duration_hours" class="text-sm text-red-700">{{ form.errors.duration_hours }}</p>
-              </div>
-
-              <div class="mcd-field">
-                <label>Branch</label>
-                <select v-model="form.branch_code" class="mcd-select">
-                  <option v-for="item in supportedBranches" :key="item.code" :value="item.code">
-                    {{ item.name }} | {{ item.city }}
-                  </option>
-                </select>
-                <p v-if="form.errors.branch_code" class="text-sm text-red-700">{{ form.errors.branch_code }}</p>
-              </div>
-
-              <div class="mcd-field">
-                <label>Room rental</label>
-                <div class="grid gap-3 md:grid-cols-3">
-                  <label
-                    v-for="item in roomChoices"
-                    :key="item.code"
-                    class="rounded-3xl border p-4 transition"
-                    :class="form.room_choice === item.code ? 'border-red-500 bg-red-50' : 'border-slate-200 bg-white'"
-                  >
-                    <input v-model="form.room_choice" type="radio" :value="item.code" class="hidden" />
-                    <p class="text-base font-black text-slate-800">{{ item.label }}</p>
-                    <p class="mt-2 text-sm text-slate-500">{{ item.description }}</p>
-                  </label>
-                </div>
-                <p v-if="form.errors.room_choice" class="text-sm text-red-700">{{ form.errors.room_choice }}</p>
-              </div>
-
-              <div class="flex flex-wrap items-center justify-between gap-3 rounded-3xl bg-amber-50 px-5 py-4">
-                <div>
-                  <p class="text-sm font-black uppercase tracking-[0.18em] text-red-700">Manual food and drinks</p>
-                </div>
-                <button type="button" class="mcd-button" @click="scrollToSection('manual-menu-board')">Go to manual food and drinks</button>
-              </div>
-
-              <div class="rounded-3xl bg-white p-5">
-                <div class="flex flex-wrap items-start justify-between gap-4">
-                  <div>
-                    <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">Reservation schedule</p>
-                  </div>
-                  <button type="button" class="mcd-button mcd-button--ghost" @click="refreshAvailability">Refresh now</button>
-                </div>
-
-                <div class="mcd-schedule-planner mt-6">
-                  <div class="mcd-schedule-planner__surface">
-                    <div class="mcd-schedule-planner__orb">
-                      <div class="flex items-center justify-between gap-3">
-                        <button type="button" class="mcd-schedule-planner__month-button" :disabled="!showPreviousMonth" @click="goToPreviousMonth">
-                          &lt;
-                        </button>
-                        <p class="text-base font-black tracking-[0.03em] text-slate-700">{{ calendarMonthLabel }}</p>
-                        <button type="button" class="mcd-schedule-planner__month-button" :disabled="!showNextMonth" @click="goToNextMonth">
-                          &gt;
-                        </button>
-                      </div>
-
-                      <div v-if="plannerMode === 'date'">
-                        <div class="mt-5 grid grid-cols-7 gap-2 text-center text-[11px] font-black uppercase tracking-[0.12em] text-slate-400">
-                          <span v-for="day in ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']" :key="day">{{ day }}</span>
-                        </div>
-
-                        <div class="mt-3 grid grid-cols-7 gap-2">
-                          <button
-                            v-for="cell in calendarCells"
-                            :key="cell.key"
-                            type="button"
-                            class="mcd-schedule-planner__day"
-                            :class="{
-                              'is-empty': cell.empty,
-                              'is-selected': cell.selected,
-                              'is-unavailable': cell.unavailable,
-                              'is-limited': cell.limited,
-                            }"
-                            :disabled="cell.empty || cell.unavailable"
-                            @click="selectCalendarDate(cell)"
-                          >
-                            <span v-if="!cell.empty">{{ cell.day }}</span>
-                          </button>
-                        </div>
-                      </div>
-
-                      <div v-else class="mcd-schedule-planner__time-panel">
-                        <p class="mcd-schedule-planner__time-title">
-                          {{ activeTimeField === 'start' ? 'Start Time' : 'End Time' }}
-                        </p>
-
-                        <div class="mcd-schedule-planner__time-grid">
-                          <button
-                            v-for="option in plannerTimeOptions"
-                            :key="option.value"
-                            type="button"
-                            class="mcd-schedule-planner__time-option"
-                            :class="{
-                              'is-selected': activeTimeField === 'start' ? form.event_time === option.value : form.event_end_time === option.value,
-                            }"
-                            @click="selectPlannerTime(option.value)"
-                          >
-                            <strong>{{ activeTimeField === 'start' ? formatTimeLabel(option.value) : formatTimeLabel(option.value) }}</strong>
-                            <small>{{ activeTimeField === 'start' ? 'Start of event' : option.duration ? `${option.duration} hours total` : 'End of event' }}</small>
-                          </button>
-                        </div>
-
-                        <p v-if="!plannerTimeOptions.length" class="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-500">
-                          No available {{ activeTimeField === 'start' ? 'start' : 'end' }} times for this selection.
-                        </p>
-                      </div>
-
-                      <div class="mcd-schedule-planner__switches">
-                        <button
-                          type="button"
-                          class="mcd-schedule-planner__switch"
-                          :class="{ 'is-active': plannerMode === 'date' }"
-                          @click="setPlannerMode('date', 'start')"
-                        >
-                          <span class="mcd-schedule-planner__switch-box"></span>
-                          Start Date
-                        </button>
-                        <button
-                          type="button"
-                          class="mcd-schedule-planner__switch"
-                          :class="{ 'is-active': plannerMode === 'time' }"
-                          @click="setPlannerMode('time', activeTimeField)"
-                        >
-                          <span class="mcd-schedule-planner__switch-box"></span>
-                          Time
-                        </button>
-                      </div>
-
-                      <div class="mcd-schedule-planner__time-cards">
-                        <button type="button" class="mcd-schedule-planner__time-card" :class="{ 'is-active': plannerMode === 'time' && activeTimeField === 'start' }" @click="setPlannerMode('time', 'start')">
-                          <span>Start Time</span>
-                          <strong>{{ startTimeLabel }}</strong>
-                          <small>{{ startDateLabel }}</small>
-                        </button>
-                        <button type="button" class="mcd-schedule-planner__time-card" :class="{ 'is-active': plannerMode === 'time' && activeTimeField === 'end' }" @click="setPlannerMode('time', 'end')">
-                          <span>Due Time</span>
-                          <strong>{{ endTimeLabel }}</strong>
-                          <small>{{ durationLabel }}</small>
-                        </button>
-                      </div>
-                    </div>
-
-                    <div class="mcd-schedule-planner__details">
-                      <div v-if="availabilityNotice" class="rounded-2xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
-                        {{ availabilityNotice }}
-                      </div>
-
-                      <div class="mcd-schedule-planner__fields">
-                        <div class="grid gap-2">
-                          <label class="text-base font-bold text-slate-700">Event Date <span class="text-red-500">*</span></label>
-                          <input v-model="form.event_date" type="date" class="mcd-schedule-planner__input" />
-                          <p v-if="form.errors.event_date" class="text-sm text-red-700">{{ form.errors.event_date }}</p>
-                        </div>
-
-                        <div class="grid gap-2">
-                          <label class="text-base font-bold text-slate-700">Start Time <span class="text-red-500">*</span></label>
-                          <select v-model="form.event_time" class="mcd-schedule-planner__input">
-                            <option v-if="!selectableStartSlotOptions.length" value="" disabled>No start times available</option>
-                            <option v-for="slot in selectableStartSlotOptions" :key="slot.value" :value="slot.value">
-                              {{ slot.label }}
-                            </option>
-                          </select>
-                          <p v-if="form.errors.event_time" class="text-sm text-red-700">{{ form.errors.event_time }}</p>
-                        </div>
-
-                        <div class="grid gap-2">
-                          <label class="text-base font-bold text-slate-700">End Time <span class="text-red-500">*</span></label>
-                          <select v-model="form.event_end_time" class="mcd-schedule-planner__input">
-                            <option v-if="!selectableEndSlotOptions.length" value="" disabled>No end times available</option>
-                            <option v-for="slot in selectableEndSlotOptions" :key="slot.value" :value="slot.value">
-                              {{ slot.label }}
-                            </option>
-                          </select>
-                          <p v-if="form.errors.event_end_time" class="text-sm text-red-700">{{ form.errors.event_end_time }}</p>
-                        </div>
-
-                        <div class="grid gap-2">
-                          <label class="text-base font-bold text-slate-700">Duration</label>
-                          <div class="mcd-schedule-planner__input flex items-center justify-between">
-                            <span class="font-semibold text-slate-500">Reserved span</span>
-                            <strong class="text-base font-black text-slate-800">{{ durationLabel }}</strong>
-                          </div>
-                        </div>
-                      </div>
-
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div v-if="branch" class="rounded-3xl bg-white p-5">
-                <div class="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <h3 class="text-xl">{{ branch.name }}</h3>
-                    <p class="mt-1 text-sm text-slate-500">{{ branch.city }} | Up to {{ branch.max_guests }} guests</p>
-                  </div>
-                  <a :href="branch.map_url" target="_blank" rel="noreferrer" class="text-sm font-bold text-red-700">Open map</a>
-                </div>
-              </div>
-            </div>
-            </section>
-
-            <section class="mcd-panel p-6">
-            <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">3. Special notes</p>
-            <div class="mt-5 grid gap-4">
-              <div class="mcd-field">
-                <label>Special notes</label>
-                <textarea v-model="form.notes" rows="4" class="mcd-textarea"></textarea>
-                <p class="mt-2 text-xs text-slate-500">Your profile details will be attached to this reservation automatically.</p>
-              </div>
-            </div>
-            </section>
-          </div>
-
-          <div class="space-y-5">
-            <section class="mcd-panel p-6">
-              <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">4. Package and bundle plan</p>
-              <div class="mt-5 grid gap-3">
-                <label
-                  v-for="item in packages"
-                  :key="item.code"
-                  class="rounded-3xl border p-4 transition"
-                  :class="form.package_code === item.code ? 'border-red-500 bg-red-50' : 'border-slate-200 bg-white'"
-                >
-                  <input v-model="form.package_code" type="radio" :value="item.code" class="hidden" />
-                  <div class="flex items-start justify-between gap-4">
-                    <div>
-                      <p class="text-lg">{{ item.name }}</p>
-                      <p class="mt-1 text-sm text-slate-500">{{ item.guest_range }}</p>
-                    </div>
-                    <strong class="text-red-700">{{ formatCurrency(item.price) }}</strong>
-                  </div>
-                  <ul class="mt-3 space-y-1 text-sm text-slate-600">
-                    <li v-for="feature in item.features" :key="feature">{{ feature }}</li>
-                  </ul>
-                </label>
-              </div>
-            </section>
-
-            <section class="mcd-panel p-6">
-              <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">Bundle add-ons</p>
-              <div class="mt-5 grid gap-3">
-                <label
-                  v-for="item in catalog.menuBundles"
-                  :key="item.code"
-                  class="flex items-center justify-between rounded-3xl border border-slate-200 bg-white p-4"
-                >
-                  <div>
-                    <p class="text-lg">{{ item.name }}</p>
-                    <p class="mt-1 text-sm text-slate-500">{{ item.prep_label }}</p>
-                  </div>
-                  <div class="flex items-center gap-3">
-                    <span class="font-bold text-red-700">{{ formatCurrency(item.price) }}</span>
-                    <input v-model="form.menu_bundles" :value="item.code" type="checkbox" class="h-5 w-5 rounded border-slate-300 text-red-600" />
-                  </div>
-                </label>
-              </div>
-            </section>
-
-            <section class="mcd-panel p-6">
-              <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">6. Add-ons and payment</p>
-              <div class="mt-5 grid gap-3">
-                <label
-                  v-for="item in catalog.addOns"
-                  :key="item.code"
-                  class="flex items-center justify-between rounded-3xl border border-slate-200 bg-white p-4"
-                >
-                  <div>
-                    <p class="text-lg">{{ item.name }}</p>
-                  </div>
-                  <div class="flex items-center gap-3">
-                    <span class="font-bold text-red-700">{{ formatCurrency(item.price) }}</span>
-                    <input v-model="form.add_ons" :value="item.code" type="checkbox" class="h-5 w-5 rounded border-slate-300 text-red-600" />
-                  </div>
-                </label>
-
-                <div class="mcd-field mt-2">
-                  <label>Upload proof of payment</label>
-                  <input type="file" accept="image/*" class="mcd-input" @input="form.payment_proof = $event.target.files[0]" />
-                  <p v-if="form.errors.payment_proof" class="text-sm text-red-700">{{ form.errors.payment_proof }}</p>
-                </div>
-              </div>
-            </section>
-          </div>
-        </div>
-
-        <ManualMenuBoard
-          v-if="catalog.menuCategories?.length"
-          v-model="form.manual_menu_items"
-          :categories="catalog.menuCategories"
-        />
-
-        <section v-else class="mcd-panel p-6">
-          <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">5. Manual foods and drinks</p>
-          <p class="mt-3 text-sm text-slate-500">Menu unavailable.</p>
-        </section>
-
-        <section class="mcd-panel mcd-panel--dark p-6">
-          <p class="text-sm font-black uppercase tracking-[0.2em] text-amber-300">Booking receipt</p>
-          <div class="mt-5 grid gap-6 xl:grid-cols-[0.85fr,1.15fr]">
-            <div class="space-y-3 text-sm text-white/80">
-              <div class="flex items-center justify-between">
-                <span>Event type</span>
-                <strong class="text-white">{{ catalog.eventTypes[form.event_type].label }}</strong>
-              </div>
-              <div class="flex items-center justify-between">
-                <span>Branch</span>
-                <strong class="text-white">{{ branch?.name }}</strong>
-              </div>
-              <div class="flex items-center justify-between">
-                <span>Room rental</span>
-                <strong class="text-white">{{ roomChoices.find((item) => item.code === form.room_choice)?.label }}</strong>
-              </div>
-              <div class="flex items-center justify-between">
-                <span>Event time</span>
-                <strong class="text-white">{{ formatTimeLabel(form.event_time) }} to {{ endTimeLabel }}</strong>
-              </div>
-              <div class="flex items-center justify-between">
-                <span>Duration</span>
-                <strong class="text-white">{{ form.duration_hours }} hours</strong>
-              </div>
-              <div class="rounded-3xl bg-white/5 p-4">
-                <p class="text-sm uppercase tracking-[0.2em] text-amber-200">Manual tray</p>
-                <div v-if="selectedManualMenuItems.length" class="mt-4 space-y-3">
-                  <div v-for="item in selectedManualMenuItems" :key="item.option_code" class="flex items-center justify-between gap-4">
-                    <span>{{ item.quantity }} x {{ item.item_name }} ({{ item.option_label }})</span>
-                    <strong class="text-white">{{ formatCurrency(item.line_total) }}</strong>
-                  </div>
-                </div>
-                <p v-else class="mt-3 text-sm text-white/65">No items added.</p>
-              </div>
-            </div>
-
-            <div class="space-y-3 text-sm text-white/80">
-              <div class="rounded-3xl bg-white/5 p-4">
-                <p class="text-sm uppercase tracking-[0.2em] text-amber-200">Receipt preview</p>
-                <div class="mt-4 space-y-3">
-                  <div v-for="item in receiptPreview.lineItems" :key="item.label" class="flex items-center justify-between gap-4">
-                    <span>{{ item.label }}</span>
-                    <strong class="text-white">{{ formatCurrency(item.amount) }}</strong>
-                  </div>
-                </div>
-                <div class="mt-4 space-y-2 border-t border-white/10 pt-4">
-                  <div class="flex items-center justify-between">
-                    <span>Subtotal</span>
-                    <strong class="text-white">{{ formatCurrency(receiptPreview.subtotal) }}</strong>
-                  </div>
-                  <div class="flex items-center justify-between">
-                    <span>{{ pricingRule.label }} ({{ pricingRule.multiplier }}x)</span>
-                    <strong class="text-white">{{ formatCurrency(receiptPreview.adjustment) }}</strong>
-                  </div>
-                </div>
-              </div>
-              <div class="border-t border-white/10 pt-4">
-                <p class="text-sm uppercase tracking-[0.2em] text-amber-200">Total before confirmation</p>
-                <p class="mt-2 text-4xl text-white">{{ formatCurrency(receiptPreview.total) }}</p>
-              </div>
-              <button type="submit" class="mcd-button mt-2 w-full" :disabled="form.processing || !selectedDateCard || selectedDateCard.computed_status === 'full' || !selectedTimeRangeIsAvailable">
-                {{ form.processing ? 'Submitting...' : 'Confirm reservation' }}
-              </button>
-            </div>
-          </div>
-        </section>
-      </form>
     </section>
+
+    <Teleport to="body">
+      <Transition name="booking-wizard">
+        <div
+          v-if="isWizardOpen"
+          class="booking-wizard-overlay"
+          role="presentation"
+          @mousedown.self="closeWizard"
+        >
+          <section
+            class="booking-wizard-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="booking-wizard-title"
+            @mousedown.stop
+          >
+            <header class="booking-wizard-dialog__header">
+              <div class="booking-wizard-dialog__heading">
+                <div>
+                  <p class="booking-wizard-dialog__eyebrow">
+                    Step {{ currentStep }} of {{ wizardSteps.length }} · {{ progressPercent }}% complete
+                  </p>
+                  <h2 id="booking-wizard-title">{{ currentStepDetails.label }}</h2>
+                  <p>{{ currentStepDetails.hint }}</p>
+                </div>
+                <button
+                  ref="closeButton"
+                  type="button"
+                  class="booking-wizard-dialog__close"
+                  aria-label="Close booking wizard"
+                  title="Close booking wizard"
+                  :disabled="form.processing"
+                  @click="closeWizard"
+                >
+                  &times;
+                </button>
+              </div>
+
+              <BookingWizardProgress
+                :steps="wizardSteps"
+                :current-step="currentStep"
+                :highest-step-visited="highestStepVisited"
+                @go="goToStep"
+              />
+            </header>
+
+            <form class="booking-wizard-dialog__form" @submit.prevent="submit">
+              <div ref="stepContent" class="booking-wizard-dialog__body">
+                <div v-if="stepError" class="booking-wizard-dialog__error" role="alert">
+                  <strong>Check this step</strong>
+                  <span>{{ stepError }}</span>
+                </div>
+
+                <BookingStepEventType
+                  v-if="currentStep === 1"
+                  :form="form"
+                  :event-types="catalog.eventTypes"
+                />
+
+                <BookingStepSchedule
+                  v-else-if="currentStep === 2"
+                  :form="form"
+                  :supported-branches="supportedBranches"
+                  :room-choices="roomChoices"
+                  :branch="branch"
+                  :booking-window-label="bookingWindowLabel"
+                  :refresh-availability="refreshAvailability"
+                  :planner-mode="plannerMode"
+                  :active-time-field="activeTimeField"
+                  :show-previous-month="showPreviousMonth"
+                  :show-next-month="showNextMonth"
+                  :go-to-previous-month="goToPreviousMonth"
+                  :go-to-next-month="goToNextMonth"
+                  :calendar-month-label="calendarMonthLabel"
+                  :calendar-cells="calendarCells"
+                  :select-calendar-date="selectCalendarDate"
+                  :set-planner-mode="setPlannerMode"
+                  :planner-time-options="plannerTimeOptions"
+                  :select-planner-time="selectPlannerTime"
+                  :start-time-label="startTimeLabel"
+                  :start-date-label="startDateLabel"
+                  :end-time-label="endTimeLabel"
+                  :duration-label="durationLabel"
+                  :availability-notice="availabilityNotice"
+                  :selectable-start-slot-options="selectableStartSlotOptions"
+                  :selectable-end-slot-options="selectableEndSlotOptions"
+                />
+
+                <BookingStepPackagePlan
+                  v-else-if="currentStep === 3"
+                  :form="form"
+                  :packages="packages"
+                  :menu-bundles="catalog.menuBundles"
+                  :format-currency="formatCurrency"
+                />
+
+                <BookingStepManualMenu
+                  v-else-if="currentStep === 4"
+                  :form="form"
+                  :categories="catalog.menuCategories"
+                />
+
+                <BookingStepAddOns
+                  v-else-if="currentStep === 5"
+                  :form="form"
+                  :add-ons="catalog.addOns"
+                  :format-currency="formatCurrency"
+                />
+
+                <BookingStepNotes
+                  v-else-if="currentStep === 6"
+                  :form="form"
+                />
+
+                <BookingStepPayment
+                  v-else
+                  :form="form"
+                  :catalog="catalog"
+                  :branch="branch"
+                  :room-choices="roomChoices"
+                  :start-time-label="startTimeLabel"
+                  :end-time-label="endTimeLabel"
+                  :receipt-preview="receiptPreview"
+                  :pricing-rule="pricingRule"
+                  :selected-manual-menu-items="selectedManualMenuItems"
+                  :format-currency="formatCurrency"
+                  :payment-proof-preview-url="paymentProofPreviewUrl"
+                />
+              </div>
+
+              <footer class="booking-wizard-dialog__footer">
+                <button
+                  type="button"
+                  class="mcd-button mcd-button--ghost"
+                  :disabled="currentStep === 1 || form.processing"
+                  @click="previousStep"
+                >
+                  Back
+                </button>
+
+                <div class="booking-wizard-dialog__footer-copy">
+                  <span>{{ currentStepDetails.label }}</span>
+                  <strong v-if="currentStep === 7">{{ formatCurrency(receiptPreview.total) }}</strong>
+                  <strong v-else>Step {{ currentStep }} of {{ wizardSteps.length }}</strong>
+                </div>
+
+                <button
+                  v-if="currentStep < wizardSteps.length"
+                  type="button"
+                  class="mcd-button"
+                  @click="continueWizard"
+                >
+                  Continue
+                </button>
+                <button
+                  v-else
+                  type="submit"
+                  class="mcd-button"
+                  :disabled="form.processing || !selectedDateCard || selectedDateCard.computed_status === 'full' || !selectedTimeRangeIsAvailable"
+                >
+                  {{ form.processing ? 'Submitting...' : 'Confirm reservation' }}
+                </button>
+              </footer>
+            </form>
+          </section>
+        </div>
+      </Transition>
+    </Teleport>
   </AppShell>
 </template>

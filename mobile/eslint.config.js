@@ -3,8 +3,14 @@ const { defineConfig } = require('eslint/config');
 const expoConfig = require('eslint-config-expo/flat');
 
 module.exports = defineConfig([
+  {
+    ignores: ['dist/**', 'dist-*/**'],
+  },
   expoConfig,
   {
-    ignores: ['dist/*'],
+    rules: {
+      // Remote booking options intentionally revalidate dependent form state.
+      'react-hooks/set-state-in-effect': 'off',
+    },
   },
 ]);

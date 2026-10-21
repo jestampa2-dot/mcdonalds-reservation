@@ -1,10 +1,10 @@
 import { router } from 'expo-router';
 import type { Dispatch, SetStateAction } from 'react';
-import { useCallback, useEffect, useState } from 'react';
-import { Alert, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, Image, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AppButton, AppScreen, Field, Panel, SectionHeading, Tag } from '@/components/mobile-ui';
-import { palette } from '@/constants/palette';
+import { QrCameraScanner } from '@/components/qr-camera-scanner';
 import {
   ApiError,
   checkInGuest,
@@ -16,6 +16,7 @@ import {
   deleteBranch,
   fetchAvailabilityDay,
   fetchOperations,
+  getReservationPaymentProofUrl,
   updateAdminBookingStatus,
   updateAdminCrew,
   updateAdminUser,
@@ -29,6 +30,7 @@ import {
   updateServiceAdjustments,
 } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { AppThemeColors, useAppTheme } from '@/lib/theme';
 import type { OperationsPayload } from '@/lib/types';
 
 type AdjustmentState = {
@@ -69,6 +71,8 @@ function defaultBranchForm() {
 }
 
 export default function OperationsScreen() {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const { user, token, booting } = useAuth();
   const [payload, setPayload] = useState<OperationsPayload | null>(null);
   const [loading, setLoading] = useState(false);
@@ -77,6 +81,7 @@ export default function OperationsScreen() {
   const [dayAvailability, setDayAvailability] = useState<Record<string, any> | null>(null);
   const [selectedAvailability, setSelectedAvailability] = useState({ branchCode: '', date: '' });
   const [checkInCode, setCheckInCode] = useState('');
+  const [cameraScannerOpen, setCameraScannerOpen] = useState(false);
   const [serviceStatusState, setServiceStatusState] = useState<Record<number, string>>({});
   const [serviceAdjustmentsState, setServiceAdjustmentsState] = useState<Record<number, AdjustmentState>>({});
   const [adminStatusState, setAdminStatusState] = useState<Record<number, string>>({});
@@ -326,6 +331,12 @@ export default function OperationsScreen() {
     }
   }
 
+  async function checkInFromCamera(code: string) {
+    setCameraScannerOpen(false);
+    setCheckInCode(code);
+    await runAction(() => checkInGuest(token!, code), 'Guest checked in');
+  }
+
   if (booting) {
     return (
       <AppScreen eyebrow="Operations" title="Loading tools" subtitle="Checking role access and restoring your session.">
@@ -362,14 +373,20 @@ export default function OperationsScreen() {
   const selectedBranchDates = selectedBranch?.dates ?? [];
 
   return (
-    <AppScreen
-      eyebrow="Operations"
-      title={`${user.role} tools`}
-      subtitle="Unified mobile access to the same staff and admin capabilities already present in your Laravel system."
-      scroll={false}
-      rightSlot={<AppButton label="Refresh" onPress={() => void loadOperations()} tone="secondary" />}>
+    <>
+      <QrCameraScanner
+        visible={cameraScannerOpen}
+        onClose={() => setCameraScannerOpen(false)}
+        onCode={(code) => void checkInFromCamera(code)}
+      />
+      <AppScreen
+        eyebrow="Operations"
+        title={`${user.role} tools`}
+        subtitle="Unified mobile access to the same staff and admin capabilities already present in your Laravel system."
+        scroll={false}
+        rightSlot={<AppButton label="Refresh" onPress={() => void loadOperations()} tone="secondary" />}>
       <ScrollView
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void loadOperations(true)} tintColor={palette.brandRed} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void loadOperations(true)} tintColor={colors.brandText} />}
         contentContainerStyle={{ gap: 20, paddingBottom: 32 }}>
         {errorMessage ? (
           <Panel style={styles.errorPanel}>
@@ -389,6 +406,7 @@ export default function OperationsScreen() {
           <>
             <Panel>
               <SectionHeading label="Staff" title="Check-in and floor control" />
+              <AppButton label="Scan customer QR" onPress={() => setCameraScannerOpen(true)} />
               <Field label="Booking reference or check-in code" value={checkInCode} onChangeText={setCheckInCode} />
               <AppButton
                 label="Check in guest"
@@ -538,6 +556,19 @@ export default function OperationsScreen() {
                     <Text style={styles.cardMeta}>{booking.branch} · {booking.event_date} · {booking.event_time}</Text>
                     <Text style={styles.helper}>Contact: {booking.customer_email} · {booking.customer_phone}</Text>
                     <Text style={styles.helper}>{booking.notes || 'No notes'}</Text>
+                    {booking.payment_proof_preview_url ? (
+                      <View style={styles.paymentProofPanel}>
+                        <Text style={styles.helperStrong}>Proof of payment</Text>
+                        <Image
+                          source={{
+                            uri: getReservationPaymentProofUrl(booking.id),
+                            headers: { Authorization: `Bearer ${token}` },
+                          }}
+                          style={styles.paymentProofImage}
+                          resizeMode="cover"
+                        />
+                      </View>
+                    ) : null}
                     <Text style={styles.helperStrong}>Status</Text>
                     <View style={styles.tagWrap}>
                       {['pending_review', 'confirmed', 'cancelled'].map((status) => (
@@ -1061,25 +1092,35 @@ export default function OperationsScreen() {
           </>
         ) : null}
       </ScrollView>
-    </AppScreen>
+      </AppScreen>
+    </>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: AppThemeColors) => StyleSheet.create({
+  paymentProofPanel: {
+    gap: 8,
+  },
+  paymentProofImage: {
+    width: '100%',
+    height: 220,
+    borderRadius: 8,
+    backgroundColor: colors.surfaceMuted,
+  },
   helper: {
-    color: palette.inkMuted,
+    color: colors.textMuted,
     lineHeight: 20,
   },
   errorPanel: {
-    borderColor: '#F2B5AA',
-    backgroundColor: '#FFF4F2',
+    borderColor: colors.dangerBorder,
+    backgroundColor: colors.dangerSurface,
   },
   errorText: {
-    color: palette.brandRedDark,
+    color: colors.brandText,
     lineHeight: 20,
   },
   helperStrong: {
-    color: palette.ink,
+    color: colors.text,
     fontWeight: '900',
     fontSize: 14,
   },
@@ -1090,24 +1131,24 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   cardSoft: {
-    backgroundColor: '#FFF8EA',
+    backgroundColor: colors.surfaceAlt,
     borderRadius: 20,
     padding: 14,
     gap: 10,
   },
   innerCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surfaceMuted,
     borderRadius: 16,
     padding: 12,
     gap: 10,
   },
   cardTitle: {
-    color: palette.ink,
+    color: colors.text,
     fontWeight: '900',
     fontSize: 17,
   },
   cardMeta: {
-    color: palette.inkMuted,
+    color: colors.textMuted,
     lineHeight: 19,
   },
   tagWrap: {
@@ -1119,17 +1160,17 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   metricCard: {
-    backgroundColor: '#FFF8EA',
+    backgroundColor: colors.surfaceAlt,
     borderRadius: 18,
     padding: 14,
   },
   metricLabel: {
-    color: palette.inkMuted,
+    color: colors.textMuted,
     fontSize: 13,
     fontWeight: '700',
   },
   metricValue: {
-    color: palette.ink,
+    color: colors.text,
     fontSize: 26,
     fontWeight: '900',
   },

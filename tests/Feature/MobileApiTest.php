@@ -4,8 +4,8 @@ namespace Tests\Feature;
 
 use App\Models\Reservation;
 use App\Models\User;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -227,5 +227,13 @@ class MobileApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('bookings.0.booking_reference', $bookingReference)
             ->assertJsonPath('bookings.0.status', 'confirmed');
+
+        $this->get("/api/mobile/reservations/{$reservationId}/payment-proof")
+            ->assertOk()
+            ->assertHeader('content-type', 'image/jpeg');
+
+        $this->get("/api/mobile/reservations/{$reservationId}/pass")
+            ->assertOk()
+            ->assertHeader('content-type', 'image/png');
     }
 }

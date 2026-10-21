@@ -17,10 +17,6 @@ type RegisterPayload = {
   phone: string;
   birth_date: string;
   gender: string;
-  address_line: string;
-  city: string;
-  province: string;
-  postal_code: string;
   password: string;
   password_confirmation: string;
 };

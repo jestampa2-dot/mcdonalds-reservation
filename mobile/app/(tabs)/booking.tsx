@@ -5,8 +5,10 @@ import {
   Alert,
   Image,
   Linking,
+  Modal,
   Pressable,
   RefreshControl,
+  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -26,12 +28,15 @@ import {
   SectionEyebrow,
   SectionTitle,
   SheetSurface,
+  ThemeToggleButton,
 } from '@/components/customer-ui';
 import { palette } from '@/constants/palette';
-import { ApiError, createReservation, fetchBookingOptions } from '@/lib/api';
+import { ApiError, createReservation, fetchBookingOptions, resolveApiUrl } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { readCacheEnvelope, writeCache } from '@/lib/cache';
 import { addHoursToTime, formatCurrency, formatLongDate, formatMonthLabel, formatTimeLabel } from '@/lib/formatters';
+import { useAppPreferences } from '@/lib/preferences';
+import { AppThemeColors, useAppTheme } from '@/lib/theme';
 import type { AvailabilityDate, BookingOptionsPayload } from '@/lib/types';
 
 const bookingOptionsCacheKey = 'mobile-cache:booking-options';
@@ -41,12 +46,23 @@ type PickedImage = {
   uri: string;
   name: string;
   type: string;
+  size?: number;
 };
 
 type ManualSelection = {
   option_code: string;
   quantity: number;
 };
+
+const wizardSteps = [
+  { order: 1, label: 'Event', hint: 'Choose the occasion.' },
+  { order: 2, label: 'Schedule', hint: 'Set the branch, room, date, and time.' },
+  { order: 3, label: 'Package', hint: 'Choose guest count and package.' },
+  { order: 4, label: 'Menu', hint: 'Add exact food and drink items.' },
+  { order: 5, label: 'Theme & extras', hint: 'Choose decor and optional character services.' },
+  { order: 6, label: 'Notes', hint: 'Share requests with the branch.' },
+  { order: 7, label: 'Payment', hint: 'Upload proof and confirm.' },
+] as const;
 
 function canStartAtTime(time: string, dateAvailability: AvailabilityDate | null, durationHours: number) {
   if (!dateAvailability) {
@@ -70,12 +86,19 @@ function monthFromDate(date: string) {
 }
 
 export default function BookingScreen() {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const { preferences } = useAppPreferences();
   const { token, user } = useAuth();
   const [payload, setPayload] = useState<BookingOptionsPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [isWizardOpen, setIsWizardOpen] = useState(true);
+  const [currentStep, setCurrentStep] = useState(1);
+  const [highestStepVisited, setHighestStepVisited] = useState(1);
+  const [stepError, setStepError] = useState('');
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [paymentProof, setPaymentProof] = useState<PickedImage | null>(null);
   const [notes, setNotes] = useState('');
@@ -106,7 +129,9 @@ export default function BookingScreen() {
       setErrorMessage('');
       const response = await fetchBookingOptions();
       const eventTypes = Object.keys(response.catalog.eventTypes);
-      const nextEventType = eventTypes[0] ?? 'birthday';
+      const nextEventType = response.catalog.eventTypes[preferences.defaultEventType]
+        ? preferences.defaultEventType
+        : eventTypes[0] ?? 'birthday';
       const supportedBranches = Object.values(response.catalog.branches).filter((branch) => branch.supports[nextEventType]);
       const nextBranch = supportedBranches[0]?.code ?? Object.keys(response.catalog.branches)[0] ?? '';
       const nextPackages = response.catalog.packages[nextEventType] ?? [];
@@ -135,7 +160,7 @@ export default function BookingScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [preferences.defaultEventType]);
 
   useEffect(() => {
     let active = true;
@@ -149,7 +174,9 @@ export default function BookingScreen() {
       }
 
       const eventTypes = Object.keys(cachedPayload.data.catalog.eventTypes);
-      const nextEventType = eventTypes[0] ?? 'birthday';
+      const nextEventType = cachedPayload.data.catalog.eventTypes[preferences.defaultEventType]
+        ? preferences.defaultEventType
+        : eventTypes[0] ?? 'birthday';
       const supportedCachedBranches = Object.values(cachedPayload.data.catalog.branches).filter((branch) => branch.supports[nextEventType]);
       const nextBranch = supportedCachedBranches[0]?.code ?? Object.keys(cachedPayload.data.catalog.branches)[0] ?? '';
       const nextPackages = cachedPayload.data.catalog.packages[nextEventType] ?? [];
@@ -177,7 +204,7 @@ export default function BookingScreen() {
     return () => {
       active = false;
     };
-  }, [loadBookingOptions]);
+  }, [loadBookingOptions, preferences.defaultEventType]);
 
   const supportedBranches = useMemo(() => {
     if (!payload) {
@@ -296,6 +323,9 @@ export default function BookingScreen() {
   const selectedPackage = packages.find((item) => item.code === packageCode);
   const selectedBundles = (payload?.catalog.menuBundles ?? []).filter((bundle) => menuBundles.includes(bundle.code));
   const selectedAddOns = (payload?.catalog.addOns ?? []).filter((item) => addOns.includes(item.code));
+  const themeOptions = (payload?.catalog.addOns ?? []).filter((item) => item.kind === 'theme');
+  const serviceOptions = (payload?.catalog.addOns ?? []).filter((item) => item.kind !== 'theme');
+  const selectedThemeCode = themeOptions.find((item) => addOns.includes(item.code))?.code ?? '';
   const selectedManualItems = manualSelections
     .map((selection) => {
       const option = manualOptionIndex[selection.option_code];
@@ -402,6 +432,11 @@ export default function BookingScreen() {
     setList(list.includes(code) ? list.filter((item) => item !== code) : [...list, code]);
   }
 
+  function selectTheme(code: string) {
+    const themeCodes = new Set(themeOptions.map((item) => item.code));
+    setAddOns((current) => [...current.filter((item) => !themeCodes.has(item)), ...(code ? [code] : [])]);
+  }
+
   function updateManualSelection(optionCode: string, direction: 'increment' | 'decrement') {
     setManualSelections((current) => {
       const existing = current.find((item) => item.option_code === optionCode);
@@ -439,11 +474,77 @@ export default function BookingScreen() {
     }
 
     const asset = result.assets[0];
+
+    if (asset.fileSize && asset.fileSize > 4 * 1024 * 1024) {
+      Alert.alert('Image is too large', 'Choose a payment proof image that is 4 MB or smaller.');
+      return;
+    }
+
     setPaymentProof({
       uri: asset.uri,
       name: asset.fileName ?? `payment-proof-${Date.now()}.jpg`,
       type: asset.mimeType ?? 'image/jpeg',
+      size: asset.fileSize,
     });
+  }
+
+  function validationMessageForStep(step: number) {
+    if (step === 1 && !payload?.catalog.eventTypes[eventType]) {
+      return 'Choose an event type before continuing.';
+    }
+
+    if (step === 2) {
+      if (!selectedBranch) return 'Choose a branch that supports this event type.';
+      if (!roomChoices.some((item) => item.code === roomChoice)) return 'Choose a room for the event.';
+      if (!selectedDateAvailability || selectedDateAvailability.status === 'full') return 'Choose an available reservation date.';
+      if (!startSlots.some((slot) => slot.time === eventTime)) return 'Choose an available start time.';
+    }
+
+    if (step === 3) {
+      const guestCount = Number(guests);
+      if (!Number.isInteger(guestCount) || guestCount < 2 || guestCount > (selectedBranch?.max_guests ?? 60)) {
+        return `Guest count must be between 2 and ${selectedBranch?.max_guests ?? 60}.`;
+      }
+      if (!selectedPackage) return 'Choose a package before continuing.';
+    }
+
+    if (step === 4 && manualSelections.some((item) => !item.option_code || item.quantity < 1)) {
+      return 'Check the quantities in your food and drinks selection.';
+    }
+
+    if (step === 6 && notes.length > 1000) return 'Special notes must be 1,000 characters or fewer.';
+
+    if (step === 7) {
+      if (!paymentProof) return 'Upload an image of your payment proof before confirming.';
+      if (!paymentProof.type.startsWith('image/')) return 'Payment proof must be an image file.';
+      if ((paymentProof.size ?? 0) > 4 * 1024 * 1024) return 'Payment proof must be 4 MB or smaller.';
+    }
+
+    return '';
+  }
+
+  function continueWizard() {
+    const message = validationMessageForStep(currentStep);
+    if (message) {
+      setStepError(message);
+      return;
+    }
+
+    const nextStep = Math.min(currentStep + 1, wizardSteps.length);
+    setCurrentStep(nextStep);
+    setHighestStepVisited((current) => Math.max(current, nextStep));
+    setStepError('');
+  }
+
+  function previousStep() {
+    setCurrentStep((step) => Math.max(1, step - 1));
+    setStepError('');
+  }
+
+  function goToStep(step: number) {
+    if (step > highestStepVisited) return;
+    setCurrentStep(step);
+    setStepError('');
   }
 
   async function submitReservation() {
@@ -526,7 +627,7 @@ export default function BookingScreen() {
 
   return (
     <CustomerPage
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void loadBookingOptions(true)} tintColor={palette.brandRed} />}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void loadBookingOptions(true)} tintColor={colors.brandText} />}
       contentContainerStyle={styles.pageContent}>
       <CustomerHeader
         title="Book Event"
@@ -549,15 +650,68 @@ export default function BookingScreen() {
 
         {payload ? (
           <>
+            <CustomerCard tone="cream" style={styles.launcherCard}>
+              <SectionEyebrow>Guided booking</SectionEyebrow>
+              <SectionTitle>Plan your event one step at a time.</SectionTitle>
+              <Text style={styles.helperText}>Your choices stay saved while you move through seven short steps.</Text>
+              <CustomerButton
+                label={highestStepVisited > 1 ? `Continue at step ${currentStep}` : 'Start booking'}
+                onPress={() => setIsWizardOpen(true)}
+                icon="calendar-edit"
+              />
+            </CustomerCard>
+
+            <Modal visible={isWizardOpen} animationType="slide" onRequestClose={() => !submitting && setIsWizardOpen(false)}>
+              <SafeAreaView style={styles.wizardPage}>
+                <View style={styles.wizardHeader}>
+                  <View style={styles.wizardHeaderCopy}>
+                    <Text style={styles.wizardEyebrow}>Step {currentStep} of {wizardSteps.length}</Text>
+                    <Text style={styles.wizardTitle}>{wizardSteps[currentStep - 1].label}</Text>
+                    <Text style={styles.wizardHint}>{wizardSteps[currentStep - 1].hint}</Text>
+                  </View>
+                  <View style={styles.wizardHeaderActions}>
+                    <ThemeToggleButton />
+                    <HeaderIconButton icon="close" onPress={() => !submitting && setIsWizardOpen(false)} accessibilityLabel="Close booking" />
+                  </View>
+                </View>
+
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.progressRail}>
+                  {wizardSteps.map((step) => (
+                    <Pressable
+                      key={step.order}
+                      disabled={step.order > highestStepVisited}
+                      onPress={() => goToStep(step.order)}
+                      style={[styles.progressStep, currentStep === step.order ? styles.progressStepActive : null]}>
+                      <View style={[styles.progressIndex, step.order <= currentStep ? styles.progressIndexActive : null]}>
+                        <Text style={[styles.progressIndexText, step.order <= currentStep ? styles.progressIndexTextActive : null]}>{step.order}</Text>
+                      </View>
+                      <Text style={[styles.progressLabel, currentStep === step.order ? styles.progressLabelActive : null]}>{step.label}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+
+                <ScrollView contentContainerStyle={styles.wizardBody} keyboardShouldPersistTaps="handled">
+                  {stepError ? (
+                    <View style={styles.stepError}>
+                      <Text style={styles.stepErrorTitle}>Check this step</Text>
+                      <Text style={styles.stepErrorText}>{stepError}</Text>
+                    </View>
+                  ) : null}
+
+                  {currentStep === 1 ? (
             <CustomerCard tone="cream">
-              <SectionEyebrow>Choose a celebration</SectionEyebrow>
+              <SectionEyebrow>1. Event type</SectionEyebrow>
+              <SectionTitle>Choose the kind of reservation.</SectionTitle>
               <View style={styles.chipRow}>
                 {Object.entries(payload.catalog.eventTypes).map(([code, item]) => (
                   <CustomerChip key={code} label={item.label} active={eventType === code} onPress={() => setEventType(code)} />
                 ))}
               </View>
             </CustomerCard>
+                  ) : null}
 
+                  {currentStep === 2 ? (
+                    <View style={styles.stepStack}>
             <CustomerCard>
               <SectionEyebrow>Choose a branch</SectionEyebrow>
               <SectionTitle>Book and manage events</SectionTitle>
@@ -624,7 +778,7 @@ export default function BookingScreen() {
                   tone="ghost"
                   compact
                 />
-                <Text style={styles.monthLabel}>{calendarMonth ? formatMonthLabel(calendarMonth) : 'Choose a month'}</Text>
+                <Text style={styles.monthLabel}>{calendarMonth ? formatMonthLabel(calendarMonth, preferences.language) : 'Choose a month'}</Text>
                 <CustomerButton
                   label=">"
                   onPress={() => {
@@ -681,12 +835,12 @@ export default function BookingScreen() {
               <View style={styles.timeCardRow}>
                 <CustomerCard tone="cream" style={styles.timeCard}>
                   <Text style={styles.timeCardLabel}>Start Time</Text>
-                  <Text style={styles.timeCardValue}>{formatTimeLabel(eventTime)}</Text>
-                  <Text style={styles.timeCardMeta}>{formatLongDate(eventDate)}</Text>
+                  <Text style={styles.timeCardValue}>{formatTimeLabel(eventTime, preferences.timeFormat)}</Text>
+                  <Text style={styles.timeCardMeta}>{formatLongDate(eventDate, preferences.dateFormat, preferences.language)}</Text>
                 </CustomerCard>
                 <CustomerCard tone="cream" style={styles.timeCard}>
                   <Text style={styles.timeCardLabel}>Due Time</Text>
-                  <Text style={styles.timeCardValue}>{formatTimeLabel(addHoursToTime(eventTime, durationHours))}</Text>
+                  <Text style={styles.timeCardValue}>{formatTimeLabel(addHoursToTime(eventTime, durationHours), preferences.timeFormat)}</Text>
                   <Text style={styles.timeCardMeta}>{durationHours} hour span</Text>
                 </CustomerCard>
               </View>
@@ -705,9 +859,6 @@ export default function BookingScreen() {
                 ))}
               </View>
 
-              <Text style={styles.inputLabel}>Guests</Text>
-              <CustomerField label="Expected guests" value={guests} onChangeText={setGuests} placeholder="10" keyboardType="numeric" />
-
               <Text style={styles.inputLabel}>Room choice</Text>
               <View style={styles.chipRow}>
                 {payload.roomChoices.map((choice) => (
@@ -715,9 +866,15 @@ export default function BookingScreen() {
                 ))}
               </View>
             </CustomerCard>
+                    </View>
+                  ) : null}
 
+                  {currentStep === 3 ? (
+                    <View style={styles.stepStack}>
             <CustomerCard>
-              <SectionEyebrow>Featured packages</SectionEyebrow>
+              <SectionEyebrow>3. Package plan</SectionEyebrow>
+              <SectionTitle>Pick the core package.</SectionTitle>
+              <CustomerField label="Expected guests" value={guests} onChangeText={setGuests} placeholder="10" keyboardType="numeric" />
               <View style={styles.packageGrid}>
                 {packages.map((item) => (
                   <Pressable
@@ -741,7 +898,7 @@ export default function BookingScreen() {
             </CustomerCard>
 
             <CustomerCard tone="cream">
-              <SectionEyebrow>Extras</SectionEyebrow>
+              <SectionEyebrow>Bundle plan</SectionEyebrow>
               <Text style={styles.inputLabel}>Bundle upgrades</Text>
               <View style={styles.chipRow}>
                 {payload.catalog.menuBundles.map((bundle) => (
@@ -754,22 +911,14 @@ export default function BookingScreen() {
                 ))}
               </View>
 
-              <Text style={styles.inputLabel}>Service add-ons</Text>
-              <View style={styles.chipRow}>
-                {payload.catalog.addOns.map((item) => (
-                  <CustomerChip
-                    key={item.code}
-                    label={`${item.name} - ${formatCurrency(item.price)}`}
-                    active={addOns.includes(item.code)}
-                    onPress={() => toggleCode(addOns, setAddOns, item.code)}
-                    tone="green"
-                  />
-                ))}
-              </View>
             </CustomerCard>
+                    </View>
+                  ) : null}
 
+                  {currentStep === 4 ? (
             <CustomerCard>
-              <SectionEyebrow>Manual food and drinks</SectionEyebrow>
+              <SectionEyebrow>4. Manual food and drinks</SectionEyebrow>
+              <SectionTitle>Add exact menu items.</SectionTitle>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
                 {payload.catalog.menuCategories.map((category) => (
                   <CustomerChip
@@ -810,7 +959,71 @@ export default function BookingScreen() {
                 ))}
               </ScrollView>
             </CustomerCard>
+                  ) : null}
 
+                  {currentStep === 5 ? (
+                    <View style={styles.stepStack}>
+                      <CustomerCard>
+                        <SectionEyebrow>5. Theme & extras</SectionEyebrow>
+                        <SectionTitle>Choose the look of your event.</SectionTitle>
+                        <Text style={styles.helperText}>Choose one decoration theme, or continue without one.</Text>
+                        <Pressable onPress={() => selectTheme('')} style={[styles.themeNone, selectedThemeCode === '' ? styles.selectionCardActive : null]}>
+                          <Text style={styles.selectionTitle}>No decoration package</Text>
+                          <CustomerChip label={selectedThemeCode === '' ? 'Selected' : 'Select'} active={selectedThemeCode === ''} />
+                        </Pressable>
+                        <View style={styles.themeGrid}>
+                          {themeOptions.map((theme) => {
+                            const imageUrl = resolveApiUrl(theme.image_url);
+                            return (
+                              <Pressable key={theme.code} onPress={() => selectTheme(theme.code)} style={[styles.themeCard, selectedThemeCode === theme.code ? styles.themeCardActive : null]}>
+                                {imageUrl ? <Image source={{ uri: imageUrl }} style={styles.themeImage} resizeMode="cover" /> : null}
+                                <View style={styles.themeCopy}>
+                                  <Text style={styles.themeTitle}>{theme.name}</Text>
+                                  <Text style={styles.themePrice}>{formatCurrency(theme.price)}</Text>
+                                  <Text style={styles.helperText}>{theme.description}</Text>
+                                  <CustomerChip label={selectedThemeCode === theme.code ? 'Selected' : 'Select'} active={selectedThemeCode === theme.code} />
+                                </View>
+                              </Pressable>
+                            );
+                          })}
+                        </View>
+                      </CustomerCard>
+
+                      <CustomerCard tone="cream">
+                        <SectionEyebrow>Add-on services</SectionEyebrow>
+                        <SectionTitle>Add more fun to the celebration.</SectionTitle>
+                        <Text style={styles.helperText}>Choose any party service or McDonald&apos;s character appearance.</Text>
+                        <View style={styles.serviceStack}>
+                          {serviceOptions.map((item) => (
+                            <Pressable key={item.code} onPress={() => toggleCode(addOns, setAddOns, item.code)} style={[styles.serviceCard, addOns.includes(item.code) ? styles.selectionCardActive : null]}>
+                              <View style={styles.selectionCopy}>
+                                {item.badge ? <Text style={styles.serviceBadge}>{item.badge}</Text> : null}
+                                <Text style={styles.selectionTitle}>{item.name}</Text>
+                                <Text style={styles.helperText}>{item.description}</Text>
+                              </View>
+                              <View style={styles.servicePriceWrap}>
+                                <Text style={styles.themePrice}>{formatCurrency(item.price)}</Text>
+                                <CustomerChip label={addOns.includes(item.code) ? 'Added' : 'Add'} active={addOns.includes(item.code)} tone="green" />
+                              </View>
+                            </Pressable>
+                          ))}
+                        </View>
+                      </CustomerCard>
+                    </View>
+                  ) : null}
+
+                  {currentStep === 6 ? (
+                    <CustomerCard>
+                      <SectionEyebrow>6. Notes</SectionEyebrow>
+                      <SectionTitle>Share requests with the branch.</SectionTitle>
+                      <Text style={styles.helperText}>Add setup details, allergies, accessibility needs, or other requests.</Text>
+                      <CustomerField label="Special notes" value={notes} onChangeText={setNotes} placeholder="Optional notes for the event team" multiline />
+                      <Text style={styles.noteCount}>{notes.length}/1000</Text>
+                    </CustomerCard>
+                  ) : null}
+
+                  {currentStep === 7 ? (
+                    <View style={styles.stepStack}>
             <CustomerCard>
               <SectionEyebrow>Booking receipt</SectionEyebrow>
               <View style={styles.summaryRow}>
@@ -828,8 +1041,8 @@ export default function BookingScreen() {
               <View style={styles.summaryRow}>
                 <Text style={styles.summaryLabel}>Event time:</Text>
                 <Text style={styles.summaryValue}>
-                  {formatLongDate(eventDate)}{'\n'}
-                  {formatTimeLabel(eventTime)} - {formatTimeLabel(addHoursToTime(eventTime, durationHours))}
+                  {formatLongDate(eventDate, preferences.dateFormat, preferences.language)}{'\n'}
+                  {formatTimeLabel(eventTime, preferences.timeFormat)} - {formatTimeLabel(addHoursToTime(eventTime, durationHours), preferences.timeFormat)}
                 </Text>
               </View>
               <View style={styles.summaryRow}>
@@ -865,22 +1078,41 @@ export default function BookingScreen() {
             </CustomerCard>
 
             <CustomerCard>
-              <SectionEyebrow>Payment and notes</SectionEyebrow>
-              <Text style={styles.helperText}>Upload proof of payment so your admin can confirm this reservation from the same database-backed dashboard.</Text>
+              <SectionEyebrow>7. Payment</SectionEyebrow>
+              <SectionTitle>Upload proof and confirm.</SectionTitle>
+              <Text style={styles.helperText}>Choose a JPG, PNG, or another image format up to 4 MB.</Text>
               <CustomerButton
                 label={paymentProof ? 'Replace payment proof' : 'Choose payment proof'}
                 onPress={() => void selectPaymentProof()}
                 tone="secondary"
+                icon="image-plus"
               />
-              {paymentProof ? <Image source={{ uri: paymentProof.uri }} style={styles.previewImage} /> : null}
-              <CustomerField label="Notes" value={notes} onChangeText={setNotes} placeholder="Theme, setup notes, or special requests" multiline />
-              <CustomerButton
-                label={user ? 'Confirm Reservation' : 'Sign in to confirm'}
-                onPress={() => void submitReservation()}
-                loading={submitting}
-              />
+              {paymentProof ? (
+                <View style={styles.proofPreview}>
+                  <Image source={{ uri: paymentProof.uri }} style={styles.previewImage} />
+                  <Text style={styles.proofName}>{paymentProof.name}</Text>
+                </View>
+              ) : null}
               {!user ? <CustomerButton label="Create customer account" onPress={() => router.push('/register')} tone="ghost" /> : null}
             </CustomerCard>
+                    </View>
+                  ) : null}
+                </ScrollView>
+
+                <View style={styles.wizardFooter}>
+                  <CustomerButton label="Back" onPress={previousStep} tone="ghost" disabled={currentStep === 1 || submitting} compact />
+                  <View style={styles.footerCopy}>
+                    <Text style={styles.footerLabel}>{wizardSteps[currentStep - 1].label}</Text>
+                    <Text style={styles.footerValue}>{currentStep === 7 ? formatCurrency(pricingPreview.total) : `${currentStep} / ${wizardSteps.length}`}</Text>
+                  </View>
+                  {currentStep < wizardSteps.length ? (
+                    <CustomerButton label="Continue" onPress={continueWizard} compact />
+                  ) : (
+                    <CustomerButton label={user ? 'Confirm' : 'Sign in'} onPress={() => void submitReservation()} loading={submitting} compact />
+                  )}
+                </View>
+              </SafeAreaView>
+            </Modal>
           </>
         ) : null}
       </SheetSurface>
@@ -888,12 +1120,263 @@ export default function BookingScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: AppThemeColors) => StyleSheet.create({
   pageContent: {
     gap: 0,
   },
+  launcherCard: {
+    minHeight: 220,
+    justifyContent: 'center',
+  },
+  wizardPage: {
+    flex: 1,
+    backgroundColor: colors.canvas,
+  },
+  wizardHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 14,
+    paddingHorizontal: 18,
+    paddingTop: 12,
+    paddingBottom: 10,
+    backgroundColor: palette.brandYellow,
+  },
+  wizardHeaderCopy: {
+    flex: 1,
+    gap: 3,
+  },
+  wizardHeaderActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  wizardEyebrow: {
+    color: '#7C5100',
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  wizardTitle: {
+    color: palette.ink,
+    fontSize: 28,
+    lineHeight: 32,
+    fontWeight: '900',
+  },
+  wizardHint: {
+    color: '#674E21',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  progressRail: {
+    minHeight: 74,
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: colors.cardYellow,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  progressStep: {
+    width: 82,
+    minHeight: 50,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 6,
+    borderRadius: 8,
+  },
+  progressStepActive: {
+    backgroundColor: colors.surface,
+  },
+  progressIndex: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceMuted,
+  },
+  progressIndexActive: {
+    backgroundColor: palette.brandRed,
+  },
+  progressIndexText: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  progressIndexTextActive: {
+    color: '#FFFFFF',
+  },
+  progressLabel: {
+    flex: 1,
+    color: colors.textMuted,
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  progressLabelActive: {
+    color: colors.text,
+  },
+  wizardBody: {
+    padding: 14,
+    paddingBottom: 28,
+    gap: 14,
+  },
+  stepStack: {
+    gap: 14,
+  },
+  stepError: {
+    borderLeftWidth: 4,
+    borderLeftColor: palette.brandRed,
+    borderRadius: 8,
+    backgroundColor: colors.dangerSurface,
+    padding: 12,
+    gap: 3,
+  },
+  stepErrorTitle: {
+    color: colors.brandText,
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  stepErrorText: {
+    color: colors.textMuted,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  selectionStack: {
+    gap: 10,
+  },
+  selectionCard: {
+    minHeight: 92,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 8,
+    padding: 14,
+    backgroundColor: colors.surface,
+  },
+  selectionCardActive: {
+    borderColor: palette.brandRed,
+    backgroundColor: colors.dangerSurface,
+  },
+  selectionCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  selectionTitle: {
+    color: colors.text,
+    fontSize: 17,
+    fontWeight: '900',
+  },
+  themeNone: {
+    minHeight: 64,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 8,
+    padding: 14,
+    backgroundColor: colors.surface,
+  },
+  themeGrid: {
+    gap: 12,
+  },
+  themeCard: {
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: 'transparent',
+    borderRadius: 8,
+    backgroundColor: colors.surface,
+  },
+  themeCardActive: {
+    borderColor: palette.brandRed,
+  },
+  themeImage: {
+    width: '100%',
+    height: 180,
+    backgroundColor: colors.surfaceMuted,
+  },
+  themeCopy: {
+    padding: 14,
+    gap: 7,
+  },
+  themeTitle: {
+    color: colors.text,
+    fontSize: 19,
+    fontWeight: '900',
+  },
+  themePrice: {
+    color: colors.brandText,
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  serviceStack: {
+    gap: 10,
+  },
+  serviceCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 8,
+    padding: 13,
+    backgroundColor: colors.surface,
+  },
+  servicePriceWrap: {
+    alignItems: 'flex-end',
+    gap: 7,
+  },
+  serviceBadge: {
+    alignSelf: 'flex-start',
+    color: colors.brandText,
+    fontSize: 10,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  noteCount: {
+    color: colors.textMuted,
+    fontSize: 12,
+    textAlign: 'right',
+  },
+  proofPreview: {
+    gap: 8,
+  },
+  proofName: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  wizardFooter: {
+    minHeight: 72,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
+    backgroundColor: colors.surface,
+  },
+  footerCopy: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  footerLabel: {
+    color: colors.textMuted,
+    fontSize: 10,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  footerValue: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '900',
+  },
   helperText: {
-    color: '#675446',
+    color: colors.textMuted,
     fontSize: 14,
     lineHeight: 20,
   },
@@ -908,7 +1391,7 @@ const styles = StyleSheet.create({
   branchCard: {
     width: 248,
     borderRadius: 22,
-    backgroundColor: '#FFF7EA',
+    backgroundColor: colors.surfaceAlt,
     padding: 16,
     gap: 10,
     borderWidth: 1,
@@ -916,21 +1399,21 @@ const styles = StyleSheet.create({
   },
   branchCardActive: {
     borderColor: palette.brandRed,
-    backgroundColor: '#FFF1EE',
+    backgroundColor: colors.dangerSurface,
   },
   branchCardTitle: {
-    color: palette.ink,
+    color: colors.text,
     fontSize: 18,
     fontWeight: '900',
   },
   branchCardMeta: {
-    color: '#675446',
+    color: colors.textMuted,
     fontSize: 14,
   },
   branchCardGuests: {
     alignSelf: 'flex-start',
-    color: '#8B6A07',
-    backgroundColor: '#FFF2C8',
+    color: colors.text,
+    backgroundColor: colors.warningSurface,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
@@ -951,7 +1434,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   monthLabel: {
-    color: palette.ink,
+    color: colors.text,
     fontSize: 16,
     fontWeight: '800',
   },
@@ -980,16 +1463,16 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F6F1E7',
+    backgroundColor: colors.surfaceMuted,
   },
   dayCellActive: {
-    backgroundColor: '#F5E08A',
+    backgroundColor: palette.brandYellow,
   },
   dayCellFull: {
-    backgroundColor: '#F9E5E5',
+    backgroundColor: colors.dangerSurface,
   },
   dayCellText: {
-    color: '#857567',
+    color: colors.textSubtle,
     fontWeight: '700',
   },
   dayCellTextActive: {
@@ -1011,22 +1494,22 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   timeCardLabel: {
-    color: '#7A604B',
+    color: colors.textMuted,
     fontSize: 11,
     fontWeight: '800',
     textTransform: 'uppercase',
   },
   timeCardValue: {
-    color: palette.ink,
+    color: colors.text,
     fontSize: 26,
     fontWeight: '900',
   },
   timeCardMeta: {
-    color: '#6F6359',
+    color: colors.textMuted,
     fontSize: 13,
   },
   inputLabel: {
-    color: '#5F5146',
+    color: colors.text,
     fontSize: 13,
     fontWeight: '800',
   },
@@ -1038,33 +1521,33 @@ const styles = StyleSheet.create({
   packageCard: {
     width: '47%',
     borderRadius: 22,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     padding: 14,
     gap: 8,
     borderWidth: 1,
-    borderColor: '#ECE3D6',
+    borderColor: colors.line,
   },
   packageCardWide: {
     width: '31%',
   },
   packageCardActive: {
     borderColor: palette.brandRed,
-    backgroundColor: '#FFF3EF',
+    backgroundColor: colors.dangerSurface,
   },
   packageGuestRange: {
-    color: '#8A7B6A',
+    color: colors.textSubtle,
     fontSize: 11,
     fontWeight: '700',
     textTransform: 'uppercase',
   },
   packageTitle: {
-    color: palette.ink,
+    color: colors.text,
     fontSize: 18,
     fontWeight: '900',
     lineHeight: 22,
   },
   packagePrice: {
-    color: palette.brandRed,
+    color: colors.brandText,
     fontSize: 22,
     fontWeight: '900',
   },
@@ -1073,7 +1556,7 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   packageFeature: {
-    color: '#6B5A4D',
+    color: colors.textMuted,
     fontSize: 13,
     lineHeight: 17,
   },
@@ -1084,13 +1567,13 @@ const styles = StyleSheet.create({
   menuImageMock: {
     height: 90,
     borderRadius: 14,
-    backgroundColor: '#F5E7D8',
+    backgroundColor: colors.surfaceMuted,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 10,
   },
   menuImageLabel: {
-    color: palette.ink,
+    color: colors.text,
     fontWeight: '900',
     textAlign: 'center',
   },
@@ -1098,12 +1581,12 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   menuPrice: {
-    color: palette.brandRed,
+    color: colors.brandText,
     fontSize: 13,
     fontWeight: '800',
   },
   menuOptionLabel: {
-    color: palette.ink,
+    color: colors.text,
     fontWeight: '700',
     fontSize: 13,
   },
@@ -1127,7 +1610,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   stepperValue: {
-    color: palette.ink,
+    color: colors.text,
     fontWeight: '900',
     minWidth: 12,
     textAlign: 'center',
@@ -1139,13 +1622,13 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   summaryLabel: {
-    color: '#6B5A4D',
+    color: colors.textMuted,
     fontWeight: '700',
     width: 84,
   },
   summaryValue: {
     flex: 1,
-    color: palette.ink,
+    color: colors.text,
     fontWeight: '700',
     textAlign: 'right',
     lineHeight: 19,
@@ -1156,26 +1639,26 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   receiptLabel: {
-    color: '#6B5A4D',
+    color: colors.textMuted,
     flex: 1,
     lineHeight: 19,
   },
   receiptValue: {
-    color: palette.ink,
+    color: colors.text,
     fontWeight: '700',
   },
   receiptRowStrong: {
     paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: '#E4DBCF',
+    borderTopColor: colors.line,
   },
   receiptStrongLabel: {
-    color: palette.ink,
+    color: colors.text,
     fontSize: 16,
     fontWeight: '900',
   },
   receiptStrongValue: {
-    color: palette.brandRed,
+    color: colors.brandText,
     fontSize: 16,
     fontWeight: '900',
   },

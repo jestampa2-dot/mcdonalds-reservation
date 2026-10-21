@@ -60,6 +60,13 @@ const filteredUsers = computed(() => {
   )
 })
 
+const initials = (name) => String(name ?? 'User')
+  .split(' ')
+  .filter(Boolean)
+  .slice(0, 2)
+  .map((part) => part[0]?.toUpperCase())
+  .join('')
+
 const deleteModalOpen = computed(() => Boolean(accountPendingDeletion.value))
 
 const createAccount = () => {
@@ -179,6 +186,21 @@ const deleteAccount = () => {
           >
             <div class="grid gap-4 xl:grid-cols-[1.15fr,0.9fr,auto] xl:items-start">
               <div class="grid gap-3">
+                <div class="flex items-center gap-3">
+                  <div class="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-red-700 text-sm font-black text-white">
+                    <img
+                      v-if="user.profile_photo_url"
+                      :src="user.profile_photo_url"
+                      :alt="`${user.name} profile photo`"
+                      class="h-full w-full object-cover"
+                    />
+                    <span v-else>{{ initials(user.name) }}</span>
+                  </div>
+                  <div>
+                    <p class="text-sm font-black uppercase tracking-[0.12em] text-red-700">Profile</p>
+                    <p class="text-sm text-slate-500">Photo is managed from the user's account page.</p>
+                  </div>
+                </div>
                 <div class="mcd-grid mcd-grid--2">
                   <input
                     v-model="accountEdits[user.id].name"

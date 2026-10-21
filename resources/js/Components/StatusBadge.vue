@@ -15,7 +15,7 @@ const className = computed(() => ({
   'mcd-badge--danger': props.value === 'cancelled',
 }))
 
-const label = computed(() => props.value.replaceAll('_', ' '))
+const label = computed(() => props.value === 'in_progress' ? 'ongoing' : props.value.replaceAll('_', ' '))
 </script>
 
 <template>

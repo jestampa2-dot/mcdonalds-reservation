@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Linking, RefreshControl, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import {
@@ -13,11 +13,11 @@ import {
   SectionEyebrow,
   SectionTitle,
 } from '@/components/customer-ui';
-import { palette } from '@/constants/palette';
 import { ApiError, fetchHome } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { readCacheEnvelope, writeCache } from '@/lib/cache';
 import { formatCurrency } from '@/lib/formatters';
+import { AppThemeColors, useAppTheme } from '@/lib/theme';
 import type { HomePayload } from '@/lib/types';
 
 const homeCacheKey = 'mobile-cache:home';
@@ -35,10 +35,13 @@ function ShowcaseTile({
   detail: string;
   tone: 'cream' | 'yellow' | 'pink' | 'green';
 }) {
+  const { colors } = useAppTheme();
+  const styles = useHomeStyles();
+
   return (
     <CustomerCard tone={tone} style={styles.showcaseTile}>
       <View style={styles.showcaseIcon}>
-        <MaterialCommunityIcons name={icon} size={22} color={palette.ink} />
+        <MaterialCommunityIcons name={icon} size={22} color={colors.text} />
       </View>
       <Text style={styles.showcaseTitle}>{title}</Text>
       <Text style={styles.showcaseDetail}>{detail}</Text>
@@ -47,6 +50,8 @@ function ShowcaseTile({
 }
 
 export default function HomeScreen() {
+  const { colors } = useAppTheme();
+  const styles = useHomeStyles();
   const { user, signOut } = useAuth();
   const [payload, setPayload] = useState<HomePayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -113,7 +118,7 @@ export default function HomeScreen() {
 
   return (
     <CustomerPage
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void loadHome(true)} tintColor={palette.brandRed} />}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void loadHome(true)} tintColor={colors.brandText} />}
       contentContainerStyle={styles.pageContent}>
       <CustomerHeader
         title={firstName ? `Welcome, ${firstName}!` : 'Welcome!'}
@@ -249,13 +254,18 @@ export default function HomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+function useHomeStyles() {
+  const { colors } = useAppTheme();
+  return useMemo(() => createStyles(colors), [colors]);
+}
+
+const createStyles = (colors: AppThemeColors) => StyleSheet.create({
   pageContent: {
     paddingHorizontal: 18,
     gap: 16,
   },
   helperText: {
-    color: '#5C4A3A',
+    color: colors.textMuted,
     lineHeight: 20,
     fontSize: 14,
   },
@@ -273,17 +283,17 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.65)',
+    backgroundColor: colors.iconSurface,
     alignItems: 'center',
     justifyContent: 'center',
   },
   showcaseTitle: {
-    color: palette.ink,
+    color: colors.text,
     fontSize: 18,
     fontWeight: '900',
   },
   showcaseDetail: {
-    color: '#5C4A3A',
+    color: colors.textMuted,
     lineHeight: 18,
     fontSize: 13,
   },
@@ -291,13 +301,13 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   heroTitle: {
-    color: palette.ink,
+    color: colors.text,
     fontSize: 30,
     fontWeight: '900',
     lineHeight: 34,
   },
   heroSubtitle: {
-    color: '#5C4A3A',
+    color: colors.textMuted,
     lineHeight: 21,
     fontSize: 15,
   },
@@ -315,12 +325,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   statLabel: {
-    color: '#7A604B',
+    color: colors.textMuted,
     fontSize: 12,
     fontWeight: '700',
   },
   statValue: {
-    color: palette.ink,
+    color: colors.text,
     fontSize: 28,
     fontWeight: '900',
   },
@@ -330,13 +340,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   branchMeta: {
-    color: '#6C6258',
+    color: colors.textMuted,
     fontSize: 15,
   },
   branchGuests: {
     alignSelf: 'flex-start',
-    color: '#8B6A07',
-    backgroundColor: '#FFF2C8',
+    color: colors.text,
+    backgroundColor: colors.warningSurface,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
@@ -361,7 +371,7 @@ const styles = StyleSheet.create({
   },
   eventCard: {
     borderRadius: 18,
-    backgroundColor: '#FFF7E7',
+    backgroundColor: colors.surfaceAlt,
     padding: 14,
     gap: 6,
   },
@@ -369,12 +379,12 @@ const styles = StyleSheet.create({
     fontSize: 18,
   },
   eventLabel: {
-    color: palette.ink,
+    color: colors.text,
     fontSize: 17,
     fontWeight: '900',
   },
   eventDescription: {
-    color: '#6C6258',
+    color: colors.textMuted,
     lineHeight: 19,
     fontSize: 13,
   },
@@ -392,19 +402,19 @@ const styles = StyleSheet.create({
     width: '31%',
   },
   packageRange: {
-    color: '#8B7C6D',
+    color: colors.textSubtle,
     fontSize: 11,
     fontWeight: '700',
     textTransform: 'uppercase',
   },
   packageName: {
-    color: palette.ink,
+    color: colors.text,
     fontSize: 22,
     fontWeight: '900',
     lineHeight: 26,
   },
   packagePrice: {
-    color: palette.brandRed,
+    color: colors.brandText,
     fontSize: 22,
     fontWeight: '900',
   },
@@ -413,7 +423,7 @@ const styles = StyleSheet.create({
     minHeight: 58,
   },
   featureItem: {
-    color: '#6C6258',
+    color: colors.textMuted,
     fontSize: 13,
     lineHeight: 17,
   },

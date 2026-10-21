@@ -5,10 +5,12 @@ import { createApp, h } from 'vue';
 import { createInertiaApp } from '@inertiajs/vue3';
 import { ZiggyVue } from '../../vendor/tightenco/ziggy/dist/vue.m';
 import { installFastNavigation } from './lib/fastNavigation';
+import { initializeTheme } from './composables/useTheme';
 
 const appName = window.document.getElementsByTagName('title')[0]?.innerText || 'Laravel';
-const pages = import.meta.glob('./pages/**/*.vue', { eager: true });
+const pages = import.meta.glob('./pages/**/*.vue');
 
+initializeTheme();
 installFastNavigation();
 
 createInertiaApp({
@@ -20,7 +22,7 @@ createInertiaApp({
             throw new Error(`Unknown Inertia page: ${name}`);
         }
 
-        return page.default;
+        return page();
     },
     setup({ el, App, props, plugin }) {
         return createApp({ render: () => h(App, props) })

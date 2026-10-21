@@ -188,6 +188,35 @@ export function getApiBaseUrl() {
   return apiBaseUrl;
 }
 
+export function resolveApiUrl(value?: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(value, `${apiBaseUrl}/`);
+    const configured = new URL(apiBaseUrl);
+
+    if (['localhost', '127.0.0.1', '0.0.0.0'].includes(parsed.hostname)) {
+      parsed.protocol = configured.protocol;
+      parsed.hostname = configured.hostname;
+      parsed.port = configured.port;
+    }
+
+    return parsed.toString();
+  } catch {
+    return `${apiBaseUrl}/${value.replace(/^\//, '')}`;
+  }
+}
+
+export function getReservationPaymentProofUrl(reservationId: number) {
+  return `${apiBaseUrl}/api/mobile/reservations/${reservationId}/payment-proof`;
+}
+
+export function getReservationPassUrl(reservationId: number) {
+  return `${apiBaseUrl}/api/mobile/reservations/${reservationId}/pass`;
+}
+
 export function fetchHome() {
   return requestJson<HomePayload>('/api/mobile/home');
 }
@@ -263,11 +292,14 @@ export function rescheduleReservation(token: string, reservationId: number, payl
   });
 }
 
-export function updateProfile(token: string, payload: Record<string, string>) {
+export function updateProfile(token: string, payload: Record<string, string | boolean> | FormData) {
+  const isFormData = payload instanceof FormData;
+
   return requestJson<{ message: string; profile: ProfilePayload }>('/api/mobile/profile', {
-    method: 'PUT',
+    method: isFormData ? 'POST' : 'PUT',
     token,
-    body: JSON.stringify(payload),
+    body: isFormData ? payload : JSON.stringify(payload),
+    timeoutMs: isFormData ? 20000 : undefined,
   });
 }
 

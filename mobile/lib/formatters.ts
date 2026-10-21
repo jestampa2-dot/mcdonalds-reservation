@@ -5,30 +5,48 @@ export function formatCurrency(value: number) {
   }).format(value);
 }
 
-export function formatCompactDate(date: string) {
-  return new Date(`${date}T12:00:00`).toLocaleDateString('en-PH', {
+type DateFormat = 'mdy' | 'dmy' | 'ymd';
+type TimeFormat = '12-hour' | '24-hour';
+type AppLanguage = 'en' | 'fil';
+
+function localeFor(language: AppLanguage) {
+  return language === 'fil' ? 'fil-PH' : 'en-PH';
+}
+
+export function formatCompactDate(date: string, language: AppLanguage = 'en') {
+  return new Date(`${date}T12:00:00`).toLocaleDateString(localeFor(language), {
     month: 'short',
     day: 'numeric',
   });
 }
 
-export function formatLongDate(date: string) {
-  return new Date(`${date}T12:00:00`).toLocaleDateString('en-PH', {
+export function formatLongDate(date: string, dateFormat: DateFormat = 'mdy', language: AppLanguage = 'en') {
+  if (dateFormat === 'ymd') {
+    return date.slice(0, 10);
+  }
+
+  const dateValue = new Date(`${date}T12:00:00`);
+  const month = dateValue.toLocaleDateString(localeFor(language), { month: 'long' });
+  const day = dateValue.getDate();
+  const year = dateValue.getFullYear();
+
+  return dateFormat === 'dmy' ? `${day} ${month} ${year}` : `${month} ${day}, ${year}`;
+}
+
+export function formatMonthLabel(month: string, language: AppLanguage = 'en') {
+  return new Date(`${month}-01T12:00:00`).toLocaleDateString(localeFor(language), {
     month: 'long',
-    day: 'numeric',
     year: 'numeric',
   });
 }
 
-export function formatMonthLabel(month: string) {
-  return new Date(`${month}-01T12:00:00`).toLocaleDateString('en-PH', {
-    month: 'long',
-    year: 'numeric',
-  });
-}
-
-export function formatTimeLabel(time: string) {
+export function formatTimeLabel(time: string, timeFormat: TimeFormat = '12-hour') {
   const [hours, minutes] = time.split(':').map(Number);
+
+  if (timeFormat === '24-hour') {
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  }
+
   const meridian = hours >= 12 ? 'PM' : 'AM';
   const hour12 = hours % 12 || 12;
 

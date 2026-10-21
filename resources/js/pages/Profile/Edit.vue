@@ -24,6 +24,15 @@ const accountStatus = computed(() => (
     props.profile?.email_verified_at ? 'Verified' : 'Verification pending'
 ));
 
+const profileInitials = computed(() => (
+    String(props.profile?.name ?? 'User')
+        .split(' ')
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) => part[0]?.toUpperCase())
+        .join('')
+));
+
 const locationLabel = computed(() => {
     const location = [props.profile?.city, props.profile?.province].filter(Boolean).join(', ');
 
@@ -38,10 +47,21 @@ const locationLabel = computed(() => {
         <section class="mcd-section">
             <div class="mcd-panel overflow-hidden">
                 <div class="grid gap-6 bg-gradient-to-br from-red-800 via-red-700 to-orange-500 p-8 text-white lg:grid-cols-[1.15fr,0.85fr]">
-                    <div class="space-y-4">
-                        <p class="mcd-chip bg-white/15 text-white">My Account</p>
-                        <h1 class="max-w-2xl text-4xl md:text-5xl">{{ profile.name }}</h1>
-                        <p class="text-base text-white/85">{{ profile.email }}</p>
+                    <div class="flex flex-wrap items-center gap-5">
+                        <div class="flex h-28 w-28 items-center justify-center overflow-hidden rounded-full border-4 border-white/25 bg-white/15 text-4xl font-black shadow-2xl">
+                            <img
+                                v-if="profile.profile_photo_url"
+                                :src="profile.profile_photo_url"
+                                alt="Profile photo"
+                                class="h-full w-full object-cover"
+                            />
+                            <span v-else>{{ profileInitials }}</span>
+                        </div>
+                        <div class="space-y-4">
+                            <p class="mcd-chip bg-white/15 text-white">My Account</p>
+                            <h1 class="max-w-2xl text-4xl md:text-5xl">{{ profile.name }}</h1>
+                            <p class="text-base text-white/85">{{ profile.email }}</p>
+                        </div>
                     </div>
 
                     <div class="grid gap-4 sm:grid-cols-3 lg:grid-cols-1">

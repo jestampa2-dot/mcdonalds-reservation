@@ -35,6 +35,8 @@ Route::prefix('mobile')->group(function () {
         Route::post('/logout', [MobileAuthController::class, 'logout']);
         Route::get('/dashboard', [MobileReservationController::class, 'mobileDashboard']);
         Route::post('/reservations', [MobileReservationController::class, 'mobileStore']);
+        Route::get('/reservations/{reservation}/payment-proof', [MobileReservationController::class, 'mobilePaymentProof']);
+        Route::get('/reservations/{reservation}/pass', [MobileReservationController::class, 'mobilePass']);
         Route::post('/reservations/{reservation}/cancel', [MobileReservationController::class, 'mobileCancel']);
         Route::post('/reservations/{reservation}/reschedule', [MobileReservationController::class, 'mobileReschedule']);
 
@@ -62,6 +64,7 @@ Route::prefix('mobile')->group(function () {
         Route::put('/admin/booking-settings', [MobileOperationsController::class, 'mobileUpdateBookingSettings']);
 
         Route::get('/profile', [MobileProfileController::class, 'show']);
+        Route::post('/profile', [MobileProfileController::class, 'update']);
         Route::put('/profile', [MobileProfileController::class, 'update']);
         Route::put('/profile/password', [MobileProfileController::class, 'updatePassword']);
         Route::delete('/profile', [MobileProfileController::class, 'destroy']);

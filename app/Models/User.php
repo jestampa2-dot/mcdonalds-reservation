@@ -21,12 +21,14 @@ class User extends Authenticatable
         'name',
         'email',
         'phone',
+        'sms_notifications_enabled',
         'birth_date',
         'gender',
         'address_line',
         'city',
         'province',
         'postal_code',
+        'profile_photo_path',
         'role',
         'password',
     ];
@@ -49,7 +51,13 @@ class User extends Authenticatable
     protected $casts = [
         'email_verified_at' => 'datetime',
         'birth_date' => 'date',
+        'sms_notifications_enabled' => 'boolean',
     ];
+
+    public function getProfilePhotoUrlAttribute(): ?string
+    {
+        return $this->profile_photo_path ? asset('storage/'.$this->profile_photo_path) : null;
+    }
 
     public function reservations()
     {

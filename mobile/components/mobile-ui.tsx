@@ -1,5 +1,5 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { ReactNode } from 'react';
+import { ReactNode, useMemo } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -14,6 +14,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { palette, spacing } from '@/constants/palette';
+import { ThemeToggleButton } from '@/components/customer-ui';
+import { AppThemeColors, useAppTheme } from '@/lib/theme';
 
 export function AppScreen({
   title,
@@ -30,6 +32,7 @@ export function AppScreen({
   rightSlot?: ReactNode;
   scroll?: boolean;
 }) {
+  const styles = useMobileStyles();
   const content = (
     <View style={styles.canvas}>
       <View style={styles.redBlob} />
@@ -40,7 +43,10 @@ export function AppScreen({
           <Text style={styles.heroTitle}>{title}</Text>
           <Text style={styles.heroSubtitle}>{subtitle}</Text>
         </View>
-        {rightSlot ? <View style={styles.heroAction}>{rightSlot}</View> : null}
+        <View style={styles.heroActionRow}>
+          <ThemeToggleButton />
+          {rightSlot ? <View style={styles.heroAction}>{rightSlot}</View> : null}
+        </View>
       </LinearGradient>
       {children}
     </View>
@@ -60,10 +66,12 @@ export function Panel({
   children: ReactNode;
   style?: StyleProp<ViewStyle>;
 }) {
+  const styles = useMobileStyles();
   return <View style={[styles.panel, style]}>{children}</View>;
 }
 
 export function SectionHeading({ label, title }: { label: string; title: string }) {
+  const styles = useMobileStyles();
   return (
     <View style={{ gap: 6 }}>
       <Text style={styles.sectionLabel}>{label}</Text>
@@ -85,6 +93,7 @@ export function AppButton({
   disabled?: boolean;
   loading?: boolean;
 }) {
+  const styles = useMobileStyles();
   const style =
     tone === 'secondary'
       ? styles.buttonSecondary
@@ -119,6 +128,7 @@ export function Tag({
   active?: boolean;
   onPress?: () => void;
 }) {
+  const styles = useMobileStyles();
   const inner = (
     <View style={[styles.tag, active ? styles.tagActive : null]}>
       <Text style={[styles.tagText, active ? styles.tagTextActive : null]}>{label}</Text>
@@ -149,6 +159,9 @@ export function Field({
   multiline?: boolean;
   keyboardType?: 'default' | 'email-address' | 'numeric' | 'phone-pad';
 }) {
+  const styles = useMobileStyles();
+  const { colors } = useAppTheme();
+
   return (
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
@@ -156,7 +169,7 @@ export function Field({
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor="#9B8879"
+        placeholderTextColor={colors.inputPlaceholder}
         secureTextEntry={secureTextEntry}
         multiline={multiline}
         keyboardType={keyboardType}
@@ -166,10 +179,15 @@ export function Field({
   );
 }
 
-const styles = StyleSheet.create({
+function useMobileStyles() {
+  const { colors, fontScale } = useAppTheme();
+  return useMemo(() => createStyles(colors, fontScale), [colors, fontScale]);
+}
+
+const createStyles = (colors: AppThemeColors, fontScale: number) => StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: palette.background,
+    backgroundColor: colors.background,
   },
   scrollContent: {
     paddingBottom: 32,
@@ -177,9 +195,11 @@ const styles = StyleSheet.create({
   canvas: {
     paddingHorizontal: spacing.lg,
     gap: spacing.lg,
+    backgroundColor: colors.background,
   },
   canvasFill: {
     flex: 1,
+    backgroundColor: colors.background,
   },
   redBlob: {
     position: 'absolute',
@@ -215,7 +235,7 @@ const styles = StyleSheet.create({
   },
   heroEyebrow: {
     color: '#FFD966',
-    fontSize: 12,
+    fontSize: 12 * fontScale,
     fontWeight: '800',
     letterSpacing: 1.4,
     textTransform: 'uppercase',
@@ -223,40 +243,45 @@ const styles = StyleSheet.create({
   },
   heroTitle: {
     color: palette.surfaceStrong,
-    fontSize: 30,
+    fontSize: 30 * fontScale,
     fontWeight: '900',
-    lineHeight: 34,
+    lineHeight: 34 * fontScale,
   },
   heroSubtitle: {
     color: '#FFE9DD',
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: 15 * fontScale,
+    lineHeight: 22 * fontScale,
     marginTop: spacing.sm,
     maxWidth: 300,
   },
   heroAction: {
-    marginTop: spacing.lg,
     alignSelf: 'flex-start',
   },
+  heroActionRow: {
+    marginTop: spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
   panel: {
-    backgroundColor: palette.surfaceStrong,
+    backgroundColor: colors.surface,
     borderRadius: 24,
     padding: spacing.lg,
     borderWidth: 1,
-    borderColor: palette.border,
+    borderColor: colors.border,
     gap: spacing.md,
   },
   sectionLabel: {
-    fontSize: 12,
+    fontSize: 12 * fontScale,
     textTransform: 'uppercase',
     letterSpacing: 1.3,
     fontWeight: '800',
-    color: palette.brandRed,
+    color: colors.brandText,
   },
   sectionTitle: {
-    fontSize: 24,
+    fontSize: 24 * fontScale,
     fontWeight: '900',
-    color: palette.ink,
+    color: colors.text,
   },
   buttonBase: {
     minHeight: 50,
@@ -266,7 +291,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   buttonPrimary: {
-    backgroundColor: palette.ink,
+    backgroundColor: palette.brandRed,
   },
   buttonSecondary: {
     backgroundColor: palette.brandYellow,
@@ -274,22 +299,22 @@ const styles = StyleSheet.create({
   buttonGhost: {
     backgroundColor: 'transparent',
     borderWidth: 1,
-    borderColor: palette.border,
+    borderColor: colors.border,
   },
   buttonPrimaryText: {
     color: palette.surfaceStrong,
     fontWeight: '800',
-    fontSize: 15,
+    fontSize: 15 * fontScale,
   },
   buttonSecondaryText: {
     color: palette.ink,
     fontWeight: '800',
-    fontSize: 15,
+    fontSize: 15 * fontScale,
   },
   buttonGhostText: {
-    color: palette.brandRed,
+    color: colors.brandText,
     fontWeight: '800',
-    fontSize: 15,
+    fontSize: 15 * fontScale,
   },
   buttonPressed: {
     opacity: 0.9,
@@ -301,7 +326,7 @@ const styles = StyleSheet.create({
   tag: {
     alignSelf: 'flex-start',
     borderRadius: 999,
-    backgroundColor: '#FFF3D1',
+    backgroundColor: colors.cardYellow,
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
@@ -309,9 +334,9 @@ const styles = StyleSheet.create({
     backgroundColor: palette.brandRed,
   },
   tagText: {
-    color: palette.ink,
+    color: colors.text,
     fontWeight: '700',
-    fontSize: 13,
+    fontSize: 13 * fontScale,
   },
   tagTextActive: {
     color: palette.surfaceStrong,
@@ -320,19 +345,19 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   fieldLabel: {
-    fontSize: 13,
+    fontSize: 13 * fontScale,
     fontWeight: '800',
-    color: palette.ink,
+    color: colors.text,
   },
   input: {
     minHeight: 50,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: '#FFF9EE',
+    borderColor: colors.border,
+    backgroundColor: colors.input,
     paddingHorizontal: 16,
-    color: palette.ink,
-    fontSize: 15,
+    color: colors.text,
+    fontSize: 15 * fontScale,
   },
   inputMultiline: {
     minHeight: 108,

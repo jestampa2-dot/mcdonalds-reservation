@@ -3,6 +3,7 @@ import ApplicationLogo from '@/Components/ApplicationLogo.vue'
 import { computed } from 'vue'
 import { Head, Link, usePage } from '@inertiajs/vue3'
 import FlashToast from '@/Components/FlashToast.vue'
+import ThemeToggle from '@/Components/ThemeToggle.vue'
 
 const props = defineProps({
   title: {
@@ -158,8 +159,16 @@ const isLinkActive = (link) => {
           </div>
 
           <div class="mcd-toolbar__actions">
+            <ThemeToggle />
+
             <div class="mcd-toolbar__profile">
-              <span class="mcd-toolbar__avatar">{{ userInitials }}</span>
+              <img
+                v-if="user?.profile_photo_url"
+                :src="user.profile_photo_url"
+                alt="Profile photo"
+                class="mcd-toolbar__avatar"
+              />
+              <span v-else class="mcd-toolbar__avatar">{{ userInitials }}</span>
               <span>
                 <strong>{{ user?.name ?? 'Guest User' }}</strong>
                 <small>{{ user?.email ?? 'Sign in to continue.' }}</small>

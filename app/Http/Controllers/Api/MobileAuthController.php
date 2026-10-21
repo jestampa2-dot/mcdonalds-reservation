@@ -22,10 +22,6 @@ class MobileAuthController extends Controller
             'phone' => ['required', 'string', 'max:30'],
             'birth_date' => ['required', 'date', 'before_or_equal:today'],
             'gender' => ['required', 'string', Rule::in(['male', 'female', 'non_binary', 'prefer_not_to_say'])],
-            'address_line' => ['required', 'string', 'max:255'],
-            'city' => ['required', 'string', 'max:255'],
-            'province' => ['required', 'string', 'max:255'],
-            'postal_code' => ['nullable', 'string', 'max:20'],
             'password' => ['required', 'confirmed', Password::defaults()],
         ]);
 
@@ -35,10 +31,10 @@ class MobileAuthController extends Controller
             'phone' => $validated['phone'],
             'birth_date' => $validated['birth_date'],
             'gender' => $validated['gender'],
-            'address_line' => $validated['address_line'],
-            'city' => $validated['city'],
-            'province' => $validated['province'],
-            'postal_code' => $validated['postal_code'] ?? null,
+            'address_line' => null,
+            'city' => null,
+            'province' => null,
+            'postal_code' => null,
             'password' => Hash::make($validated['password']),
         ]);
 
@@ -110,6 +106,7 @@ class MobileAuthController extends Controller
             'city' => $user->city,
             'province' => $user->province,
             'postal_code' => $user->postal_code,
+            'profile_photo_url' => $user->profile_photo_url,
             'full_address' => collect([
                 $user->address_line,
                 $user->city,
