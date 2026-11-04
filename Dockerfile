@@ -27,7 +27,8 @@ RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
         mbstring \
         pdo_mysql \
         zip \
-    && a2enmod rewrite headers \
+    && (a2dismod -f mpm_event mpm_worker || true) \
+    && a2enmod mpm_prefork rewrite headers \
     && sed -ri 's!/var/www/html!/var/www/html/public!g' /etc/apache2/sites-available/*.conf \
     && sed -ri 's/AllowOverride None/AllowOverride All/g' /etc/apache2/apache2.conf \
     && rm -rf /var/lib/apt/lists/*
