@@ -1,39 +1,16 @@
-FROM node:20-bookworm-slim AS frontend
-
-WORKDIR /app
-
-COPY package.json package-lock.json ./
-RUN npm ci
-
-COPY resources ./resources
-COPY public ./public
-COPY vite.config.js postcss.config.js tailwind.config.js ./
-RUN npm run build
-
-
-FROM php:8.2-cli-bookworm AS vendor
-
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends git unzip \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
-
-WORKDIR /app
-
-COPY . .
-RUN composer install \
-    --no-dev \
-    --prefer-dist \
-    --optimize-autoloader \
-    --no-interaction \
-    --no-progress
-
-
 FROM php:8.2-apache-bookworm
 
-RUN apt-get update \
+ENV COMPOSER_ALLOW_SUPERUSER=1
+
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+COPY --from=node:20-bookworm-slim /usr/local/bin/node /usr/local/bin/node
+COPY --from=node:20-bookworm-slim /usr/local/lib/node_modules /usr/local/lib/node_modules
+
+RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -s /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+    && apt-get update \
     && apt-get install -y --no-install-recommends \
+        git \
         libfreetype6-dev \
         libicu-dev \
         libjpeg62-turbo-dev \
@@ -42,7 +19,7 @@ RUN apt-get update \
         libzip-dev \
         unzip \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install -j"$(nproc)" \
+    && docker-php-ext-install -j2 \
         bcmath \
         exif \
         gd \
@@ -58,10 +35,18 @@ RUN apt-get update \
 WORKDIR /var/www/html
 
 COPY . .
-COPY --from=vendor /app/vendor ./vendor
-COPY --from=frontend /app/public/build ./public/build
 
-RUN mkdir -p \
+RUN composer install \
+        --no-dev \
+        --prefer-dist \
+        --optimize-autoloader \
+        --no-interaction \
+        --no-progress \
+    && npm ci \
+    && npm run build \
+    && npm cache clean --force \
+    && rm -rf node_modules \
+    && mkdir -p \
         storage/app/public \
         storage/framework/cache/data \
         storage/framework/sessions \
