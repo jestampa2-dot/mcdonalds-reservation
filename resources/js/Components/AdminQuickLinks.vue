@@ -1,5 +1,6 @@
 <script setup>
-import { Link } from '@inertiajs/vue3'
+import { computed } from 'vue'
+import { Link, usePage } from '@inertiajs/vue3'
 import AdminNotificationBar from '@/Components/AdminNotificationBar.vue'
 
 defineProps({
@@ -9,7 +10,9 @@ defineProps({
   },
 })
 
-const links = [
+const page = usePage()
+
+const links = computed(() => [
   { key: 'hub', label: 'Hub', href: route('admin.dashboard') },
   { key: 'pending', label: 'Pending Bookings', href: route('admin.bookings') },
   { key: 'confirmed', label: 'Confirmed Events', href: route('admin.confirmed') },
@@ -19,7 +22,10 @@ const links = [
   { key: 'accounts', label: 'Accounts', href: route('admin.accounts') },
   { key: 'reports', label: 'Reports', href: route('admin.reports') },
   { key: 'timeline', label: 'Timeline', href: route('admin.timeline') },
-]
+  ...(page.props.auth?.user?.role === 'master_admin'
+    ? [{ key: 'activity', label: 'Activity Log', href: route('admin.activity') }]
+    : []),
+])
 </script>
 
 <template>

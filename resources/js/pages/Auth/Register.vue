@@ -6,6 +6,10 @@ import PrimaryButton from '@/Components/PrimaryButton.vue'
 import TextInput from '@/Components/TextInput.vue'
 import { Head, Link, useForm } from '@inertiajs/vue3'
 
+defineProps({
+  googleAuthEnabled: Boolean,
+})
+
 const form = useForm({
   name: '',
   email: '',
@@ -37,6 +41,15 @@ const submit = () => {
       <div class="auth-form__header">
         <p class="auth-form__eyebrow">Create account</p>
         <h2>Registration form</h2>
+      </div>
+
+      <div v-if="googleAuthEnabled" class="auth-form__google-wrap">
+        <a :href="route('auth.google.redirect')" class="auth-form__google">
+          <span class="auth-form__google-mark" aria-hidden="true">G</span>
+          Continue with Google
+        </a>
+        <InputError class="mt-2" :message="form.errors.google" />
+        <div class="auth-form__divider"><span>or complete the form</span></div>
       </div>
 
       <form class="auth-form__body" @submit.prevent="submit">
@@ -197,6 +210,63 @@ const submit = () => {
 .auth-form__body {
   display: grid;
   gap: 1.25rem;
+}
+
+.auth-form__google-wrap {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.auth-form__google {
+  display: flex;
+  min-height: 3.5rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  border: 1px solid rgba(31, 31, 31, 0.16);
+  border-radius: 999px;
+  background: #ffffff;
+  color: #1f1f1f;
+  font-weight: 800;
+  text-decoration: none;
+  box-shadow: 0 8px 22px rgba(31, 31, 31, 0.08);
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+
+.auth-form__google:hover {
+  transform: translateY(-1px);
+  border-color: rgba(66, 133, 244, 0.5);
+  box-shadow: 0 10px 26px rgba(31, 31, 31, 0.12);
+}
+
+.auth-form__google-mark {
+  display: grid;
+  width: 1.8rem;
+  height: 1.8rem;
+  place-items: center;
+  border-radius: 50%;
+  color: #4285f4;
+  font-size: 1.15rem;
+  font-weight: 900;
+}
+
+.auth-form__divider {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  color: rgba(31, 31, 31, 0.55);
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.auth-form__divider::before,
+.auth-form__divider::after {
+  height: 1px;
+  flex: 1;
+  background: rgba(31, 31, 31, 0.1);
+  content: '';
 }
 
 .auth-form__section {

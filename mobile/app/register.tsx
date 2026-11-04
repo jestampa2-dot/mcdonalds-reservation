@@ -1,6 +1,7 @@
 import { Redirect, router } from 'expo-router';
 import { startTransition, useMemo, useState } from 'react';
 import { Alert, Keyboard, StyleSheet, Text, View } from 'react-native';
+import { GoogleSigninButton } from '@react-native-google-signin/google-signin';
 
 import {
   CustomerButton,
@@ -15,6 +16,7 @@ import {
 } from '@/components/customer-ui';
 import { ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { chooseGoogleAccount, googleSignInErrorMessage, isGoogleSignInConfigured } from '@/lib/google-auth';
 import { AppThemeColors, useAppTheme } from '@/lib/theme';
 
 const genders = [
@@ -27,7 +29,7 @@ const genders = [
 export default function RegisterScreen() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const { signUp, user, booting } = useAuth();
+  const { signUp, signInWithGoogle, user, booting } = useAuth();
   const [form, setForm] = useState({
     name: '',
     email: '',
@@ -38,6 +40,8 @@ export default function RegisterScreen() {
     password_confirmation: '',
   });
   const [submitting, setSubmitting] = useState(false);
+  const [googleSubmitting, setGoogleSubmitting] = useState(false);
+  const googleEnabled = isGoogleSignInConfigured();
 
   function setValue(key: keyof typeof form, value: string) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -103,6 +107,33 @@ export default function RegisterScreen() {
     }
   }
 
+  async function handleGoogleSignIn() {
+    try {
+      Keyboard.dismiss();
+      setGoogleSubmitting(true);
+      const idToken = await chooseGoogleAccount();
+
+      if (!idToken) {
+        return;
+      }
+
+      const needsProfileCompletion = await signInWithGoogle(idToken);
+      startTransition(() => {
+        router.replace(needsProfileCompletion ? '/(tabs)/account' : '/(tabs)/dashboard');
+      });
+    } catch (error) {
+      const message = error instanceof ApiError
+        ? error.errors?.google?.[0] ?? error.message
+        : googleSignInErrorMessage(error);
+
+      if (message) {
+        Alert.alert('Google sign-in failed', message);
+      }
+    } finally {
+      setGoogleSubmitting(false);
+    }
+  }
+
   if (!booting && user) {
     return <Redirect href="/(tabs)/dashboard" />;
   }
@@ -120,6 +151,16 @@ export default function RegisterScreen() {
 
         <CustomerCard>
           <SectionTitle>Customer details</SectionTitle>
+          {googleEnabled ? (
+            <View style={styles.googleArea}>
+              <GoogleSigninButton
+                size={GoogleSigninButton.Size.Wide}
+                onPress={() => void handleGoogleSignIn()}
+                disabled={submitting || googleSubmitting}
+              />
+              <Text style={styles.divider}>or complete the registration form</Text>
+            </View>
+          ) : null}
           <CustomerField label="Full name" value={form.name} onChangeText={(value) => setValue('name', value)} placeholder="Your full name" />
           <CustomerField
             label="Email address"
@@ -206,6 +247,18 @@ const createStyles = (colors: AppThemeColors) => StyleSheet.create({
   },
   actions: {
     gap: 10,
+  },
+  googleArea: {
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 4,
+  },
+  divider: {
+    color: colors.textSubtle,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
   },
   note: {
     color: colors.textMuted,

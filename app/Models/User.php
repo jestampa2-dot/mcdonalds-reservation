@@ -20,6 +20,9 @@ class User extends Authenticatable
     protected $fillable = [
         'name',
         'email',
+        'email_verified_at',
+        'google_id',
+        'google_link_pending',
         'phone',
         'sms_notifications_enabled',
         'birth_date',
@@ -29,7 +32,9 @@ class User extends Authenticatable
         'province',
         'postal_code',
         'profile_photo_path',
+        'google_avatar_url',
         'role',
+        'branch_code',
         'password',
     ];
 
@@ -52,11 +57,14 @@ class User extends Authenticatable
         'email_verified_at' => 'datetime',
         'birth_date' => 'date',
         'sms_notifications_enabled' => 'boolean',
+        'google_link_pending' => 'boolean',
     ];
 
     public function getProfilePhotoUrlAttribute(): ?string
     {
-        return $this->profile_photo_path ? asset('storage/'.$this->profile_photo_path) : null;
+        return $this->profile_photo_path
+            ? asset('storage/'.$this->profile_photo_path)
+            : $this->google_avatar_url;
     }
 
     public function reservations()
@@ -67,5 +75,20 @@ class User extends Authenticatable
     public function assignedReservations()
     {
         return $this->hasMany(Reservation::class, 'assigned_staff_id');
+    }
+
+    public function branch()
+    {
+        return $this->belongsTo(Branch::class, 'branch_code', 'code');
+    }
+
+    public function sentReservationInvitations()
+    {
+        return $this->hasMany(ReservationInvitation::class, 'inviter_id');
+    }
+
+    public function receivedReservationInvitations()
+    {
+        return $this->hasMany(ReservationInvitation::class, 'invitee_user_id');
     }
 }

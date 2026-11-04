@@ -285,7 +285,7 @@ export default function OperationsScreen() {
       return;
     }
 
-    if (!['admin', 'manager'].includes(payload?.role ?? '')) {
+    if (!['master_admin', 'admin', 'manager'].includes(payload?.role ?? '')) {
       return;
     }
 
@@ -369,6 +369,9 @@ export default function OperationsScreen() {
   const adminMenuBundles = admin?.bookings?.menuBundles ?? [];
   const adminAddOns = admin?.bookings?.addOns ?? [];
   const branches = admin?.availability?.availability?.branches ?? [];
+  const manageableRoles = admin?.accounts?.canAssignMasterAdmin
+    ? ['master_admin', 'customer', 'staff', 'manager', 'admin']
+    : ['customer', 'staff', 'manager', 'admin'];
   const selectedBranch = branches.find((branch: any) => branch.code === selectedAvailability.branchCode) ?? branches[0];
   const selectedBranchDates = selectedBranch?.dates ?? [];
 
@@ -543,6 +546,32 @@ export default function OperationsScreen() {
                 ))}
               </View>
             </Panel>
+
+            {admin.dashboard?.isMasterAdmin ? (
+              <Panel>
+                <SectionHeading label="Master Admin" title="All-branch command center" />
+                <View style={styles.metricGrid}>
+                  {(admin.dashboard?.masterOverview ?? []).map((stat: any) => (
+                    <View key={`master-${stat.label}`} style={styles.metricCard}>
+                      <Text style={styles.metricLabel}>{stat.label}</Text>
+                      <Text style={styles.metricValue}>{stat.value}</Text>
+                    </View>
+                  ))}
+                </View>
+                <Text style={styles.helperStrong}>Recent system activity</Text>
+                <View style={styles.stack}>
+                  {(admin.dashboard?.recentActivities ?? []).map((activity: any) => (
+                    <View key={`activity-${activity.id}`} style={styles.cardSoft}>
+                      <Text style={styles.cardTitle}>{activity.description}</Text>
+                      <Text style={styles.cardMeta}>
+                        {activity.actor_name} · {activity.actor_role?.replaceAll('_', ' ')} · {activity.branch_code || 'System-wide'}
+                      </Text>
+                      <Text style={styles.helper}>{activity.created_at}</Text>
+                    </View>
+                  ))}
+                </View>
+              </Panel>
+            ) : null}
 
             <Panel>
               <SectionHeading label="Admin" title="Pending bookings" />
@@ -755,7 +784,7 @@ export default function OperationsScreen() {
                   <Field label="Phone" value={userCreateForm.phone} onChangeText={(value) => setUserCreateForm((current) => ({ ...current, phone: value }))} />
                   <Text style={styles.helperStrong}>Role</Text>
                   <View style={styles.tagWrap}>
-                    {['customer', 'staff', 'manager', 'admin'].map((role) => (
+                    {manageableRoles.map((role) => (
                       <Tag key={role} label={role} active={userCreateForm.role === role} onPress={() => setUserCreateForm((current) => ({ ...current, role }))} />
                     ))}
                   </View>
@@ -788,7 +817,7 @@ export default function OperationsScreen() {
                     {admin.accounts?.canManageAccounts ? (
                       <>
                         <View style={styles.tagWrap}>
-                          {['customer', 'staff', 'manager', 'admin'].map((role) => (
+                          {manageableRoles.map((role) => (
                             <Tag key={`${account.id}-${role}`} label={role} active={accountEdits[account.id]?.role === role} onPress={() => setAccountEdits((current) => ({ ...current, [account.id]: { ...current[account.id], role } }))} />
                           ))}
                         </View>

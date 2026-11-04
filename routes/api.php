@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\MobileAuthController;
+use App\Http\Controllers\Api\MobileInvitationController;
 use App\Http\Controllers\Api\MobileOperationsController;
 use App\Http\Controllers\Api\MobileProfileController;
 use App\Http\Controllers\Api\MobileReservationController;
@@ -25,6 +26,7 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 Route::prefix('mobile')->group(function () {
     Route::post('/login', [MobileAuthController::class, 'login'])->middleware('guest');
     Route::post('/register', [MobileAuthController::class, 'register'])->middleware('guest');
+    Route::post('/google', [MobileAuthController::class, 'google'])->middleware('guest');
 
     Route::get('/home', [MobileReservationController::class, 'mobileHome']);
     Route::get('/booking-options', [MobileReservationController::class, 'mobileBookingOptions']);
@@ -39,6 +41,9 @@ Route::prefix('mobile')->group(function () {
         Route::get('/reservations/{reservation}/pass', [MobileReservationController::class, 'mobilePass']);
         Route::post('/reservations/{reservation}/cancel', [MobileReservationController::class, 'mobileCancel']);
         Route::post('/reservations/{reservation}/reschedule', [MobileReservationController::class, 'mobileReschedule']);
+        Route::post('/reservations/{reservation}/invitations', [MobileInvitationController::class, 'createInvitation']);
+        Route::delete('/reservations/{reservation}/invitations/{invitation}', [MobileInvitationController::class, 'revokeInvitation']);
+        Route::post('/invitations/{invitation}/respond', [MobileInvitationController::class, 'respondToInvitation']);
 
         Route::get('/operations', [MobileOperationsController::class, 'mobileOperations']);
         Route::get('/admin/availability-day/{branchCode}/{date}', [MobileOperationsController::class, 'mobileAvailabilityDay'])

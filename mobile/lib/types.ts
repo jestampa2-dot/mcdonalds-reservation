@@ -2,7 +2,7 @@ export type MobileUser = {
   id: number;
   name: string;
   email: string;
-  phone: string;
+  phone: string | null;
   role: string;
   birth_date: string | null;
   gender: string | null;
@@ -162,6 +162,25 @@ export type ReceiptLine = {
   amount: string;
 };
 
+export type EventInvitation = {
+  id: number;
+  reservation_id: number;
+  booking_reference: string | null;
+  inviter_name: string | null;
+  invitee_name: string;
+  invitee_phone: string;
+  invitee_email: string | null;
+  event_type: string | null;
+  package_name: string | null;
+  branch: string | null;
+  event_date: string | null;
+  event_time: string | null;
+  event_time_label: string | null;
+  status: 'pending' | 'accepted' | 'declined' | 'revoked';
+  responded_at: string | null;
+  created_at: string | null;
+};
+
 export type ReservationRecord = {
   id: number;
   booking_reference: string;
@@ -199,10 +218,12 @@ export type ReservationRecord = {
   qr_check_in_url?: string | null;
   payment_proof_url?: string | null;
   payment_proof_preview_url?: string | null;
+  invitations?: EventInvitation[];
 };
 
 export type DashboardPayload = {
   bookings: ReservationRecord[];
+  receivedInvitations: EventInvitation[];
   slotOptions: string[];
   stats: { label: string; value: string | number }[];
 };
@@ -216,7 +237,7 @@ export type OperationsPayload = {
 export type ProfilePayload = {
   name: string;
   email: string;
-  phone: string;
+  phone: string | null;
   sms_notifications_enabled: boolean;
   birth_date: string | null;
   gender: string | null;

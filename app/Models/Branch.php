@@ -42,4 +42,9 @@ class Branch extends Model
     {
         return $this->hasMany(BranchHost::class);
     }
+
+    public function accounts(): HasMany
+    {
+        return $this->hasMany(User::class, 'branch_code', 'code');
+    }
 }

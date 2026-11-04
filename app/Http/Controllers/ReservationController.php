@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\AddOn;
+use App\Models\ActivityLog;
 use App\Models\BookingPackage;
 use App\Models\BookingSetting;
 use App\Models\Branch;
@@ -15,9 +16,12 @@ use App\Models\MenuItem;
 use App\Models\MenuItemOption;
 use App\Models\PricingSetting;
 use App\Models\Reservation;
+use App\Models\ReservationInvitation;
 use App\Models\RoomOption;
 use App\Models\User;
 use App\Support\MenuCatalogSynchronizer;
+use App\Support\ReservationInvitationPresenter;
+use App\Support\SmsPhoneNumber;
 use App\Support\Timeline\ReservationTimelineBuilder;
 use Endroid\QrCode\Builder\Builder;
 use Endroid\QrCode\Encoding\Encoding;
@@ -41,6 +45,7 @@ use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
 use Inertia\Response as InertiaResponse;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
 class ReservationController extends Controller
@@ -231,15 +236,38 @@ class ReservationController extends Controller
     public function dashboard(Request $request): InertiaResponse
     {
         $catalog = $this->catalog();
+        $customer = $request->user();
+        $customerEmail = Str::lower($customer->email);
+        $customerPhone = SmsPhoneNumber::normalize($customer->phone);
+
+        ReservationInvitation::query()
+            ->whereNull('invitee_user_id')
+            ->where(function ($query) use ($customerEmail, $customerPhone) {
+                $query->where('invitee_email', $customerEmail);
+
+                if ($customerPhone) {
+                    $query->orWhere('invitee_phone', $customerPhone);
+                }
+            })
+            ->update(['invitee_user_id' => $customer->id]);
 
         $bookings = Reservation::query()
-            ->where('user_id', $request->user()->id)
+            ->with(['invitations.inviter'])
+            ->where('user_id', $customer->id)
             ->orderBy('event_date')
             ->orderBy('event_time')
+            ->get();
+        $receivedInvitations = ReservationInvitation::query()
+            ->with(['reservation', 'inviter'])
+            ->where('invitee_user_id', $customer->id)
+            ->latest()
             ->get();
 
         return Inertia::render('Dashboard', [
             'bookings' => $bookings->map(fn (Reservation $reservation) => $this->serializeReservation($reservation))->values(),
+            'receivedInvitations' => $receivedInvitations
+                ->map(fn (ReservationInvitation $invitation) => ReservationInvitationPresenter::forMobile($invitation))
+                ->values(),
             'slotOptions' => $catalog['slotOptions'],
             'stats' => [
                 ['label' => 'Upcoming', 'value' => $bookings->whereIn('status', ['pending_review', 'confirmed', 'rescheduled', 'checked_in'])->count()],
@@ -255,16 +283,16 @@ class ReservationController extends Controller
         $catalog = $this->catalog();
         $bookings = $this->adminReservations(['assignedStaff:id,name']);
         $statsBookings = $this->adminStatsBookings();
+        $isMasterAdmin = $request->user()->role === 'master_admin';
 
         return Inertia::render('Admin/Dashboard', [
             'stats' => $this->adminStats($statsBookings),
             'notifications' => $this->upcomingEventNotifications($bookings),
             'history' => $this->eventHistory($bookings),
-            'branchSummaries' => collect(array_values($catalog['branches']))->map(fn ($branch) => [
-                'code' => $branch['code'],
-                'name' => $branch['name'],
-                'city' => $branch['city'],
-            ])->values(),
+            'branchSummaries' => $this->branchOperationsSummaries($catalog, $statsBookings),
+            'isMasterAdmin' => $isMasterAdmin,
+            'masterOverview' => $isMasterAdmin ? $this->masterAdminOverview($statsBookings) : [],
+            'recentActivities' => $isMasterAdmin ? $this->recentActivityLogs(8) : [],
         ]);
     }
 
@@ -366,7 +394,12 @@ class ReservationController extends Controller
 
         return Inertia::render('Admin/Accounts', [
             'users' => $this->adminUsers(),
-            'canManageAccounts' => $request->user()->role === 'admin',
+            'branches' => collect($this->adminBranchList())->map(fn ($branch) => [
+                'code' => $branch['code'],
+                'name' => $branch['name'],
+            ])->values(),
+            'canManageAccounts' => in_array($request->user()->role, ['master_admin', 'admin'], true),
+            'canAssignMasterAdmin' => $request->user()->role === 'master_admin',
         ]);
     }
 
@@ -420,6 +453,56 @@ class ReservationController extends Controller
         ]);
     }
 
+    public function exportAdminReport(Request $request): StreamedResponse
+    {
+        $this->authorizeRoles($request, ['admin', 'manager']);
+
+        $validated = $request->validate([
+            'branch' => ['nullable', 'string', 'max:255'],
+            'status' => ['nullable', Rule::in(['pending_review', 'confirmed', 'rescheduled', 'checked_in', 'completed', 'cancelled'])],
+            'from' => ['nullable', 'date'],
+            'to' => ['nullable', 'date', 'after_or_equal:from'],
+        ]);
+
+        $bookings = Reservation::query()
+            ->with('assignedStaff:id,name')
+            ->when($validated['branch'] ?? null, fn ($query, $branch) => $query->where('branch_code', $branch))
+            ->when($validated['status'] ?? null, fn ($query, $status) => $query->where('status', $status))
+            ->when($validated['from'] ?? null, fn ($query, $from) => $query->whereDate('event_date', '>=', $from))
+            ->when($validated['to'] ?? null, fn ($query, $to) => $query->whereDate('event_date', '<=', $to))
+            ->orderBy('event_date')
+            ->orderBy('event_time')
+            ->get();
+
+        $filename = 'reservation-report-'.now()->format('Y-m-d-His').'.csv';
+
+        return response()->streamDownload(function () use ($bookings) {
+            $stream = fopen('php://output', 'w');
+            fputcsv($stream, [
+                'Booking reference', 'Branch', 'Customer', 'Email', 'Phone', 'Status',
+                'Event date', 'Event time', 'Guests', 'Total amount', 'Assigned employee',
+            ]);
+
+            foreach ($bookings as $booking) {
+                fputcsv($stream, [
+                    $booking->booking_reference,
+                    $booking->branch,
+                    $booking->name,
+                    $booking->email,
+                    $booking->phone,
+                    $booking->status,
+                    $booking->event_date?->toDateString(),
+                    $booking->event_time,
+                    $booking->guests,
+                    $booking->total_amount,
+                    $booking->assignedStaff?->name,
+                ]);
+            }
+
+            fclose($stream);
+        }, $filename, ['Content-Type' => 'text/csv; charset=UTF-8']);
+    }
+
     public function adminTimeline(Request $request): InertiaResponse
     {
         $this->authorizeRoles($request, ['admin', 'manager']);
@@ -429,6 +512,38 @@ class ReservationController extends Controller
             'notifications' => $this->upcomingEventNotifications($bookings),
             'history' => $this->eventHistory($bookings),
             'cancelledEvents' => $this->cancelledEvents($bookings),
+        ]);
+    }
+
+    public function adminActivity(Request $request): InertiaResponse
+    {
+        $this->authorizeRoles($request, ['master_admin']);
+
+        $filters = $request->validate([
+            'branch' => ['nullable', 'string', 'max:255'],
+            'action' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $activities = ActivityLog::query()
+            ->when($filters['branch'] ?? null, fn ($query, $branch) => $query->where('branch_code', $branch))
+            ->when($filters['action'] ?? null, fn ($query, $action) => $query->where('action', $action))
+            ->latest()
+            ->limit(250)
+            ->get()
+            ->map(fn (ActivityLog $activity) => $this->serializeActivityLog($activity))
+            ->values();
+
+        return Inertia::render('Admin/Activity', [
+            'activities' => $activities,
+            'branches' => collect($this->adminBranchList())->map(fn ($branch) => [
+                'code' => $branch['code'],
+                'name' => $branch['name'],
+            ])->values(),
+            'filters' => [
+                'branch' => $filters['branch'] ?? '',
+                'action' => $filters['action'] ?? '',
+            ],
+            'actionOptions' => ActivityLog::query()->distinct()->orderBy('action')->pluck('action')->values(),
         ]);
     }
 
@@ -576,9 +691,10 @@ class ReservationController extends Controller
     public function updateUserRole(Request $request, User $user): RedirectResponse
     {
         $this->authorizeRoles($request, ['admin']);
+        $this->authorizeAccountTarget($request, $user);
 
         $validated = $request->validate([
-            'role' => ['required', Rule::in(['customer', 'staff', 'manager', 'admin'])],
+            'role' => ['required', Rule::in($this->manageableAccountRoles($request))],
         ]);
 
         $user->update([
@@ -596,7 +712,8 @@ class ReservationController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
             'phone' => ['nullable', 'string', 'max:30'],
-            'role' => ['required', Rule::in(['customer', 'staff', 'manager', 'admin'])],
+            'role' => ['required', Rule::in($this->manageableAccountRoles($request))],
+            'branch_code' => ['nullable', 'string', Rule::exists('branches', 'code')],
             'password' => ['required', 'confirmed', Password::defaults()],
         ]);
 
@@ -605,6 +722,7 @@ class ReservationController extends Controller
             'email' => $validated['email'],
             'phone' => $validated['phone'] ?: null,
             'role' => $validated['role'],
+            'branch_code' => ($validated['branch_code'] ?? null) ?: null,
             'password' => Hash::make($validated['password']),
         ]);
 
@@ -614,12 +732,14 @@ class ReservationController extends Controller
     public function updateAdminUser(Request $request, User $user): RedirectResponse
     {
         $this->authorizeRoles($request, ['admin']);
+        $this->authorizeAccountTarget($request, $user);
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
             'phone' => ['nullable', 'string', 'max:30'],
-            'role' => ['required', Rule::in(['customer', 'staff', 'manager', 'admin'])],
+            'role' => ['required', Rule::in($this->manageableAccountRoles($request))],
+            'branch_code' => ['nullable', 'string', Rule::exists('branches', 'code')],
             'password' => ['nullable', 'confirmed', Password::defaults()],
         ]);
 
@@ -628,6 +748,7 @@ class ReservationController extends Controller
             'email' => $validated['email'],
             'phone' => $validated['phone'] ?: null,
             'role' => $validated['role'],
+            'branch_code' => ($validated['branch_code'] ?? null) ?: null,
         ];
 
         if ($user->email !== $validated['email']) {
@@ -646,6 +767,7 @@ class ReservationController extends Controller
     public function destroyAdminUser(Request $request, User $user): RedirectResponse
     {
         $this->authorizeRoles($request, ['admin']);
+        $this->authorizeAccountTarget($request, $user);
 
         if ($request->user()->is($user)) {
             return back()->with('error', 'You cannot delete your own account.');
@@ -653,6 +775,10 @@ class ReservationController extends Controller
 
         if ($user->role === 'admin' && User::query()->where('role', 'admin')->count() <= 1) {
             return back()->with('error', 'At least one admin account must remain in the system.');
+        }
+
+        if ($user->role === 'master_admin' && User::query()->where('role', 'master_admin')->count() <= 1) {
+            return back()->with('error', 'At least one Master Admin account must remain in the system.');
         }
 
         if ($user->profile_photo_path) {
@@ -1260,21 +1386,24 @@ class ReservationController extends Controller
     protected function adminStatsBookings()
     {
         return Reservation::query()
-            ->get(['id', 'status', 'event_time', 'total_amount']);
+            ->get(['id', 'status', 'event_time', 'total_amount', 'branch_code']);
     }
 
     protected function adminUsers()
     {
         return User::query()
-            ->orderByRaw("CASE role WHEN 'admin' THEN 1 WHEN 'manager' THEN 2 WHEN 'staff' THEN 3 ELSE 4 END")
+            ->with('branch:id,code,name')
+            ->orderByRaw("CASE role WHEN 'master_admin' THEN 1 WHEN 'admin' THEN 2 WHEN 'manager' THEN 3 WHEN 'staff' THEN 4 ELSE 5 END")
             ->orderBy('name')
-            ->get(['id', 'name', 'email', 'phone', 'role', 'profile_photo_path', 'created_at'])
+            ->get(['id', 'name', 'email', 'phone', 'role', 'branch_code', 'profile_photo_path', 'created_at'])
             ->map(fn (User $user) => [
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
                 'phone' => $user->phone,
                 'role' => $user->role,
+                'branch_code' => $user->branch_code,
+                'branch_name' => $user->branch?->name,
                 'profile_photo_url' => $user->profile_photo_url,
                 'created_at' => optional($user->created_at)->format('M j, Y g:i A'),
             ]);
@@ -1331,11 +1460,12 @@ class ReservationController extends Controller
         return User::query()
             ->whereIn('role', ['staff', 'manager'])
             ->orderBy('name')
-            ->get(['id', 'name', 'email', 'role'])
+            ->get(['id', 'name', 'email', 'role', 'branch_code'])
             ->map(fn (User $user) => [
                 'id' => $user->id,
                 'name' => $user->name,
                 'role' => $user->role,
+                'branch_code' => $user->branch_code,
             ]);
     }
 
@@ -1899,6 +2029,17 @@ class ReservationController extends Controller
             $serviceAdjustments
         );
 
+        $invitations = $reservation->relationLoaded('invitations')
+            ? $reservation->invitations
+                ->map(function (ReservationInvitation $invitation) use ($reservation) {
+                    $invitation->setRelation('reservation', $reservation);
+
+                    return ReservationInvitationPresenter::forMobile($invitation);
+                })
+                ->values()
+                ->all()
+            : [];
+
         return [
             'id' => $reservation->id,
             'booking_reference' => $reservation->booking_reference,
@@ -1949,6 +2090,7 @@ class ReservationController extends Controller
             'can_show_qr_pass' => in_array($reservation->status, ['confirmed', 'rescheduled', 'checked_in'], true),
             'payment_proof_url' => route('reservations.payment-proof', $reservation, ['download' => 1]),
             'payment_proof_preview_url' => $reservation->payment_proof_path ? route('reservations.payment-proof', $reservation) : null,
+            'invitations' => $invitations,
         ];
     }
 
@@ -2347,6 +2489,71 @@ class ReservationController extends Controller
         ];
     }
 
+    protected function masterAdminOverview($bookings): array
+    {
+        return [
+            ['label' => 'Active branches', 'value' => Branch::query()->where('is_active', true)->count()],
+            ['label' => 'Pending approvals', 'value' => $bookings->where('status', 'pending_review')->count()],
+            ['label' => 'Branch admins', 'value' => User::query()->whereIn('role', ['admin', 'manager'])->count()],
+            ['label' => 'Employees', 'value' => User::query()->where('role', 'staff')->count()],
+            ['label' => 'Customers', 'value' => User::query()->where('role', 'customer')->count()],
+            ['label' => 'Completed revenue', 'value' => $this->currencySymbol().number_format($bookings->where('status', 'completed')->sum('total_amount'), 2)],
+        ];
+    }
+
+    protected function branchOperationsSummaries(array $catalog, $bookings)
+    {
+        $accounts = User::query()
+            ->whereNotNull('branch_code')
+            ->get(['branch_code', 'role'])
+            ->groupBy('branch_code');
+
+        return collect(array_values($catalog['branches']))->map(function ($branch) use ($bookings, $accounts) {
+            $branchBookings = $bookings->where('branch_code', $branch['code']);
+            $branchAccounts = $accounts->get($branch['code'], collect());
+
+            return [
+                'code' => $branch['code'],
+                'name' => $branch['name'],
+                'city' => $branch['city'],
+                'pending_count' => $branchBookings->where('status', 'pending_review')->count(),
+                'active_count' => $branchBookings->whereIn('status', ['confirmed', 'rescheduled', 'checked_in'])->count(),
+                'revenue' => (float) $branchBookings->whereIn('status', ['confirmed', 'checked_in', 'completed'])->sum('total_amount'),
+                'admin_count' => $branchAccounts->whereIn('role', ['admin', 'manager'])->count(),
+                'employee_count' => $branchAccounts->where('role', 'staff')->count(),
+            ];
+        })->values();
+    }
+
+    protected function recentActivityLogs(int $limit = 8)
+    {
+        if (! $this->hasTableSafely('activity_logs')) {
+            return collect();
+        }
+
+        return ActivityLog::query()
+            ->latest()
+            ->limit($limit)
+            ->get()
+            ->map(fn (ActivityLog $activity) => $this->serializeActivityLog($activity))
+            ->values();
+    }
+
+    protected function serializeActivityLog(ActivityLog $activity): array
+    {
+        return [
+            'id' => $activity->id,
+            'actor_name' => $activity->actor_name ?: 'System',
+            'actor_role' => $activity->actor_role ?: 'system',
+            'action' => $activity->action,
+            'branch_code' => $activity->branch_code,
+            'description' => $activity->description,
+            'metadata' => $activity->metadata ?? [],
+            'created_at' => optional($activity->created_at)->format('M j, Y g:i A'),
+            'created_at_iso' => optional($activity->created_at)->toIso8601String(),
+        ];
+    }
+
     protected function currencySymbol(): string
     {
         return "\u{20B1}";
@@ -2618,7 +2825,31 @@ class ReservationController extends Controller
 
     protected function authorizeRoles(Request $request, array $roles): void
     {
-        abort_unless($request->user() && in_array($request->user()->role, $roles, true), 403);
+        $role = $request->user()?->role;
+
+        if ($role === 'master_admin' && (in_array('master_admin', $roles, true) || in_array('admin', $roles, true))) {
+            return;
+        }
+
+        abort_unless($role && in_array($role, $roles, true), 403);
+    }
+
+    protected function manageableAccountRoles(Request $request): array
+    {
+        $roles = ['customer', 'staff', 'manager', 'admin'];
+
+        if ($request->user()?->role === 'master_admin') {
+            array_unshift($roles, 'master_admin');
+        }
+
+        return $roles;
+    }
+
+    protected function authorizeAccountTarget(Request $request, User $user): void
+    {
+        if ($user->role === 'master_admin' && $request->user()?->role !== 'master_admin') {
+            abort(403, 'Only a Master Admin can manage another Master Admin account.');
+        }
     }
 
     protected function authorizeReservationAccess(Request $request, Reservation $reservation, bool $allowOperations = false): void
@@ -2629,7 +2860,7 @@ class ReservationController extends Controller
             return;
         }
 
-        if ($allowOperations && in_array($user?->role, ['admin', 'manager', 'staff'], true)) {
+        if ($allowOperations && in_array($user?->role, ['master_admin', 'admin', 'manager', 'staff'], true)) {
             return;
         }
 

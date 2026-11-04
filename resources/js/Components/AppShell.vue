@@ -54,15 +54,15 @@ const navLinks = computed(() => {
     current: 'profile.*',
   })
 
-  if (['admin', 'manager'].includes(user.value.role)) {
+  if (['master_admin', 'admin', 'manager'].includes(user.value.role)) {
     links.push({
-      label: 'Admin View',
+      label: user.value.role === 'master_admin' ? 'Master Admin' : 'Admin View',
       href: route('admin.dashboard'),
       current: 'admin.*',
     })
   }
 
-  if (['admin', 'manager', 'staff'].includes(user.value.role)) {
+  if (['master_admin', 'admin', 'manager', 'staff'].includes(user.value.role)) {
     links.push({
       label: 'Staff View',
       href: route('staff.dashboard'),
@@ -78,12 +78,19 @@ const roleLabel = computed(() => {
     return 'Guest'
   }
 
-  return `${String(user.value.role).charAt(0).toUpperCase()}${String(user.value.role).slice(1)}`
+  return String(user.value.role)
+    .split('_')
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(' ')
 })
 
 const workspaceSubtitle = computed(() => {
   if (!user.value) {
     return 'Browse and book.'
+  }
+
+  if (user.value.role === 'master_admin') {
+    return 'Cross-branch governance, reports, accounts, and activity.'
   }
 
   if (['admin', 'manager'].includes(user.value.role)) {

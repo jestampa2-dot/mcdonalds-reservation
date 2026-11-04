@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, PropsWithChildren, useContext, useEffect, useState } from 'react';
 import { InteractionManager } from 'react-native';
 
-import { ApiError, fetchCurrentUser, fetchDashboard, fetchProfile, login, logout, register } from '@/lib/api';
+import { ApiError, fetchCurrentUser, fetchDashboard, fetchProfile, googleLogin, login, logout, register } from '@/lib/api';
 import { removeCaches, writeCache } from '@/lib/cache';
 import type { MobileUser } from '@/lib/types';
 
@@ -26,6 +26,7 @@ type AuthContextValue = {
   token: string | null;
   booting: boolean;
   signIn: (payload: LoginPayload) => Promise<void>;
+  signInWithGoogle: (idToken: string) => Promise<boolean>;
   signUp: (payload: RegisterPayload) => Promise<void>;
   signOut: () => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -145,6 +146,13 @@ export function AuthProvider({ children }: PropsWithChildren) {
     persistSession(response.token, response.user);
   }
 
+  async function signInWithGoogle(idToken: string) {
+    const response = await googleLogin(idToken);
+    persistSession(response.token, response.user);
+
+    return response.needs_profile_completion;
+  }
+
   async function signOut() {
     const activeUserId = user?.id ?? null;
 
@@ -186,6 +194,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         token,
         booting,
         signIn,
+        signInWithGoogle,
         signUp,
         signOut,
         refreshUser,

@@ -37,6 +37,9 @@ export function AppLockGate({ children }: PropsWithChildren) {
       if (result.success) {
         setLocked(false);
       }
+    } catch {
+      // Keep the lock screen visible if the phone's biometric service is
+      // temporarily unavailable. The user can retry or log out safely.
     } finally {
       authenticatingRef.current = false;
       setAuthenticating(false);

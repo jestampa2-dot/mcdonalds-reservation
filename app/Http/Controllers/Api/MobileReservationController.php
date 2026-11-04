@@ -4,6 +4,9 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\ReservationController;
 use App\Models\Reservation;
+use App\Models\ReservationInvitation;
+use App\Support\ReservationInvitationPresenter;
+use App\Support\SmsPhoneNumber;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -64,14 +67,51 @@ class MobileReservationController extends ReservationController
     public function mobileDashboard(Request $request): JsonResponse
     {
         $catalog = $this->catalog();
+        $customer = $request->user();
+        $phone = SmsPhoneNumber::normalize($customer->phone);
+        $email = Str::lower($customer->email);
+
+        ReservationInvitation::query()
+            ->whereNull('invitee_user_id')
+            ->where('status', 'pending')
+            ->where(function ($query) use ($phone, $email) {
+                $query->where('invitee_email', $email);
+
+                if ($phone) {
+                    $query->orWhere('invitee_phone', $phone);
+                }
+            })
+            ->update(['invitee_user_id' => $customer->id]);
+
         $bookings = Reservation::query()
-            ->where('user_id', $request->user()->id)
+            ->with(['invitations.inviter'])
+            ->where('user_id', $customer->id)
             ->orderBy('event_date')
             ->orderBy('event_time')
             ->get();
+        $receivedInvitations = ReservationInvitation::query()
+            ->with(['reservation', 'inviter'])
+            ->where('invitee_user_id', $customer->id)
+            ->latest()
+            ->get();
 
         return response()->json([
-            'bookings' => $bookings->map(fn (Reservation $reservation) => $this->serializeReservation($reservation))->values(),
+            'bookings' => $bookings->map(function (Reservation $reservation) {
+                $payload = $this->serializeReservation($reservation);
+                $payload['invitations'] = $reservation->invitations
+                    ->sortByDesc('created_at')
+                    ->map(function (ReservationInvitation $invitation) use ($reservation) {
+                        $invitation->setRelation('reservation', $reservation);
+
+                        return ReservationInvitationPresenter::forMobile($invitation);
+                    })
+                    ->values();
+
+                return $payload;
+            })->values(),
+            'receivedInvitations' => $receivedInvitations
+                ->map(fn (ReservationInvitation $invitation) => ReservationInvitationPresenter::forMobile($invitation))
+                ->values(),
             'slotOptions' => $catalog['slotOptions'],
             'stats' => [
                 ['label' => 'Upcoming', 'value' => $bookings->whereIn('status', ['pending_review', 'confirmed', 'rescheduled', 'checked_in'])->count()],

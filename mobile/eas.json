@@ -1,18 +1,25 @@
 {
-  "cli": {
-    "appVersionSource": "local"
-  },
-  "build": {
-    "preview": {
-      "distribution": "internal",
-      "android": {
-        "buildType": "apk"
-      }
+    "cli": {
+        "appVersionSource": "local"
     },
-    "production": {
-      "android": {
-        "buildType": "app-bundle"
-      }
+    "build": {
+        "preview": {
+            "distribution": "internal",
+            "env": {
+                "EXPO_PUBLIC_API_BASE_URL": "http://192.168.1.8:8000",
+                "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "255227329599-chqdrks7vou1sq7kesed0fol66b6u5fh.apps.googleusercontent.com"
+            },
+            "android": {
+                "buildType": "apk"
+            }
+        },
+        "production": {
+            "android": {
+                "buildType": "app-bundle"
+            },
+            "env": {
+                "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "255227329599-chqdrks7vou1sq7kesed0fol66b6u5fh.apps.googleusercontent.com"
+            }
+        }
     }
-  }
 }

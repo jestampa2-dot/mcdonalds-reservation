@@ -6,9 +6,19 @@ import StatusBadge from '@/Components/StatusBadge.vue'
 
 const props = defineProps({
   bookings: Array,
+  receivedInvitations: Array,
   stats: Array,
   slotOptions: Array,
 })
+
+const emptyInvitationForm = () => ({ name: '', phone: '', email: '' })
+const invitationForms = reactive(Object.fromEntries(props.bookings.map((booking) => [booking.id, emptyInvitationForm()])))
+const invitationOpen = reactive(Object.fromEntries(props.bookings.map((booking) => [booking.id, false])))
+const invitationBusy = reactive({})
+const invitationErrors = reactive({})
+const invitationNotices = reactive({})
+const invitationFallbacks = reactive({})
+const responseBusy = reactive({})
 
 const timeOptions = props.slotOptions.map((value) => {
   const [hours, minutes] = value.split(':').map(Number)
@@ -34,6 +44,8 @@ watch(
   () => props.bookings,
   (bookings) => {
     bookings.forEach((booking) => {
+      if (!invitationForms[booking.id]) invitationForms[booking.id] = emptyInvitationForm()
+      if (invitationOpen[booking.id] === undefined) invitationOpen[booking.id] = false
       rescheduleState[booking.id] = {
         event_date: booking.event_date,
         event_time: booking.event_start_time,
@@ -55,10 +67,87 @@ const formatCurrency = (value) =>
 
 const refreshDashboard = () => {
   router.reload({
-    only: ['bookings', 'stats'],
+    only: ['bookings', 'receivedInvitations', 'stats'],
     preserveScroll: true,
     preserveState: true,
   })
+}
+
+const invitationErrorMessage = (error) => {
+  const errors = error?.response?.data?.errors
+  const firstValidationMessage = errors ? Object.values(errors).flat()[0] : null
+
+  return firstValidationMessage || error?.response?.data?.message || 'Unable to update this invitation right now.'
+}
+
+const sendInvitation = async (booking) => {
+  invitationBusy[booking.id] = true
+  invitationErrors[booking.id] = ''
+  invitationNotices[booking.id] = ''
+  invitationFallbacks[booking.id] = null
+
+  try {
+    const response = await window.axios.post(route('reservations.invitations.store', booking.id), invitationForms[booking.id])
+    const invitation = response.data.invitation
+    invitationForms[booking.id] = emptyInvitationForm()
+    invitationNotices[booking.id] = response.data.message
+
+    if (!response.data.sms_queued) {
+      invitationFallbacks[booking.id] = {
+        phone: invitation.invitee_phone,
+        message: `You're invited to ${invitation.package_name || 'a McDonald\'s event'} at ${invitation.branch || 'McDonald\'s'} on ${invitation.event_date || 'the scheduled date'} at ${invitation.event_time_label || 'the scheduled time'}. Sign in to McD Reservations to reply. Ref ${invitation.booking_reference || ''}`,
+      }
+    }
+
+    router.reload({ only: ['bookings', 'receivedInvitations'], preserveScroll: true, preserveState: true })
+  } catch (error) {
+    invitationErrors[booking.id] = invitationErrorMessage(error)
+  } finally {
+    invitationBusy[booking.id] = false
+  }
+}
+
+const cancelInvitation = async (bookingId, invitationId) => {
+  invitationBusy[bookingId] = true
+  invitationErrors[bookingId] = ''
+
+  try {
+    const response = await window.axios.delete(route('reservations.invitations.destroy', [bookingId, invitationId]))
+    invitationNotices[bookingId] = response.data.message
+    router.reload({ only: ['bookings'], preserveScroll: true, preserveState: true })
+  } catch (error) {
+    invitationErrors[bookingId] = invitationErrorMessage(error)
+  } finally {
+    invitationBusy[bookingId] = false
+  }
+}
+
+const respondToInvitation = async (invitationId, status) => {
+  responseBusy[invitationId] = true
+
+  try {
+    await window.axios.post(route('invitations.respond', invitationId), { status })
+    router.reload({ only: ['receivedInvitations'], preserveScroll: true, preserveState: true })
+  } catch (error) {
+    window.alert(invitationErrorMessage(error))
+  } finally {
+    responseBusy[invitationId] = false
+  }
+}
+
+const fallbackSmsHref = (fallback) =>
+  fallback ? `sms:${fallback.phone}?body=${encodeURIComponent(fallback.message)}` : '#'
+
+const copyFallbackInvitation = async (bookingId) => {
+  const fallback = invitationFallbacks[bookingId]
+  if (!fallback) return
+
+  try {
+    await navigator.clipboard.writeText(`${fallback.phone}\n${fallback.message}`)
+    invitationNotices[bookingId] = 'Invitation text copied. Send it using your preferred messaging app.'
+  } catch {
+    invitationErrors[bookingId] = 'Copying was blocked by the browser. Select the message and copy it manually.'
+  }
 }
 </script>
 
@@ -87,6 +176,28 @@ const refreshDashboard = () => {
     </section>
 
     <section class="mcd-section">
+      <div v-if="receivedInvitations.length" class="mcd-panel p-6">
+        <p class="mcd-chip">Guest invitations</p>
+        <h2 class="mt-3 text-3xl">Invitations for you</h2>
+        <div class="mt-5 grid gap-4">
+          <article v-for="invitation in receivedInvitations" :key="invitation.id" class="rounded-3xl bg-rose-50 p-5">
+            <div class="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p class="text-lg font-black text-slate-900">{{ invitation.inviter_name || 'A customer' }} invited you</p>
+                <p class="mt-1 text-sm text-slate-600">{{ invitation.package_name }} | {{ invitation.branch }}</p>
+                <p class="mt-1 text-sm text-slate-600">{{ invitation.event_date }} at {{ invitation.event_time_label }}</p>
+                <p class="mt-1 text-xs font-bold text-red-700">{{ invitation.booking_reference }}</p>
+              </div>
+              <StatusBadge :value="invitation.status" />
+            </div>
+            <div v-if="invitation.status === 'pending'" class="mt-4 flex flex-wrap gap-3">
+              <button type="button" class="mcd-button" :disabled="responseBusy[invitation.id]" @click="respondToInvitation(invitation.id, 'accepted')">Accept invitation</button>
+              <button type="button" class="mcd-button mcd-button--ghost" :disabled="responseBusy[invitation.id]" @click="respondToInvitation(invitation.id, 'declined')">Decline</button>
+            </div>
+          </article>
+        </div>
+      </div>
+
       <div>
         <p class="mcd-chip">Bookings</p>
         <h2 class="mt-3 text-3xl">Upcoming</h2>
@@ -164,6 +275,63 @@ const refreshDashboard = () => {
               <div class="mt-5 flex flex-wrap gap-3">
                 <a :href="booking.payment_proof_preview_url || booking.payment_proof_url" target="_blank" rel="noreferrer" class="mcd-button mcd-button--ghost">View Payment Proof</a>
               </div>
+
+              <section class="guest-invitations">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">Guest invitations</p>
+                    <p class="mt-1 text-sm text-slate-600">Invite a customer by SMS and let them RSVP from the web or mobile app.</p>
+                  </div>
+                  <button type="button" class="mcd-button mcd-button--ghost" @click="invitationOpen[booking.id] = !invitationOpen[booking.id]">
+                    {{ invitationOpen[booking.id] ? 'Close invitation form' : 'Invite guest' }}
+                  </button>
+                </div>
+
+                <form v-if="invitationOpen[booking.id]" class="mt-4 grid gap-3 md:grid-cols-2" @submit.prevent="sendInvitation(booking)">
+                  <label class="grid gap-2 text-sm font-bold text-slate-700">
+                    Guest name
+                    <input v-model="invitationForms[booking.id].name" required maxlength="100" class="mcd-input" autocomplete="name" />
+                  </label>
+                  <label class="grid gap-2 text-sm font-bold text-slate-700">
+                    Philippine mobile number
+                    <input v-model="invitationForms[booking.id].phone" required maxlength="30" class="mcd-input" inputmode="tel" autocomplete="tel" placeholder="0917 123 4567" />
+                  </label>
+                  <label class="grid gap-2 text-sm font-bold text-slate-700 md:col-span-2">
+                    Email address (optional)
+                    <input v-model="invitationForms[booking.id].email" type="email" maxlength="191" class="mcd-input" autocomplete="email" />
+                  </label>
+                  <div class="md:col-span-2">
+                    <button type="submit" class="mcd-button" :disabled="invitationBusy[booking.id]">
+                      {{ invitationBusy[booking.id] ? 'Sending invitation...' : 'Send invitation' }}
+                    </button>
+                  </div>
+                </form>
+
+                <p v-if="invitationNotices[booking.id]" class="mt-3 rounded-2xl bg-emerald-50 p-3 text-sm font-bold text-emerald-800">{{ invitationNotices[booking.id] }}</p>
+                <p v-if="invitationErrors[booking.id]" class="mt-3 rounded-2xl bg-red-50 p-3 text-sm font-bold text-red-800">{{ invitationErrors[booking.id] }}</p>
+
+                <div v-if="invitationFallbacks[booking.id]" class="mt-3 rounded-2xl bg-amber-100 p-4">
+                  <p class="text-sm font-bold text-amber-950">Automatic SMS is unavailable. The invitation is saved in the app, and you can send this prepared text manually.</p>
+                  <p class="mt-2 break-words text-sm text-amber-900">{{ invitationFallbacks[booking.id].message }}</p>
+                  <div class="mt-3 flex flex-wrap gap-3">
+                    <a :href="fallbackSmsHref(invitationFallbacks[booking.id])" class="mcd-button mcd-button--ghost">Open SMS app</a>
+                    <button type="button" class="mcd-button mcd-button--ghost" @click="copyFallbackInvitation(booking.id)">Copy message</button>
+                  </div>
+                </div>
+
+                <div v-if="booking.invitations?.length" class="mt-4 grid gap-3">
+                  <article v-for="invitation in booking.invitations" :key="invitation.id" class="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-slate-50 p-4">
+                    <div>
+                      <p class="font-black text-slate-900">{{ invitation.invitee_name }}</p>
+                      <p class="text-sm text-slate-600">{{ invitation.invitee_phone }}<span v-if="invitation.invitee_email"> | {{ invitation.invitee_email }}</span></p>
+                    </div>
+                    <div class="flex items-center gap-3">
+                      <StatusBadge :value="invitation.status" />
+                      <button v-if="invitation.status === 'pending'" type="button" class="text-sm font-black text-red-700" :disabled="invitationBusy[booking.id]" @click="cancelInvitation(booking.id, invitation.id)">Cancel</button>
+                    </div>
+                  </article>
+                </div>
+              </section>
             </div>
 
             <div class="rounded-3xl bg-amber-50 p-5">
@@ -231,6 +399,12 @@ const refreshDashboard = () => {
   color: #64748b;
   font-size: 0.82rem;
   line-height: 1.6;
+}
+
+.guest-invitations {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(36, 23, 20, 0.1);
 }
 
 .customer-event-pass__status {

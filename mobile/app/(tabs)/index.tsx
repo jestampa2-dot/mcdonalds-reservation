@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Linking, RefreshControl, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
@@ -7,13 +7,14 @@ import {
   CustomerButton,
   CustomerCard,
   CustomerChip,
+  CustomerField,
   CustomerHeader,
   CustomerPage,
   McLogo,
   SectionEyebrow,
   SectionTitle,
 } from '@/components/customer-ui';
-import { ApiError, fetchHome } from '@/lib/api';
+import { ApiError, fetchHome, getApiBaseUrl, setApiBaseUrl, testApiBaseUrl } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { readCacheEnvelope, writeCache } from '@/lib/cache';
 import { formatCurrency } from '@/lib/formatters';
@@ -57,6 +58,11 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [showServerSettings, setShowServerSettings] = useState(false);
+  const [serverUrl, setServerUrl] = useState(getApiBaseUrl());
+  const [serverError, setServerError] = useState('');
+  const [serverSaving, setServerSaving] = useState(false);
+  const { serverSettings } = useLocalSearchParams<{ serverSettings?: string }>();
   const hasPayloadRef = useRef(false);
   const lastLoadedAtRef = useRef(0);
   const { width } = useWindowDimensions();
@@ -85,6 +91,32 @@ export default function HomeScreen() {
       setRefreshing(false);
     }
   }, []);
+
+  const saveServerAndReconnect = useCallback(async () => {
+    try {
+      setServerSaving(true);
+      setServerError('');
+      const reachableServerUrl = await testApiBaseUrl(serverUrl);
+      const savedServerUrl = await setApiBaseUrl(reachableServerUrl);
+      setServerUrl(savedServerUrl);
+      setShowServerSettings(false);
+      await loadHome();
+    } catch (error) {
+      setServerError(error instanceof Error ? error.message : 'Unable to save the server address.');
+    } finally {
+      setServerSaving(false);
+    }
+  }, [loadHome, serverUrl]);
+
+  useEffect(() => {
+    if (!serverSettings) {
+      return;
+    }
+
+    setServerError('');
+    setServerUrl(getApiBaseUrl());
+    setShowServerSettings(true);
+  }, [serverSettings]);
 
   useEffect(() => {
     let active = true;
@@ -131,7 +163,39 @@ export default function HomeScreen() {
           <SectionEyebrow>Connection issue</SectionEyebrow>
           <SectionTitle>Home data is unavailable</SectionTitle>
           <Text style={styles.helperText}>{errorMessage}</Text>
-          <CustomerButton label="Try again" onPress={() => void loadHome()} tone="ghost" />
+          <View style={styles.connectionActions}>
+            <CustomerButton label="Try again" onPress={() => void loadHome()} tone="ghost" />
+            <CustomerButton
+              label={showServerSettings ? 'Hide server settings' : 'Change server'}
+              onPress={() => {
+                setServerError('');
+                setServerUrl(getApiBaseUrl());
+                setShowServerSettings((visible) => !visible);
+              }}
+              tone="secondary"
+            />
+          </View>
+          {showServerSettings ? (
+            <View style={styles.serverSettings}>
+              <CustomerField
+                label="Server address"
+                value={serverUrl}
+                onChangeText={setServerUrl}
+                placeholder="http://192.168.1.8:8000"
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="go"
+                onSubmitEditing={() => void saveServerAndReconnect()}
+              />
+              {serverError ? <Text style={styles.serverError}>{serverError}</Text> : null}
+              <CustomerButton
+                label="Test, save and reconnect"
+                onPress={() => void saveServerAndReconnect()}
+                loading={serverSaving}
+                disabled={!serverUrl.trim()}
+              />
+            </View>
+          ) : null}
         </CustomerCard>
       ) : null}
 
@@ -268,6 +332,19 @@ const createStyles = (colors: AppThemeColors) => StyleSheet.create({
     color: colors.textMuted,
     lineHeight: 20,
     fontSize: 14,
+  },
+  connectionActions: {
+    gap: 10,
+  },
+  serverSettings: {
+    gap: 10,
+    paddingTop: 4,
+  },
+  serverError: {
+    color: colors.brandText,
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 18,
   },
   showcaseGrid: {
     flexDirection: 'row',

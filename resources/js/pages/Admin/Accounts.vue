@@ -7,7 +7,9 @@ import Modal from '@/Components/Modal.vue'
 
 const props = defineProps({
   users: Array,
+  branches: Array,
   canManageAccounts: Boolean,
+  canAssignMasterAdmin: Boolean,
 })
 
 const search = ref('')
@@ -19,6 +21,7 @@ const createForm = useForm({
   email: '',
   phone: '',
   role: 'customer',
+  branch_code: '',
   password: '',
   password_confirmation: '',
 })
@@ -28,6 +31,7 @@ const emptyEditState = (user) => ({
   email: user.email ?? '',
   phone: user.phone ?? '',
   role: user.role ?? 'customer',
+  branch_code: user.branch_code ?? '',
   password: '',
   password_confirmation: '',
 })
@@ -56,7 +60,8 @@ const filteredUsers = computed(() => {
   }
 
   return props.users.filter((user) =>
-    [user.name, user.email, user.phone, user.role].some((value) => String(value ?? '').toLowerCase().includes(term)),
+    [user.name, user.email, user.phone, user.role, user.branch_name, user.branch_code]
+      .some((value) => String(value ?? '').toLowerCase().includes(term)),
   )
 })
 
@@ -67,6 +72,8 @@ const initials = (name) => String(name ?? 'User')
   .map((part) => part[0]?.toUpperCase())
   .join('')
 
+const canManageUser = (user) => props.canManageAccounts && (props.canAssignMasterAdmin || user.role !== 'master_admin')
+
 const deleteModalOpen = computed(() => Boolean(accountPendingDeletion.value))
 
 const createAccount = () => {
@@ -74,8 +81,9 @@ const createAccount = () => {
     preserveScroll: true,
     preserveState: true,
     onSuccess: () => {
-      createForm.reset('name', 'email', 'phone', 'role', 'password', 'password_confirmation')
+      createForm.reset('name', 'email', 'phone', 'role', 'branch_code', 'password', 'password_confirmation')
       createForm.role = 'customer'
+      createForm.branch_code = ''
     },
   })
 }
@@ -143,10 +151,18 @@ const deleteAccount = () => {
           <div class="mcd-grid mcd-grid--2">
             <input v-model="createForm.phone" type="text" class="mcd-input" placeholder="Phone number" />
             <select v-model="createForm.role" class="mcd-select">
+              <option v-if="canAssignMasterAdmin" value="master_admin">master admin</option>
               <option value="customer">customer</option>
               <option value="staff">staff</option>
               <option value="manager">manager</option>
               <option value="admin">admin</option>
+            </select>
+          </div>
+          <div class="mcd-field">
+            <label>Assigned branch</label>
+            <select v-model="createForm.branch_code" class="mcd-select">
+              <option value="">All branches / not assigned</option>
+              <option v-for="branch in branches" :key="branch.code" :value="branch.code">{{ branch.name }}</option>
             </select>
           </div>
           <div class="mcd-grid mcd-grid--2">
@@ -207,14 +223,14 @@ const deleteAccount = () => {
                     type="text"
                     class="mcd-input"
                     placeholder="Full name"
-                    :disabled="!canManageAccounts"
+                    :disabled="!canManageUser(user)"
                   />
                   <input
                     v-model="accountEdits[user.id].email"
                     type="email"
                     class="mcd-input"
                     placeholder="Email address"
-                    :disabled="!canManageAccounts"
+                    :disabled="!canManageUser(user)"
                   />
                 </div>
                 <div class="mcd-grid mcd-grid--2">
@@ -223,16 +239,24 @@ const deleteAccount = () => {
                     type="text"
                     class="mcd-input"
                     placeholder="Phone number"
-                    :disabled="!canManageAccounts"
+                    :disabled="!canManageUser(user)"
                   />
-                  <select v-model="accountEdits[user.id].role" class="mcd-select" :disabled="!canManageAccounts">
+                  <select v-model="accountEdits[user.id].role" class="mcd-select" :disabled="!canManageUser(user)">
+                    <option v-if="canAssignMasterAdmin || user.role === 'master_admin'" value="master_admin">master admin</option>
                     <option value="customer">customer</option>
                     <option value="staff">staff</option>
                     <option value="manager">manager</option>
                     <option value="admin">admin</option>
                   </select>
                 </div>
-                <div v-if="canManageAccounts" class="mcd-grid mcd-grid--2">
+                <div class="mcd-field">
+                  <label>Assigned branch</label>
+                  <select v-model="accountEdits[user.id].branch_code" class="mcd-select" :disabled="!canManageUser(user)">
+                    <option value="">All branches / not assigned</option>
+                    <option v-for="branch in branches" :key="`${user.id}-${branch.code}`" :value="branch.code">{{ branch.name }}</option>
+                  </select>
+                </div>
+                <div v-if="canManageUser(user)" class="mcd-grid mcd-grid--2">
                   <input
                     v-model="accountEdits[user.id].password"
                     type="password"
@@ -251,20 +275,21 @@ const deleteAccount = () => {
               <div class="rounded-2xl bg-amber-50 px-4 py-4 text-sm text-slate-600">
                 <p class="font-black uppercase tracking-[0.12em] text-red-700">Account details</p>
                 <p class="mt-3"><strong>Current role:</strong> {{ user.role }}</p>
+                <p class="mt-1"><strong>Branch:</strong> {{ user.branch_name || 'All branches / not assigned' }}</p>
                 <p class="mt-1"><strong>Phone:</strong> {{ user.phone || 'Not set' }}</p>
                 <p class="mt-1"><strong>Created:</strong> {{ user.created_at || 'Unknown' }}</p>
               </div>
 
               <div class="flex flex-wrap gap-3 xl:flex-col">
                 <button
-                  v-if="canManageAccounts"
+                  v-if="canManageUser(user)"
                   type="submit"
                   class="mcd-button"
                 >
                   Save account
                 </button>
                 <button
-                  v-if="canManageAccounts"
+                  v-if="canManageUser(user)"
                   type="button"
                   class="mcd-button mcd-button--ghost"
                   @click="askToDeleteAccount(user)"

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\Api\MobileInvitationController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\ReservationController;
 
@@ -17,6 +18,9 @@ Route::middleware('auth')->group(function () {
     Route::post('/reservations/{reservation}/reschedule', [ReservationController::class, 'reschedule'])->name('reservations.reschedule');
     Route::get('/reservations/{reservation}/pass', [ReservationController::class, 'pass'])->name('reservations.pass');
     Route::get('/reservations/{reservation}/payment-proof', [ReservationController::class, 'paymentProof'])->name('reservations.payment-proof');
+    Route::post('/reservations/{reservation}/invitations', [MobileInvitationController::class, 'createInvitation'])->name('reservations.invitations.store');
+    Route::delete('/reservations/{reservation}/invitations/{invitation}', [MobileInvitationController::class, 'revokeInvitation'])->name('reservations.invitations.destroy');
+    Route::post('/invitations/{invitation}/respond', [MobileInvitationController::class, 'respondToInvitation'])->name('invitations.respond');
     Route::get('/availability', [ReservationController::class, 'availability'])->name('availability.index');
 
     Route::get('/admin/dashboard', [ReservationController::class, 'adminDashboard'])->name('admin.dashboard');
@@ -31,7 +35,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/admin/accounts', [ReservationController::class, 'adminAccounts'])->name('admin.accounts');
     Route::get('/admin/catalog', [ReservationController::class, 'adminCatalog'])->name('admin.catalog');
     Route::get('/admin/reports', [ReservationController::class, 'adminReports'])->name('admin.reports');
+    Route::get('/admin/reports/export', [ReservationController::class, 'exportAdminReport'])->name('admin.reports.export');
     Route::get('/admin/timeline', [ReservationController::class, 'adminTimeline'])->name('admin.timeline');
+    Route::get('/admin/activity', [ReservationController::class, 'adminActivity'])->name('admin.activity');
     Route::post('/admin/reservations/{reservation}/status', [ReservationController::class, 'updateBookingStatus'])->name('admin.reservations.status');
     Route::post('/admin/reservations/{reservation}/crew', [ReservationController::class, 'assignCrew'])->name('admin.reservations.crew');
     Route::post('/admin/users', [ReservationController::class, 'storeAdminUser'])->name('admin.users.store');

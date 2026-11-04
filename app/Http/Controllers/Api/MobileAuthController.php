@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\GoogleAccountService;
+use App\Services\GoogleIdTokenVerifier;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -69,6 +71,26 @@ class MobileAuthController extends Controller
         ]);
     }
 
+    public function google(
+        Request $request,
+        GoogleIdTokenVerifier $verifier,
+        GoogleAccountService $accounts
+    ): JsonResponse {
+        $validated = $request->validate([
+            'id_token' => ['required', 'string', 'max:10000'],
+        ]);
+
+        $identity = $verifier->verify($validated['id_token']);
+        $user = $accounts->resolve($identity);
+
+        return response()->json([
+            'message' => 'Signed in with Google successfully.',
+            'token' => $this->issueToken($user),
+            'user' => $this->serializeUser($user),
+            'needs_profile_completion' => $accounts->needsProfileCompletion($user),
+        ]);
+    }
+
     public function me(Request $request): JsonResponse
     {
         return response()->json([
@@ -100,6 +122,7 @@ class MobileAuthController extends Controller
             'email' => $user->email,
             'phone' => $user->phone,
             'role' => $user->role,
+            'branch_code' => $user->branch_code,
             'birth_date' => $user->birth_date?->toDateString(),
             'gender' => $user->gender,
             'address_line' => $user->address_line,

@@ -112,7 +112,13 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [preference, setPreference] = useState<ThemePreference>('system');
   const [fontSize, setFontSizeState] = useState<FontSizePreference>('standard');
-  const [systemMode, setSystemMode] = useState<ThemeMode>(() => (Appearance.getColorScheme() === 'dark' ? 'dark' : 'light'));
+  const [systemMode, setSystemMode] = useState<ThemeMode>(() => {
+    try {
+      return Appearance.getColorScheme() === 'dark' ? 'dark' : 'light';
+    } catch {
+      return 'light';
+    }
+  });
   const mode: ThemeMode = preference === 'system' ? systemMode : preference;
 
   useEffect(() => {
@@ -143,17 +149,16 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const subscription = Appearance.addChangeListener(({ colorScheme }: { colorScheme: ColorSchemeName }) => {
-      setSystemMode(colorScheme === 'dark' ? 'dark' : 'light');
-    });
+    try {
+      const subscription = Appearance.addChangeListener(({ colorScheme }: { colorScheme: ColorSchemeName }) => {
+        setSystemMode(colorScheme === 'dark' ? 'dark' : 'light');
+      });
 
-    return () => subscription.remove();
+      return () => subscription.remove();
+    } catch {
+      return undefined;
+    }
   }, []);
-
-  useEffect(() => {
-    const setColorScheme = Appearance.setColorScheme as (colorScheme: ColorSchemeName | null) => void;
-    setColorScheme(preference === 'system' ? null : preference);
-  }, [preference]);
 
   const setMode = useCallback((nextMode: ThemePreference) => {
     setPreference(nextMode);

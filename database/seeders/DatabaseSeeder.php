@@ -157,6 +157,7 @@ class DatabaseSeeder extends Seeder
                 'province' => 'Metro Manila',
                 'postal_code' => '1630',
                 'role' => 'admin',
+                'branch_code' => 'mnl-bgc',
                 'password' => Hash::make('password'),
             ]
         );
@@ -173,6 +174,7 @@ class DatabaseSeeder extends Seeder
                 'province' => 'Metro Manila',
                 'postal_code' => '1300',
                 'role' => 'manager',
+                'branch_code' => 'mnl-moa',
                 'password' => Hash::make('password'),
             ]
         );
@@ -189,6 +191,7 @@ class DatabaseSeeder extends Seeder
                 'province' => 'Metro Manila',
                 'postal_code' => '1550',
                 'role' => 'staff',
+                'branch_code' => 'mnl-bgc',
                 'password' => Hash::make('password'),
             ]
         );

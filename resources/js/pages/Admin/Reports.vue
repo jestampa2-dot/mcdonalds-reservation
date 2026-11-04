@@ -77,7 +77,10 @@ const addInventoryItem = (branchId) => {
             <p class="mcd-chip">Reports</p>
             <h1 class="mt-4 text-4xl">Reports</h1>
           </div>
-          <button type="button" class="mcd-button mcd-button--ghost" @click="refreshReports">Refresh reports</button>
+          <div class="flex flex-wrap gap-3">
+            <a :href="route('admin.reports.export')" class="mcd-button">Download reservation CSV</a>
+            <button type="button" class="mcd-button mcd-button--ghost" @click="refreshReports">Refresh reports</button>
+          </div>
         </div>
         <div class="mt-6">
           <AdminQuickLinks current="reports" />

@@ -22,7 +22,10 @@ class RegisteredUserController extends Controller
      */
     public function create(): Response
     {
-        return Inertia::render('Auth/Register');
+        return Inertia::render('Auth/Register', [
+            'googleAuthEnabled' => filled(config('services.google.client_id'))
+                && filled(config('services.google.client_secret')),
+        ]);
     }
 
     /**

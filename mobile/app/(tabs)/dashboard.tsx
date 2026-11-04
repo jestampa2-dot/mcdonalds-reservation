@@ -1,6 +1,6 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Image, Linking, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { Alert, Image, KeyboardAvoidingView, Linking, Modal, Platform, RefreshControl, StyleSheet, Text, View } from 'react-native';
 
 import {
   CustomerButton,
@@ -19,10 +19,13 @@ import { palette } from '@/constants/palette';
 import {
   ApiError,
   cancelReservation,
+  cancelReservationInvitation,
+  createReservationInvitation,
   fetchDashboard,
   getReservationPassUrl,
   getReservationPaymentProofUrl,
   resolveApiUrl,
+  respondToReservationInvitation,
   rescheduleReservation,
 } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -30,7 +33,7 @@ import { readCacheEnvelope, writeCache } from '@/lib/cache';
 import { formatLongDate, formatStatusLabel, formatTimeLabel } from '@/lib/formatters';
 import { useAppPreferences } from '@/lib/preferences';
 import { AppThemeColors, useAppTheme } from '@/lib/theme';
-import type { DashboardPayload } from '@/lib/types';
+import type { DashboardPayload, EventInvitation } from '@/lib/types';
 
 const metricIcons: Record<string, 'calendar-clock' | 'cash-multiple' | 'check-decagram'> = {
   Upcoming: 'calendar-clock',
@@ -55,16 +58,28 @@ function statusTone(status: string): 'yellow' | 'green' | 'pink' | 'neutral' {
   return 'yellow';
 }
 
+const emptyInvitationForm = { name: '', phone: '', email: '' };
+
+function invitationTone(status: EventInvitation['status']): 'yellow' | 'green' | 'pink' | 'neutral' {
+  if (status === 'accepted') return 'green';
+  if (status === 'declined' || status === 'revoked') return 'neutral';
+  return 'yellow';
+}
+
 export default function DashboardScreen() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const { preferences, syncReservationReminders } = useAppPreferences();
+  const { notifyNewInvitations, preferences, syncReservationReminders } = useAppPreferences();
   const { user, token, booting } = useAuth();
   const [payload, setPayload] = useState<DashboardPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [rescheduleForms, setRescheduleForms] = useState<Record<number, { event_date: string; event_time: string }>>({});
+  const [inviteReservationId, setInviteReservationId] = useState<number | null>(null);
+  const [invitationForm, setInvitationForm] = useState(emptyInvitationForm);
+  const [sendingInvitation, setSendingInvitation] = useState(false);
+  const [answeringInvitationId, setAnsweringInvitationId] = useState<number | null>(null);
   const hasPayloadRef = useRef(false);
   const lastLoadedAtRef = useRef(0);
   const dashboardCacheKey = user ? `mobile-cache:dashboard:${user.id}` : null;
@@ -87,6 +102,7 @@ export default function DashboardScreen() {
       lastLoadedAtRef.current = Date.now();
       setPayload(response);
       void syncReservationReminders(response.bookings).catch(() => undefined);
+      void notifyNewInvitations(response.receivedInvitations ?? []).catch(() => undefined);
       if (dashboardCacheKey) {
         await writeCache(dashboardCacheKey, response);
       }
@@ -107,7 +123,7 @@ export default function DashboardScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [dashboardCacheKey, syncReservationReminders, token]);
+  }, [dashboardCacheKey, notifyNewInvitations, syncReservationReminders, token]);
 
   useEffect(() => {
     let active = true;
@@ -124,6 +140,7 @@ export default function DashboardScreen() {
         lastLoadedAtRef.current = cachedPayload.savedAt;
         setPayload(cachedPayload.data);
         void syncReservationReminders(cachedPayload.data.bookings).catch(() => undefined);
+        void notifyNewInvitations(cachedPayload.data.receivedInvitations ?? []).catch(() => undefined);
         setLoading(false);
         setRescheduleForms(
           Object.fromEntries(
@@ -142,7 +159,7 @@ export default function DashboardScreen() {
     return () => {
       active = false;
     };
-  }, [dashboardCacheKey, syncReservationReminders]);
+  }, [dashboardCacheKey, notifyNewInvitations, syncReservationReminders]);
 
   useFocusEffect(
     useCallback(() => {
@@ -172,6 +189,75 @@ export default function DashboardScreen() {
       const message = error instanceof ApiError ? Object.values(error.errors ?? {})[0]?.[0] ?? error.message : 'Unable to reschedule right now.';
       Alert.alert('Reschedule failed', message);
     }
+  }
+
+  async function handleSendInvitation() {
+    if (!inviteReservationId || !token) return;
+
+    try {
+      setSendingInvitation(true);
+      const response = await createReservationInvitation(token, inviteReservationId, {
+        name: invitationForm.name.trim(),
+        phone: invitationForm.phone.trim(),
+        email: invitationForm.email.trim() || undefined,
+      });
+      setInviteReservationId(null);
+      setInvitationForm(emptyInvitationForm);
+      if (response.sms_queued) {
+        Alert.alert('Invitation sent', response.message);
+      } else {
+        const smsBody = `You're invited to ${response.invitation.package_name ?? 'a McDonald\'s event'} at ${response.invitation.branch ?? 'McDonald\'s'} on ${response.invitation.event_date ?? 'the scheduled date'} at ${response.invitation.event_time_label ?? 'the scheduled time'}. Open McD Reservations to reply. Ref ${response.invitation.booking_reference ?? ''}`;
+        const smsUrl = `sms:${response.invitation.invitee_phone}?body=${encodeURIComponent(smsBody)}`;
+
+        Alert.alert('Invitation saved', `${response.message} You can send it from your phone instead.`, [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Open Messages', onPress: () => void Linking.openURL(smsUrl) },
+        ]);
+      }
+      await loadDashboard();
+    } catch (error) {
+      const message = error instanceof ApiError ? Object.values(error.errors ?? {})[0]?.[0] ?? error.message : 'Unable to send the invitation.';
+      Alert.alert('Invitation failed', message);
+    } finally {
+      setSendingInvitation(false);
+    }
+  }
+
+  async function handleInvitationResponse(invitationId: number, status: 'accepted' | 'declined') {
+    if (!token) return;
+
+    try {
+      setAnsweringInvitationId(invitationId);
+      const response = await respondToReservationInvitation(token, invitationId, status);
+      Alert.alert(status === 'accepted' ? 'Invitation accepted' : 'Invitation declined', response.message);
+      await loadDashboard();
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : 'Unable to answer this invitation.';
+      Alert.alert('Response failed', message);
+    } finally {
+      setAnsweringInvitationId(null);
+    }
+  }
+
+  function handleCancelInvitation(reservationId: number, invitationId: number) {
+    Alert.alert('Cancel invitation?', 'The customer will no longer be able to accept this invitation.', [
+      { text: 'Keep invitation', style: 'cancel' },
+      {
+        text: 'Cancel invitation',
+        style: 'destructive',
+        onPress: () => {
+          void (async () => {
+            try {
+              const response = await cancelReservationInvitation(token!, reservationId, invitationId);
+              Alert.alert('Invitation updated', response.message);
+              await loadDashboard();
+            } catch (error) {
+              Alert.alert('Unable to cancel', error instanceof ApiError ? error.message : 'Please try again.');
+            }
+          })();
+        },
+      },
+    ]);
   }
 
   function setRescheduleValue(reservationId: number, key: 'event_date' | 'event_time', value: string) {
@@ -250,6 +336,49 @@ export default function DashboardScreen() {
             <MetricTile key={stat.label} icon={metricIcons[stat.label] ?? 'calendar-clock'} label={stat.label} value={stat.value} />
           ))}
         </View>
+
+        {(payload?.receivedInvitations ?? []).length > 0 ? (
+          <CustomerCard tone="pink" style={styles.invitationInbox}>
+            <SectionEyebrow>Event invitations</SectionEyebrow>
+            <SectionTitle>Invitations for you</SectionTitle>
+            {(payload?.receivedInvitations ?? []).map((invitation) => (
+              <View key={invitation.id} style={styles.invitationRow}>
+                <View style={styles.invitationHeader}>
+                  <View style={styles.invitationCopy}>
+                    <Text style={styles.invitationTitle}>{invitation.inviter_name ?? 'A customer'} invited you</Text>
+                    <Text style={styles.invitationMeta}>{invitation.package_name ?? invitation.event_type ?? 'McDonald\'s event'}</Text>
+                    <Text style={styles.invitationMeta}>{invitation.branch}</Text>
+                    {invitation.event_date ? (
+                      <Text style={styles.invitationMeta}>
+                        {formatLongDate(invitation.event_date, preferences.dateFormat, preferences.language)} at {invitation.event_time_label}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <CustomerChip label={formatStatusLabel(invitation.status)} tone={invitationTone(invitation.status)} />
+                </View>
+                {invitation.status === 'pending' ? (
+                  <View style={styles.invitationActions}>
+                    <CustomerButton
+                      label="Accept"
+                      icon="check"
+                      compact
+                      disabled={answeringInvitationId === invitation.id}
+                      onPress={() => void handleInvitationResponse(invitation.id, 'accepted')}
+                    />
+                    <CustomerButton
+                      label="Decline"
+                      icon="close"
+                      compact
+                      tone="secondary"
+                      disabled={answeringInvitationId === invitation.id}
+                      onPress={() => void handleInvitationResponse(invitation.id, 'declined')}
+                    />
+                  </View>
+                ) : null}
+              </View>
+            ))}
+          </CustomerCard>
+        ) : null}
 
         <CustomerCard tone="cream" style={styles.summaryCard}>
           <SectionTitle>Upcoming</SectionTitle>
@@ -348,6 +477,44 @@ export default function DashboardScreen() {
                     </View>
                   ) : null}
 
+                  {['pending_review', 'confirmed', 'rescheduled'].includes(booking.status) ? (
+                    <View style={styles.guestInvitePanel}>
+                      <View style={styles.invitationHeader}>
+                        <View style={styles.invitationCopy}>
+                          <SectionEyebrow>Guest invitations</SectionEyebrow>
+                          <Text style={styles.invitationMeta}>Invite a customer by SMS and let them RSVP in the app.</Text>
+                        </View>
+                        <CustomerButton
+                          label="Invite"
+                          icon="account-plus"
+                          compact
+                          onPress={() => {
+                            setInvitationForm(emptyInvitationForm);
+                            setInviteReservationId(booking.id);
+                          }}
+                        />
+                      </View>
+
+                      {(booking.invitations ?? []).map((invitation) => (
+                        <View key={invitation.id} style={styles.sentInvitationRow}>
+                          <View style={styles.invitationCopy}>
+                            <Text style={styles.sentInvitationName}>{invitation.invitee_name}</Text>
+                            <Text style={styles.invitationMeta}>{invitation.invitee_phone}</Text>
+                          </View>
+                          <CustomerChip label={formatStatusLabel(invitation.status)} tone={invitationTone(invitation.status)} />
+                          {invitation.status === 'pending' ? (
+                            <CustomerButton
+                              label="Cancel"
+                              compact
+                              tone="ghost"
+                              onPress={() => handleCancelInvitation(booking.id, invitation.id)}
+                            />
+                          ) : null}
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
+
                   <Text style={styles.adminSyncText}>This reservation stays in sync with your admin review and database updates.</Text>
 
                   {['pending_review', 'confirmed', 'rescheduled'].includes(booking.status) ? (
@@ -376,6 +543,59 @@ export default function DashboardScreen() {
           )}
         </CustomerCard>
       </SheetSurface>
+
+      <Modal
+        visible={inviteReservationId !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => !sendingInvitation && setInviteReservationId(null)}>
+        <KeyboardAvoidingView
+          style={styles.modalBackdrop}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <View style={styles.modalPanel}>
+            <SectionEyebrow>Invite a customer</SectionEyebrow>
+            <SectionTitle>Send an event invitation</SectionTitle>
+            <Text style={styles.helperText}>They will receive an SMS and can accept or decline from their customer account.</Text>
+            <CustomerField
+              label="Customer name"
+              value={invitationForm.name}
+              onChangeText={(name) => setInvitationForm((current) => ({ ...current, name }))}
+              placeholder="Guest name"
+              autoCapitalize="words"
+            />
+            <CustomerField
+              label="Philippine mobile number"
+              value={invitationForm.phone}
+              onChangeText={(phone) => setInvitationForm((current) => ({ ...current, phone }))}
+              placeholder="0917 123 4567"
+              keyboardType="phone-pad"
+            />
+            <CustomerField
+              label="Email (optional)"
+              value={invitationForm.email}
+              onChangeText={(email) => setInvitationForm((current) => ({ ...current, email }))}
+              placeholder="customer@example.com"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <View style={styles.modalActions}>
+              <CustomerButton
+                label="Close"
+                tone="secondary"
+                disabled={sendingInvitation}
+                onPress={() => setInviteReservationId(null)}
+              />
+              <CustomerButton
+                label={sendingInvitation ? 'Sending...' : 'Send invitation'}
+                icon="send"
+                disabled={sendingInvitation || !invitationForm.name.trim() || !invitationForm.phone.trim()}
+                onPress={() => void handleSendInvitation()}
+              />
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </CustomerPage>
   );
 }
@@ -413,6 +633,40 @@ const createStyles = (colors: AppThemeColors) => StyleSheet.create({
   },
   summaryCard: {
     gap: 14,
+  },
+  invitationInbox: {
+    gap: 12,
+  },
+  invitationRow: {
+    gap: 10,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
+  },
+  invitationHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  invitationCopy: {
+    flex: 1,
+    gap: 3,
+  },
+  invitationTitle: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  invitationMeta: {
+    color: colors.textMuted,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  invitationActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
   },
   emptyWrap: {
     alignItems: 'center',
@@ -554,5 +808,44 @@ const createStyles = (colors: AppThemeColors) => StyleSheet.create({
   },
   actionBox: {
     gap: 10,
+  },
+  guestInvitePanel: {
+    gap: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
+    paddingTop: 14,
+  },
+  sentInvitationRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
+  },
+  sentInvitationName: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  modalBackdrop: {
+    flex: 1,
+    justifyContent: 'center',
+    padding: 20,
+    backgroundColor: 'rgba(20, 12, 6, 0.58)',
+  },
+  modalPanel: {
+    width: '100%',
+    maxWidth: 520,
+    alignSelf: 'center',
+    maxHeight: '92%',
+    gap: 12,
+    padding: 18,
+    borderRadius: 8,
+    backgroundColor: colors.surface,
+  },
+  modalActions: {
+    gap: 8,
   },
 });

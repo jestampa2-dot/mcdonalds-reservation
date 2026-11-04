@@ -3,6 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 
 import { AppLockGate } from '@/components/app-lock-gate';
+import { StartupErrorBoundary } from '@/components/startup-error-boundary';
 import { AuthProvider } from '@/lib/auth';
 import { AppPreferencesProvider } from '@/lib/preferences';
 import { ThemeProvider, useAppTheme } from '@/lib/theme';
@@ -30,10 +31,12 @@ function AppNavigator() {
 
 export default function RootLayout() {
   return (
-    <ThemeProvider>
-      <AppPreferencesProvider>
-        <AppNavigator />
-      </AppPreferencesProvider>
-    </ThemeProvider>
+    <StartupErrorBoundary>
+      <ThemeProvider>
+        <AppPreferencesProvider>
+          <AppNavigator />
+        </AppPreferencesProvider>
+      </ThemeProvider>
+    </StartupErrorBoundary>
   );
 }

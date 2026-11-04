@@ -1,6 +1,7 @@
 import { Redirect, router } from 'expo-router';
 import { startTransition, useMemo, useState } from 'react';
 import { Alert, Keyboard, StyleSheet, Text, View } from 'react-native';
+import { GoogleSigninButton } from '@react-native-google-signin/google-signin';
 
 import {
   CustomerButton,
@@ -14,15 +15,18 @@ import {
 } from '@/components/customer-ui';
 import { ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { chooseGoogleAccount, googleSignInErrorMessage, isGoogleSignInConfigured } from '@/lib/google-auth';
 import { AppThemeColors, useAppTheme } from '@/lib/theme';
 
 export default function LoginScreen() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const { signIn, user, booting } = useAuth();
+  const { signIn, signInWithGoogle, user, booting } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [googleSubmitting, setGoogleSubmitting] = useState(false);
+  const googleEnabled = isGoogleSignInConfigured();
 
   async function handleSubmit() {
     const normalizedEmail = email.trim().toLowerCase();
@@ -47,6 +51,33 @@ export default function LoginScreen() {
     }
   }
 
+  async function handleGoogleSignIn() {
+    try {
+      Keyboard.dismiss();
+      setGoogleSubmitting(true);
+      const idToken = await chooseGoogleAccount();
+
+      if (!idToken) {
+        return;
+      }
+
+      const needsProfileCompletion = await signInWithGoogle(idToken);
+      startTransition(() => {
+        router.replace(needsProfileCompletion ? '/(tabs)/account' : '/(tabs)/dashboard');
+      });
+    } catch (error) {
+      const message = error instanceof ApiError
+        ? error.errors?.google?.[0] ?? error.message
+        : googleSignInErrorMessage(error);
+
+      if (message) {
+        Alert.alert('Google sign-in failed', message);
+      }
+    } finally {
+      setGoogleSubmitting(false);
+    }
+  }
+
   if (!booting && user) {
     return <Redirect href="/(tabs)/dashboard" />;
   }
@@ -63,6 +94,16 @@ export default function LoginScreen() {
 
         <CustomerCard>
           <SectionTitle>Sign in</SectionTitle>
+          {googleEnabled ? (
+            <View style={styles.googleArea}>
+              <GoogleSigninButton
+                size={GoogleSigninButton.Size.Wide}
+                onPress={() => void handleGoogleSignIn()}
+                disabled={submitting || googleSubmitting}
+              />
+              <Text style={styles.divider}>or use your email and password</Text>
+            </View>
+          ) : null}
           <CustomerField
             label="Email address"
             value={email}
@@ -125,6 +166,18 @@ const createStyles = (colors: AppThemeColors) => StyleSheet.create({
   },
   stack: {
     gap: 10,
+  },
+  googleArea: {
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 4,
+  },
+  divider: {
+    color: colors.textSubtle,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
   },
   tip: {
     color: colors.textMuted,

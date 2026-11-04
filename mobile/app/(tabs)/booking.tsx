@@ -619,7 +619,19 @@ export default function BookingScreen() {
       router.push('/(tabs)/dashboard');
     } catch (error) {
       const message = error instanceof ApiError ? Object.values(error.errors ?? {})[0]?.[0] ?? error.message : 'Unable to submit the reservation right now.';
-      Alert.alert('Booking failed', message);
+
+      if (error instanceof ApiError && error.status === 0) {
+        Alert.alert('Booking failed', message, [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Try again', onPress: () => void submitReservation() },
+          {
+            text: 'Change server',
+            onPress: () => router.push({ pathname: '/(tabs)', params: { serverSettings: String(Date.now()) } }),
+          },
+        ]);
+      } else {
+        Alert.alert('Booking failed', message);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -643,6 +655,11 @@ export default function BookingScreen() {
             <SectionTitle>Booking data is unavailable</SectionTitle>
             <Text style={styles.helperText}>{errorMessage}</Text>
             <CustomerButton label="Reload booking data" onPress={() => void loadBookingOptions()} tone="ghost" />
+            <CustomerButton
+              label="Change server"
+              onPress={() => router.push({ pathname: '/(tabs)', params: { serverSettings: String(Date.now()) } })}
+              tone="secondary"
+            />
           </CustomerCard>
         ) : null}
 

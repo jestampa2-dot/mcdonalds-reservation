@@ -27,11 +27,11 @@ class MobileOperationsController extends ReservationController
         $role = (string) $request->user()->role;
         $payload = ['role' => $role];
 
-        if (in_array($role, ['admin', 'manager'], true)) {
+        if (in_array($role, ['master_admin', 'admin', 'manager'], true)) {
             $payload['admin'] = $this->adminOperationsPayload($request);
         }
 
-        if (in_array($role, ['admin', 'manager', 'staff'], true)) {
+        if (in_array($role, ['master_admin', 'admin', 'manager', 'staff'], true)) {
             $payload['staff'] = $this->staffOperationsPayload($request);
         }
 
@@ -101,7 +101,8 @@ class MobileOperationsController extends ReservationController
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
             'phone' => ['nullable', 'string', 'max:30'],
-            'role' => ['required', Rule::in(['customer', 'staff', 'manager', 'admin'])],
+            'role' => ['required', Rule::in($this->manageableAccountRoles($request))],
+            'branch_code' => ['nullable', 'string', Rule::exists('branches', 'code')],
             'password' => ['required', 'confirmed', Password::defaults()],
         ]);
 
@@ -110,6 +111,7 @@ class MobileOperationsController extends ReservationController
             'email' => $validated['email'],
             'phone' => $validated['phone'] ?: null,
             'role' => $validated['role'],
+            'branch_code' => ($validated['branch_code'] ?? null) ?: null,
             'password' => Hash::make($validated['password']),
         ]);
 
@@ -122,12 +124,14 @@ class MobileOperationsController extends ReservationController
     public function mobileUpdateAdminUser(Request $request, User $user): JsonResponse
     {
         $this->authorizeRoles($request, ['admin']);
+        $this->authorizeAccountTarget($request, $user);
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
             'phone' => ['nullable', 'string', 'max:30'],
-            'role' => ['required', Rule::in(['customer', 'staff', 'manager', 'admin'])],
+            'role' => ['required', Rule::in($this->manageableAccountRoles($request))],
+            'branch_code' => ['nullable', 'string', Rule::exists('branches', 'code')],
             'password' => ['nullable', 'confirmed', Password::defaults()],
         ]);
 
@@ -136,6 +140,7 @@ class MobileOperationsController extends ReservationController
             'email' => $validated['email'],
             'phone' => $validated['phone'] ?: null,
             'role' => $validated['role'],
+            'branch_code' => ($validated['branch_code'] ?? null) ?: null,
         ];
 
         if ($user->email !== $validated['email']) {
@@ -157,6 +162,7 @@ class MobileOperationsController extends ReservationController
     public function mobileDestroyAdminUser(Request $request, User $user): JsonResponse
     {
         $this->authorizeRoles($request, ['admin']);
+        $this->authorizeAccountTarget($request, $user);
 
         if ($request->user()->is($user)) {
             return response()->json([
@@ -167,6 +173,12 @@ class MobileOperationsController extends ReservationController
         if ($user->role === 'admin' && User::query()->where('role', 'admin')->count() <= 1) {
             return response()->json([
                 'message' => 'At least one admin account must remain in the system.',
+            ], 422);
+        }
+
+        if ($user->role === 'master_admin' && User::query()->where('role', 'master_admin')->count() <= 1) {
+            return response()->json([
+                'message' => 'At least one Master Admin account must remain in the system.',
             ], 422);
         }
 
@@ -588,11 +600,14 @@ class MobileOperationsController extends ReservationController
                 'stats' => $this->adminStats($this->adminStatsBookings()),
                 'notifications' => $this->upcomingEventNotifications($allBookings),
                 'history' => $this->eventHistory($allBookings),
-                'branchSummaries' => collect(array_values($catalog['branches']))->map(fn ($branch) => [
-                    'code' => $branch['code'],
-                    'name' => $branch['name'],
-                    'city' => $branch['city'],
-                ])->values(),
+                'isMasterAdmin' => $request->user()->role === 'master_admin',
+                'masterOverview' => $request->user()->role === 'master_admin'
+                    ? $this->masterAdminOverview($this->adminStatsBookings())
+                    : [],
+                'recentActivities' => $request->user()->role === 'master_admin'
+                    ? $this->recentActivityLogs(8)
+                    : [],
+                'branchSummaries' => $this->branchOperationsSummaries($catalog, $this->adminStatsBookings()),
             ],
             'bookings' => [
                 'stats' => $this->adminStats($this->adminStatsBookings()),
@@ -620,7 +635,12 @@ class MobileOperationsController extends ReservationController
             ],
             'accounts' => [
                 'users' => $this->adminUsers(),
-                'canManageAccounts' => $request->user()->role === 'admin',
+                'branches' => collect($this->adminBranchList())->map(fn ($branch) => [
+                    'code' => $branch['code'],
+                    'name' => $branch['name'],
+                ])->values(),
+                'canManageAccounts' => in_array($request->user()->role, ['master_admin', 'admin'], true),
+                'canAssignMasterAdmin' => $request->user()->role === 'master_admin',
             ],
             'catalog' => [
                 'eventTypes' => $this->runDatabaseCheck(
@@ -713,6 +733,8 @@ class MobileOperationsController extends ReservationController
             'email' => $user->email,
             'phone' => $user->phone,
             'role' => $user->role,
+            'branch_code' => $user->branch_code,
+            'branch_name' => $user->branch?->name,
             'profile_photo_url' => $user->profile_photo_url,
             'created_at' => optional($user->created_at)->format('M j, Y g:i A'),
         ];

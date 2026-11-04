@@ -1,0 +1,241 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Jobs\SendInvitationSms;
+use App\Models\Reservation;
+use App\Models\ReservationInvitation;
+use App\Models\SmsMessage;
+use App\Models\User;
+use App\Services\TextBeeSmsGateway;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Schema;
+use Laravel\Sanctum\Sanctum;
+use Tests\TestCase;
+
+class MobileInvitationTest extends TestCase
+{
+    use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config()->set([
+            'sms.enabled' => true,
+            'sms.textbee.api_key' => 'fake-test-key',
+            'sms.textbee.device_id' => 'fake-device-id',
+            'sms.textbee.base_url' => 'https://api.textbee.dev/api/v1',
+        ]);
+        Http::preventStrayRequests();
+    }
+
+    public function test_booking_owner_can_invite_a_registered_customer_by_sms_and_in_app(): void
+    {
+        $owner = $this->customer('owner@example.com', '09171234567');
+        $invitee = $this->customer('guest@example.com', '09181234567', true);
+        $reservation = $this->reservation($owner);
+        Sanctum::actingAs($owner);
+
+        $this->postJson("/api/mobile/reservations/{$reservation->id}/invitations", [
+            'name' => 'Invited Guest',
+            'phone' => '+63 918 123 4567',
+            'email' => strtoupper($invitee->email),
+        ])->assertCreated()
+            ->assertJsonPath('sms_queued', true)
+            ->assertJsonPath('invitation.status', 'pending')
+            ->assertJsonPath('invitation.invitee_phone', '+639181234567');
+
+        $this->assertDatabaseHas('reservation_invitations', [
+            'reservation_id' => $reservation->id,
+            'invitee_user_id' => $invitee->id,
+            'invitee_phone' => '+639181234567',
+            'status' => 'pending',
+        ]);
+        $this->assertDatabaseHas('sms_messages', [
+            'user_id' => $owner->id,
+            'reservation_id' => $reservation->id,
+            'recipient' => '+639181234567',
+            'event' => 'invitation',
+            'status' => 'queued',
+        ]);
+        $this->assertDatabaseCount('sms_jobs', 1);
+
+        Sanctum::actingAs($invitee);
+        $this->getJson('/api/mobile/dashboard')
+            ->assertOk()
+            ->assertJsonPath('receivedInvitations.0.inviter_name', $owner->name)
+            ->assertJsonPath('receivedInvitations.0.booking_reference', $reservation->booking_reference);
+    }
+
+    public function test_invitee_can_accept_and_owner_sees_the_rsvp_status(): void
+    {
+        $owner = $this->customer('owner@example.com', '09171234567');
+        $invitee = $this->customer('guest@example.com', '09181234567');
+        $reservation = $this->reservation($owner);
+        $invitation = $this->invitation($reservation, $owner, $invitee);
+
+        Sanctum::actingAs($invitee);
+        $this->postJson("/api/mobile/invitations/{$invitation->id}/respond", [
+            'status' => 'accepted',
+        ])->assertOk()
+            ->assertJsonPath('invitation.status', 'accepted');
+
+        $this->assertDatabaseHas('reservation_invitations', [
+            'id' => $invitation->id,
+            'status' => 'accepted',
+        ]);
+        $this->assertNotNull($invitation->fresh()->responded_at);
+
+        Sanctum::actingAs($owner);
+        $this->getJson('/api/mobile/dashboard')
+            ->assertOk()
+            ->assertJsonPath('bookings.0.invitations.0.status', 'accepted');
+    }
+
+    public function test_an_unrelated_customer_cannot_answer_an_invitation(): void
+    {
+        $owner = $this->customer('owner@example.com', '09171234567');
+        $invitee = $this->customer('guest@example.com', '09181234567');
+        $unrelated = $this->customer('other@example.com', '09191234567');
+        $invitation = $this->invitation($this->reservation($owner), $owner, $invitee);
+
+        Sanctum::actingAs($unrelated);
+        $this->postJson("/api/mobile/invitations/{$invitation->id}/respond", [
+            'status' => 'accepted',
+        ])->assertForbidden();
+
+        $this->assertSame('pending', $invitation->fresh()->status);
+    }
+
+    public function test_self_duplicate_and_inactive_booking_invitations_are_rejected(): void
+    {
+        $owner = $this->customer('owner@example.com', '09171234567');
+        $reservation = $this->reservation($owner);
+        Sanctum::actingAs($owner);
+
+        $this->postJson("/api/mobile/reservations/{$reservation->id}/invitations", [
+            'name' => $owner->name,
+            'phone' => $owner->phone,
+            'email' => $owner->email,
+        ])->assertUnprocessable()->assertJsonValidationErrors('phone');
+
+        $payload = ['name' => 'Guest', 'phone' => '09181234567', 'email' => 'guest@example.com'];
+        $this->postJson("/api/mobile/reservations/{$reservation->id}/invitations", $payload)->assertCreated();
+        $this->postJson("/api/mobile/reservations/{$reservation->id}/invitations", $payload)
+            ->assertUnprocessable()->assertJsonValidationErrors('phone');
+
+        $reservation->update(['status' => 'cancelled']);
+        $this->postJson("/api/mobile/reservations/{$reservation->id}/invitations", [
+            'name' => 'Another Guest',
+            'phone' => '09191234567',
+        ])->assertUnprocessable();
+    }
+
+    public function test_invitation_worker_sends_once_and_skips_a_declined_invitation(): void
+    {
+        Http::fake([
+            'https://api.textbee.dev/api/v1/gateway/send-sms' => Http::response([
+                'data' => ['success' => true, 'smsBatchId' => 'invite-batch-id'],
+            ]),
+        ]);
+        $owner = $this->customer('owner@example.com', '09171234567');
+        $reservation = $this->reservation($owner);
+        Sanctum::actingAs($owner);
+
+        $this->postJson("/api/mobile/reservations/{$reservation->id}/invitations", [
+            'name' => 'Guest',
+            'phone' => '09181234567',
+        ])->assertCreated();
+
+        $sms = SmsMessage::firstOrFail();
+        $invitation = ReservationInvitation::firstOrFail();
+        $job = new SendInvitationSms($sms->id, $invitation->id);
+        $job->handle(app(TextBeeSmsGateway::class));
+        $job->handle(app(TextBeeSmsGateway::class));
+
+        $this->assertSame('accepted', $sms->fresh()->status);
+        Http::assertSentCount(1);
+
+        $secondSms = SmsMessage::create([
+            'user_id' => $owner->id,
+            'reservation_id' => $reservation->id,
+            'recipient' => $invitation->invitee_phone,
+            'event' => 'invitation',
+            'message' => 'Invitation test',
+        ]);
+        $invitation->update(['status' => 'declined', 'responded_at' => now()]);
+        (new SendInvitationSms($secondSms->id, $invitation->id))->handle(app(TextBeeSmsGateway::class));
+
+        $this->assertSame('skipped', $secondSms->fresh()->status);
+        Http::assertSentCount(1);
+    }
+
+    public function test_broken_sms_queue_does_not_prevent_an_in_app_invitation(): void
+    {
+        $owner = $this->customer('owner@example.com', '09171234567');
+        $reservation = $this->reservation($owner);
+        Schema::drop('sms_jobs');
+        Sanctum::actingAs($owner);
+
+        $this->postJson("/api/mobile/reservations/{$reservation->id}/invitations", [
+            'name' => 'Guest',
+            'phone' => '09181234567',
+        ])->assertCreated()
+            ->assertJsonPath('sms_queued', false)
+            ->assertJsonPath('invitation.status', 'pending');
+
+        $this->assertDatabaseHas('reservation_invitations', [
+            'reservation_id' => $reservation->id,
+            'invitee_phone' => '+639181234567',
+        ]);
+        $this->assertDatabaseCount('sms_messages', 0);
+    }
+
+    private function customer(string $email, string $phone, bool $smsEnabled = false): User
+    {
+        return User::factory()->create([
+            'role' => 'customer',
+            'email' => $email,
+            'phone' => $phone,
+            'sms_notifications_enabled' => $smsEnabled,
+        ]);
+    }
+
+    private function reservation(User $owner): Reservation
+    {
+        return Reservation::create([
+            'user_id' => $owner->id,
+            'name' => $owner->name,
+            'email' => $owner->email,
+            'phone' => $owner->phone,
+            'booking_reference' => 'INVITE-1001',
+            'reservation_type' => 'birthday',
+            'package_name' => 'Birthday Party Package',
+            'branch' => "McDonald's Surigao City",
+            'branch_code' => 'surigao-city',
+            'event_date' => now()->addDays(5)->toDateString(),
+            'event_time' => '10:00:00',
+            'duration_hours' => 4,
+            'guests' => 15,
+            'total_amount' => 2500,
+            'status' => 'confirmed',
+            'service_status' => 'available',
+        ]);
+    }
+
+    private function invitation(Reservation $reservation, User $owner, User $invitee): ReservationInvitation
+    {
+        return ReservationInvitation::create([
+            'reservation_id' => $reservation->id,
+            'inviter_id' => $owner->id,
+            'invitee_user_id' => $invitee->id,
+            'invitee_name' => $invitee->name,
+            'invitee_phone' => '+639181234567',
+            'invitee_email' => $invitee->email,
+            'token' => (string) \Illuminate\Support\Str::uuid(),
+            'status' => 'pending',
+        ]);
+    }
+}

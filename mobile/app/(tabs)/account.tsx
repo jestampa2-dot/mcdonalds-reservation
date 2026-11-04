@@ -386,7 +386,7 @@ export default function AccountScreen() {
   if (!user || !token) {
     return (
       <CustomerPage contentContainerStyle={styles.pageContent}>
-        <CustomerHeader title="My Account" subtitle="Sign in to manage your profile." rightSlot={<AvatarBadge label="?" />} />
+        <CustomerHeader title="Settings" subtitle="Sign in to manage your profile and preferences." rightSlot={<AvatarBadge label="?" />} />
         <SheetSurface>
           <CustomerCard>
             <SectionEyebrow>Customer access</SectionEyebrow>
@@ -407,8 +407,8 @@ export default function AccountScreen() {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void loadProfile(true)} tintColor={colors.brandText} />}
       contentContainerStyle={styles.pageContent}>
       <CustomerHeader
-        title="My Account"
-        subtitle="Profile, preferences, security, and support."
+        title="Settings"
+        subtitle="Account, preferences, security, and support."
         rightSlot={<AvatarBadge label={getInitials(profile?.name ?? user.name) || 'U'} imageUrl={activePhotoUrl} />}
       />
       <SheetSurface>

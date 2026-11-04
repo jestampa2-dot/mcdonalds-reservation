@@ -1,14 +1,18 @@
 import type {
   BookingOptionsPayload,
   DashboardPayload,
+  EventInvitation,
   HomePayload,
   MobileUser,
   OperationsPayload,
   ProfilePayload,
   ReservationRecord,
 } from '@/lib/types';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
+
+const apiBaseUrlStorageKey = 'mcdonalds-reservations:api-base-url';
 
 function apiBaseUrlFromHost(hostUri?: string | null) {
   if (!hostUri) {
@@ -101,7 +105,46 @@ function resolveApiBaseUrl() {
   return configuredApiBaseUrl || getFallbackApiBaseUrl();
 }
 
-const apiBaseUrl = resolveApiBaseUrl().replace(/\/$/, '');
+function normalizeApiBaseUrl(value: string) {
+  const trimmedValue = value.trim();
+
+  if (!trimmedValue) {
+    throw new Error('Enter the server address shown on the computer.');
+  }
+
+  const candidate = /^[a-z][a-z\d+.-]*:\/\//i.test(trimmedValue)
+    ? trimmedValue
+    : `http://${trimmedValue}`;
+  const parsed = new URL(candidate);
+
+  if (!['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname) {
+    throw new Error('Use a valid HTTP or HTTPS server address.');
+  }
+
+  parsed.search = '';
+  parsed.hash = '';
+
+  return parsed.toString().replace(/\/$/, '');
+}
+
+let apiBaseUrl = normalizeApiBaseUrl(resolveApiBaseUrl());
+let apiBaseUrlHydration: Promise<string> | null = null;
+
+async function hydrateApiBaseUrl() {
+  if (!apiBaseUrlHydration) {
+    apiBaseUrlHydration = AsyncStorage.getItem(apiBaseUrlStorageKey)
+      .then((storedApiBaseUrl) => {
+        if (storedApiBaseUrl) {
+          apiBaseUrl = normalizeApiBaseUrl(storedApiBaseUrl);
+        }
+
+        return apiBaseUrl;
+      })
+      .catch(() => apiBaseUrl);
+  }
+
+  return apiBaseUrlHydration;
+}
 
 type ApiRequestOptions = RequestInit & {
   token?: string | null;
@@ -121,6 +164,8 @@ export class ApiError extends Error {
 }
 
 async function requestJson<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
+  await hydrateApiBaseUrl();
+
   const { token, headers, body, timeoutMs = 20000, ...rest } = options;
   const requestHeaders: Record<string, string> = {
     Accept: 'application/json',
@@ -155,7 +200,7 @@ async function requestJson<T>(path: string, options: ApiRequestOptions = {}): Pr
     }
 
     throw new ApiError(
-      `Unable to reach the reservation server at ${apiBaseUrl}. For a real phone, run Laravel with "php artisan serve --host=0.0.0.0 --port=8000", keep the phone on the same Wi-Fi, then restart Expo. If needed, set EXPO_PUBLIC_API_BASE_URL=http://YOUR_COMPUTER_IP:8000 in mobile/.env.`,
+      `Unable to reach the reservation server at ${apiBaseUrl}. Make sure the computer server is running and the phone is on the same Wi-Fi, or change the server address below.`,
       0,
     );
   } finally {
@@ -186,6 +231,52 @@ async function requestJson<T>(path: string, options: ApiRequestOptions = {}): Pr
 
 export function getApiBaseUrl() {
   return apiBaseUrl;
+}
+
+export async function setApiBaseUrl(value: string) {
+  const normalizedApiBaseUrl = normalizeApiBaseUrl(value);
+  apiBaseUrl = normalizedApiBaseUrl;
+  apiBaseUrlHydration = Promise.resolve(normalizedApiBaseUrl);
+  await AsyncStorage.setItem(apiBaseUrlStorageKey, normalizedApiBaseUrl);
+
+  return normalizedApiBaseUrl;
+}
+
+export async function testApiBaseUrl(value: string, timeoutMs = 6000) {
+  const normalizedApiBaseUrl = normalizeApiBaseUrl(value);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(`${normalizedApiBaseUrl}/api/mobile/home`, {
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`The server responded with HTTP ${response.status}.`);
+    }
+
+    const data = await response.json();
+
+    if (!data || !Array.isArray(data.branches) || !Array.isArray(data.eventTypes)) {
+      throw new Error('This address is not the McDonald\'s Reservations server.');
+    }
+
+    return normalizedApiBaseUrl;
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('This address')) {
+      throw error;
+    }
+
+    if (error instanceof Error && error.message.startsWith('The server responded')) {
+      throw error;
+    }
+
+    throw new Error(`Cannot reach ${normalizedApiBaseUrl}. Start Laravel and keep the phone on the same Wi-Fi.`);
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export function resolveApiUrl(value?: string | null) {
@@ -261,6 +352,19 @@ export function register(payload: Record<string, string>) {
   });
 }
 
+export function googleLogin(idToken: string) {
+  return requestJson<{
+    message: string;
+    token: string;
+    user: MobileUser;
+    needs_profile_completion: boolean;
+  }>('/api/mobile/google', {
+    method: 'POST',
+    body: JSON.stringify({ id_token: idToken }),
+    timeoutMs: 10000,
+  });
+}
+
 export function logout(token: string) {
   return requestJson<{ message: string }>('/api/mobile/logout', {
     method: 'POST',
@@ -289,6 +393,36 @@ export function rescheduleReservation(token: string, reservationId: number, payl
     method: 'POST',
     token,
     body: JSON.stringify(payload),
+  });
+}
+
+export function createReservationInvitation(
+  token: string,
+  reservationId: number,
+  payload: { name: string; phone: string; email?: string },
+) {
+  return requestJson<{ message: string; sms_queued: boolean; invitation: EventInvitation }>(
+    `/api/mobile/reservations/${reservationId}/invitations`,
+    {
+      method: 'POST',
+      token,
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export function respondToReservationInvitation(token: string, invitationId: number, status: 'accepted' | 'declined') {
+  return requestJson<{ message: string; invitation: EventInvitation }>(`/api/mobile/invitations/${invitationId}/respond`, {
+    method: 'POST',
+    token,
+    body: JSON.stringify({ status }),
+  });
+}
+
+export function cancelReservationInvitation(token: string, reservationId: number, invitationId: number) {
+  return requestJson<{ message: string }>(`/api/mobile/reservations/${reservationId}/invitations/${invitationId}`, {
+    method: 'DELETE',
+    token,
   });
 }
 
