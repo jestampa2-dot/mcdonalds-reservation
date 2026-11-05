@@ -10,11 +10,21 @@ const props = defineProps({
   branches: Array,
   canManageAccounts: Boolean,
   canAssignMasterAdmin: Boolean,
+  isMasterAdmin: Boolean,
+  requestableBranches: Array,
+  myBranchAccessRequests: Array,
+  pendingBranchAccessRequests: Array,
 })
 
 const search = ref('')
 const accountPendingDeletion = ref(null)
 const deletingAccountId = ref(null)
+const reviewingRequestId = ref(null)
+
+const accessRequestForm = useForm({
+  branch_code: '',
+  request_message: '',
+})
 
 const createForm = useForm({
   name: '',
@@ -88,6 +98,23 @@ const createAccount = () => {
   })
 }
 
+const requestBranchAccess = () => {
+  accessRequestForm.post(route('admin.branch-access-requests.store'), {
+    preserveScroll: true,
+    onSuccess: () => accessRequestForm.reset(),
+  })
+}
+
+const reviewBranchAccess = (requestId, status) => {
+  reviewingRequestId.value = requestId
+  router.post(route('admin.branch-access-requests.review', requestId), { status }, {
+    preserveScroll: true,
+    onFinish: () => {
+      reviewingRequestId.value = null
+    },
+  })
+}
+
 const updateAccount = (id) => {
   router.post(route('admin.users.update', id), accountEdits[id], {
     preserveScroll: true,
@@ -140,6 +167,93 @@ const deleteAccount = () => {
       </div>
     </section>
 
+    <section v-if="isMasterAdmin" class="mcd-section">
+      <article class="mcd-panel p-6">
+        <p class="mcd-chip">Branch permissions</p>
+        <h2 class="mt-4 text-3xl">Access requests</h2>
+        <p class="mt-2 text-slate-600">Approve only the branches an administrator is responsible for.</p>
+
+        <div v-if="pendingBranchAccessRequests?.length" class="mt-5 space-y-3">
+          <div
+            v-for="accessRequest in pendingBranchAccessRequests"
+            :key="accessRequest.id"
+            class="rounded-3xl bg-white p-5"
+          >
+            <div class="grid gap-4 md:grid-cols-[1fr,auto] md:items-center">
+              <div>
+                <p class="font-black text-slate-900">{{ accessRequest.requester_name }}</p>
+                <p class="text-sm text-slate-500">{{ accessRequest.requester_email }}</p>
+                <p class="mt-3 font-bold text-red-700">Requests {{ accessRequest.branch_name }}</p>
+                <p v-if="accessRequest.request_message" class="mt-2 text-sm text-slate-600">{{ accessRequest.request_message }}</p>
+                <p class="mt-2 text-xs font-bold uppercase tracking-wider text-slate-400">{{ accessRequest.created_at }}</p>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  class="mcd-button"
+                  :disabled="reviewingRequestId === accessRequest.id"
+                  @click="reviewBranchAccess(accessRequest.id, 'approved')"
+                >
+                  Approve
+                </button>
+                <button
+                  type="button"
+                  class="mcd-button mcd-button--ghost"
+                  :disabled="reviewingRequestId === accessRequest.id"
+                  @click="reviewBranchAccess(accessRequest.id, 'rejected')"
+                >
+                  Reject
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div v-else class="mt-5 rounded-3xl bg-white p-6 text-center text-slate-500">
+          No pending branch access requests.
+        </div>
+      </article>
+    </section>
+
+    <section v-else-if="$page.props.auth.user.role === 'admin'" class="mcd-section">
+      <article class="mcd-panel p-6">
+        <p class="mcd-chip">Branch permissions</p>
+        <h2 class="mt-4 text-3xl">Request another branch</h2>
+        <p class="mt-2 text-slate-600">Your assigned branch is available automatically. Other branches require Master Admin approval.</p>
+
+        <form v-if="requestableBranches?.length" class="mt-5 grid gap-4" @submit.prevent="requestBranchAccess">
+          <select v-model="accessRequestForm.branch_code" class="mcd-select" required>
+            <option value="" disabled>Select a branch</option>
+            <option v-for="branch in requestableBranches" :key="branch.code" :value="branch.code">
+              {{ branch.name }}{{ branch.city ? ` - ${branch.city}` : '' }}
+            </option>
+          </select>
+          <textarea
+            v-model="accessRequestForm.request_message"
+            class="mcd-input min-h-28"
+            maxlength="1000"
+            placeholder="Explain why you need access (optional)"
+          />
+          <p v-if="accessRequestForm.errors.branch_code" class="text-sm font-bold text-red-700">{{ accessRequestForm.errors.branch_code }}</p>
+          <button type="submit" class="mcd-button" :disabled="accessRequestForm.processing">
+            {{ accessRequestForm.processing ? 'Sending...' : 'Ask Master Admin for access' }}
+          </button>
+        </form>
+        <div v-else class="mt-5 rounded-3xl bg-white p-5 text-slate-500">No additional branches are available to request.</div>
+
+        <div v-if="myBranchAccessRequests?.length" class="mt-6 space-y-3">
+          <h3 class="text-xl">Request history</h3>
+          <div v-for="accessRequest in myBranchAccessRequests" :key="accessRequest.id" class="rounded-2xl bg-white p-4">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <strong>{{ accessRequest.branch_name }}</strong>
+              <span class="rounded-full bg-amber-100 px-3 py-1 text-xs font-black uppercase text-amber-800">{{ accessRequest.status }}</span>
+            </div>
+            <p v-if="accessRequest.reviewer_note" class="mt-2 text-sm text-slate-600">{{ accessRequest.reviewer_note }}</p>
+            <p class="mt-2 text-xs text-slate-400">Requested {{ accessRequest.created_at }}</p>
+          </div>
+        </div>
+      </article>
+    </section>
+
     <section v-if="canManageAccounts" class="mcd-section">
       <article class="mcd-panel p-6">
         <p class="mcd-chip">Create account</p>
@@ -161,7 +275,7 @@ const deleteAccount = () => {
           <div class="mcd-field">
             <label>Assigned branch</label>
             <select v-model="createForm.branch_code" class="mcd-select">
-              <option value="">All branches / not assigned</option>
+              <option value="">Not assigned (customers only)</option>
               <option v-for="branch in branches" :key="branch.code" :value="branch.code">{{ branch.name }}</option>
             </select>
           </div>

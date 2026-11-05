@@ -493,6 +493,22 @@ export function updateAdminCrew(token: string, reservationId: number, assigned_s
   });
 }
 
+export function requestBranchAccess(token: string, branch_code: string, request_message: string) {
+  return requestJson<{ message: string }>('/api/mobile/admin/branch-access-requests', {
+    method: 'POST',
+    token,
+    body: JSON.stringify({ branch_code, request_message }),
+  });
+}
+
+export function reviewBranchAccess(token: string, requestId: number, status: 'approved' | 'rejected') {
+  return requestJson<{ message: string }>(`/api/mobile/admin/branch-access-requests/${requestId}/review`, {
+    method: 'POST',
+    token,
+    body: JSON.stringify({ status }),
+  });
+}
+
 export function createAdminUser(token: string, payload: Record<string, any>) {
   return requestJson<{ message: string; user: Record<string, any> }>('/api/mobile/admin/users', {
     method: 'POST',

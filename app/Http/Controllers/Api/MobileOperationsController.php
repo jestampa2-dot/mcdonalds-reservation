@@ -6,6 +6,7 @@ use App\Http\Controllers\ReservationController;
 use App\Models\BookingPackage;
 use App\Models\BookingSetting;
 use App\Models\Branch;
+use App\Models\BranchAccessRequest;
 use App\Models\BranchInventoryItem;
 use App\Models\EventType;
 use App\Models\Reservation;
@@ -41,15 +42,81 @@ class MobileOperationsController extends ReservationController
     public function mobileAvailabilityDay(Request $request, string $branchCode, string $date): JsonResponse
     {
         $this->authorizeRoles($request, ['admin', 'manager']);
+        $this->authorizeBranchAccess($request, $branchCode);
 
         return response()->json(
             $this->availabilityDayPayload($this->catalog(), $branchCode, $date)
         );
     }
 
+    public function mobileStoreBranchAccessRequest(Request $request): JsonResponse
+    {
+        $this->authorizeRoles($request, ['admin']);
+        abort_if($request->user()->role === 'master_admin', 422, 'Master Admin already has access to every branch.');
+
+        $validated = $request->validate([
+            'branch_code' => ['required', 'string', Rule::exists('branches', 'code')],
+            'request_message' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        if ($this->canAccessBranch($request->user(), $validated['branch_code'])) {
+            return response()->json(['message' => 'You already have access to that branch.'], 422);
+        }
+
+        $alreadyPending = BranchAccessRequest::query()
+            ->where('user_id', $request->user()->id)
+            ->where('branch_code', $validated['branch_code'])
+            ->where('status', 'pending')
+            ->exists();
+
+        if ($alreadyPending) {
+            return response()->json(['message' => 'A request for that branch is already awaiting review.'], 422);
+        }
+
+        $accessRequest = BranchAccessRequest::create([
+            'user_id' => $request->user()->id,
+            'branch_code' => $validated['branch_code'],
+            'status' => 'pending',
+            'request_message' => $validated['request_message'] ?? null,
+        ])->load('branch:id,code,name');
+
+        return response()->json([
+            'message' => 'Branch access request sent to the Master Admin.',
+            'request' => $this->serializeBranchAccessRequest($accessRequest),
+        ], 201);
+    }
+
+    public function mobileReviewBranchAccessRequest(Request $request, BranchAccessRequest $branchAccessRequest): JsonResponse
+    {
+        $this->authorizeRoles($request, ['master_admin']);
+
+        $validated = $request->validate([
+            'status' => ['required', Rule::in(['approved', 'rejected'])],
+            'reviewer_note' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        if ($branchAccessRequest->status !== 'pending') {
+            return response()->json(['message' => 'This branch access request has already been reviewed.'], 422);
+        }
+
+        $branchAccessRequest->update([
+            'status' => $validated['status'],
+            'reviewer_note' => $validated['reviewer_note'] ?? null,
+            'reviewed_by' => $request->user()->id,
+            'reviewed_at' => now(),
+        ]);
+
+        return response()->json([
+            'message' => $validated['status'] === 'approved'
+                ? 'Branch access approved.'
+                : 'Branch access request rejected.',
+        ]);
+    }
+
     public function mobileUpdateBookingStatus(Request $request, Reservation $reservation): JsonResponse
     {
         $this->authorizeRoles($request, ['admin', 'manager']);
+        $this->authorizeBranchAccess($request, $reservation->branch_code);
 
         $validated = $request->validate([
             'status' => ['required', Rule::in(['pending_review', 'confirmed', 'checked_in', 'completed', 'cancelled'])],
@@ -78,10 +145,18 @@ class MobileOperationsController extends ReservationController
     public function mobileAssignCrew(Request $request, Reservation $reservation): JsonResponse
     {
         $this->authorizeRoles($request, ['admin', 'manager']);
+        $this->authorizeBranchAccess($request, $reservation->branch_code);
 
         $validated = $request->validate([
             'assigned_staff_id' => ['nullable', Rule::exists('users', 'id')],
         ]);
+
+        if (! empty($validated['assigned_staff_id'])) {
+            $staff = User::findOrFail($validated['assigned_staff_id']);
+            abort_unless(in_array($staff->role, ['staff', 'manager'], true), 422, 'Only staff or managers can be assigned.');
+            abort_unless($staff->branch_code === $reservation->branch_code, 422, 'The selected employee belongs to another branch.');
+            $this->authorizeBranchAccess($request, $staff->branch_code);
+        }
 
         $reservation->update([
             'assigned_staff_id' => $validated['assigned_staff_id'] ?? null,
@@ -105,6 +180,8 @@ class MobileOperationsController extends ReservationController
             'branch_code' => ['nullable', 'string', Rule::exists('branches', 'code')],
             'password' => ['required', 'confirmed', Password::defaults()],
         ]);
+
+        $this->authorizeBranchAssignment($request, $validated['role'], $validated['branch_code'] ?? null);
 
         $user = User::create([
             'name' => $validated['name'],
@@ -134,6 +211,8 @@ class MobileOperationsController extends ReservationController
             'branch_code' => ['nullable', 'string', Rule::exists('branches', 'code')],
             'password' => ['nullable', 'confirmed', Password::defaults()],
         ]);
+
+        $this->authorizeBranchAssignment($request, $validated['role'], $validated['branch_code'] ?? null);
 
         $updates = [
             'name' => $validated['name'],
@@ -195,7 +274,7 @@ class MobileOperationsController extends ReservationController
 
     public function mobileStoreBranch(Request $request): JsonResponse
     {
-        $this->authorizeRoles($request, ['admin', 'manager']);
+        $this->authorizeRoles($request, ['master_admin']);
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
@@ -243,6 +322,7 @@ class MobileOperationsController extends ReservationController
     public function mobileUpdateBranch(Request $request, Branch $branch): JsonResponse
     {
         $this->authorizeRoles($request, ['admin', 'manager']);
+        $this->authorizeBranchAccess($request, $branch->code);
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
@@ -286,7 +366,7 @@ class MobileOperationsController extends ReservationController
 
     public function mobileDestroyBranch(Request $request, Branch $branch): JsonResponse
     {
-        $this->authorizeRoles($request, ['admin', 'manager']);
+        $this->authorizeRoles($request, ['master_admin']);
 
         $branch->delete();
 
@@ -298,6 +378,7 @@ class MobileOperationsController extends ReservationController
     public function mobileStoreInventoryItem(Request $request, Branch $branch): JsonResponse
     {
         $this->authorizeRoles($request, ['admin', 'manager']);
+        $this->authorizeBranchAccess($request, $branch->code);
 
         $validated = $request->validate([
             'item' => ['required', 'string', 'max:255'],
@@ -324,6 +405,7 @@ class MobileOperationsController extends ReservationController
     public function mobileUpdateInventoryItem(Request $request, BranchInventoryItem $inventoryItem): JsonResponse
     {
         $this->authorizeRoles($request, ['admin', 'manager']);
+        $this->authorizeBranchAccess($request, $inventoryItem->branch?->code ?? '');
 
         $validated = $request->validate([
             'item' => ['required', 'string', 'max:255'],
@@ -462,6 +544,7 @@ class MobileOperationsController extends ReservationController
     public function mobileUpdateServiceStatus(Request $request, Reservation $reservation): JsonResponse
     {
         $this->authorizeRoles($request, ['admin', 'manager', 'staff']);
+        $this->authorizeBranchAccess($request, $reservation->branch_code);
 
         $validated = $request->validate([
             'service_status' => ['required', Rule::in(['available', 'cleaning', 'in_progress'])],
@@ -480,6 +563,7 @@ class MobileOperationsController extends ReservationController
     public function mobileUpdateServiceAdjustments(Request $request, Reservation $reservation): JsonResponse
     {
         $this->authorizeRoles($request, ['admin', 'manager', 'staff']);
+        $this->authorizeBranchAccess($request, $reservation->branch_code);
 
         $validated = $request->validate([
             'duration_hours' => ['required', 'integer', 'min:1'],
@@ -566,6 +650,8 @@ class MobileOperationsController extends ReservationController
             ], 404);
         }
 
+        $this->authorizeBranchAccess($request, $reservation->branch_code);
+
         if (! in_array($reservation->status, ['confirmed', 'rescheduled'], true)) {
             return response()->json([
                 'message' => 'This booking must be confirmed by admin before staff can check it in.',
@@ -587,7 +673,7 @@ class MobileOperationsController extends ReservationController
 
     protected function adminOperationsPayload(Request $request): array
     {
-        $catalog = $this->catalog();
+        $catalog = $this->catalogForUser($this->catalog(), $request->user());
         $allBookings = $this->adminReservations(['user', 'assignedStaff'], null);
         $pendingBookings = $this->adminReservations(['user', 'assignedStaff'], ['pending_review']);
         $confirmedBookings = $this->adminReservations(['user', 'assignedStaff'], ['confirmed', 'rescheduled', 'checked_in']);
@@ -641,6 +727,12 @@ class MobileOperationsController extends ReservationController
                 ])->values(),
                 'canManageAccounts' => in_array($request->user()->role, ['master_admin', 'admin'], true),
                 'canAssignMasterAdmin' => $request->user()->role === 'master_admin',
+                'isMasterAdmin' => $request->user()->role === 'master_admin',
+                'requestableBranches' => $this->requestableBranches($request->user()),
+                'myBranchAccessRequests' => $this->branchAccessRequestsFor($request->user()),
+                'pendingBranchAccessRequests' => $request->user()->role === 'master_admin'
+                    ? $this->pendingBranchAccessRequests()
+                    : [],
             ],
             'catalog' => [
                 'eventTypes' => $this->runDatabaseCheck(
@@ -689,7 +781,7 @@ class MobileOperationsController extends ReservationController
     {
         $catalog = $this->catalog();
         $today = now()->toDateString();
-        $todayBookings = Reservation::query()
+        $todayBookings = $this->scopeToAccessibleBranches(Reservation::query(), $request->user())
             ->when($request->user()->role === 'staff', function ($query) use ($request) {
                 $query->where(function ($inner) use ($request) {
                     $inner->where('assigned_staff_id', $request->user()->id)
@@ -701,7 +793,7 @@ class MobileOperationsController extends ReservationController
             ->orderBy('event_time')
             ->get();
 
-        $relevantBookings = Reservation::query()
+        $relevantBookings = $this->scopeToAccessibleBranches(Reservation::query(), $request->user())
             ->when($request->user()->role === 'staff', function ($query) use ($request) {
                 $query->where(function ($inner) use ($request) {
                     $inner->where('assigned_staff_id', $request->user()->id)

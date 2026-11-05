@@ -137,6 +137,7 @@ class QrCheckInTest extends TestCase
         $staff = User::factory()->create([
             'name' => 'Check-in Staff',
             'role' => 'staff',
+            'branch_code' => 'test-branch',
         ]);
         $reservation = $this->reservation(['status' => 'confirmed']);
 

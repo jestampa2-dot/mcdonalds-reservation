@@ -7,6 +7,7 @@ use App\Models\ActivityLog;
 use App\Models\BookingPackage;
 use App\Models\BookingSetting;
 use App\Models\Branch;
+use App\Models\BranchAccessRequest;
 use App\Models\BranchHost;
 use App\Models\BranchInventoryItem;
 use App\Models\EventType;
@@ -295,7 +296,7 @@ class ReservationController extends Controller
     public function adminDashboard(Request $request): InertiaResponse
     {
         $this->authorizeRoles($request, ['admin', 'manager']);
-        $catalog = $this->catalog();
+        $catalog = $this->catalogForUser($this->catalog(), $request->user());
         $bookings = $this->adminReservations(['assignedStaff:id,name']);
         $statsBookings = $this->adminStatsBookings();
         $isMasterAdmin = $request->user()->role === 'master_admin';
@@ -314,7 +315,7 @@ class ReservationController extends Controller
     public function adminBookings(Request $request): InertiaResponse
     {
         $this->authorizeRoles($request, ['admin', 'manager']);
-        $catalog = $this->catalog();
+        $catalog = $this->catalogForUser($this->catalog(), $request->user());
         $bookings = $this->adminReservations(['user', 'assignedStaff'], ['pending_review']);
 
         return Inertia::render('Admin/Bookings', [
@@ -356,7 +357,7 @@ class ReservationController extends Controller
     public function adminAvailability(Request $request): InertiaResponse
     {
         $this->authorizeRoles($request, ['admin', 'manager']);
-        $catalog = $this->catalog();
+        $catalog = $this->catalogForUser($this->catalog(), $request->user());
         $availability = $this->availabilityPayload($catalog, 366);
         $branchCodes = collect($availability['branches'] ?? [])->pluck('code')->filter()->values();
         $initialBranch = $request->string('branch')->toString();
@@ -380,6 +381,7 @@ class ReservationController extends Controller
     public function adminAvailabilityDay(Request $request, string $branchCode, string $date): InertiaResponse
     {
         $this->authorizeRoles($request, ['admin', 'manager']);
+        $this->authorizeBranchAccess($request, $branchCode);
 
         $day = $this->availabilityDayPayload($this->catalog(), $branchCode, $date);
 
@@ -400,6 +402,7 @@ class ReservationController extends Controller
 
         return Inertia::render('Admin/Branches', [
             'branches' => $this->adminBranchList(),
+            'isMasterAdmin' => $request->user()->role === 'master_admin',
         ]);
     }
 
@@ -415,7 +418,73 @@ class ReservationController extends Controller
             ])->values(),
             'canManageAccounts' => in_array($request->user()->role, ['master_admin', 'admin'], true),
             'canAssignMasterAdmin' => $request->user()->role === 'master_admin',
+            'isMasterAdmin' => $request->user()->role === 'master_admin',
+            'requestableBranches' => $this->requestableBranches($request->user()),
+            'myBranchAccessRequests' => $this->branchAccessRequestsFor($request->user()),
+            'pendingBranchAccessRequests' => $request->user()->role === 'master_admin'
+                ? $this->pendingBranchAccessRequests()
+                : [],
         ]);
+    }
+
+    public function storeBranchAccessRequest(Request $request): RedirectResponse
+    {
+        $this->authorizeRoles($request, ['admin']);
+
+        abort_if($request->user()->role === 'master_admin', 422, 'Master Admin already has access to every branch.');
+
+        $validated = $request->validate([
+            'branch_code' => ['required', 'string', Rule::exists('branches', 'code')],
+            'request_message' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        if ($this->canAccessBranch($request->user(), $validated['branch_code'])) {
+            return back()->with('error', 'You already have access to that branch.');
+        }
+
+        $alreadyPending = BranchAccessRequest::query()
+            ->where('user_id', $request->user()->id)
+            ->where('branch_code', $validated['branch_code'])
+            ->where('status', 'pending')
+            ->exists();
+
+        if ($alreadyPending) {
+            return back()->with('error', 'A request for that branch is already awaiting review.');
+        }
+
+        BranchAccessRequest::create([
+            'user_id' => $request->user()->id,
+            'branch_code' => $validated['branch_code'],
+            'status' => 'pending',
+            'request_message' => $validated['request_message'] ?? null,
+        ]);
+
+        return back()->with('success', 'Branch access request sent to the Master Admin.');
+    }
+
+    public function reviewBranchAccessRequest(Request $request, BranchAccessRequest $branchAccessRequest): RedirectResponse
+    {
+        $this->authorizeRoles($request, ['master_admin']);
+
+        $validated = $request->validate([
+            'status' => ['required', Rule::in(['approved', 'rejected'])],
+            'reviewer_note' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        if ($branchAccessRequest->status !== 'pending') {
+            return back()->with('error', 'This branch access request has already been reviewed.');
+        }
+
+        $branchAccessRequest->update([
+            'status' => $validated['status'],
+            'reviewer_note' => $validated['reviewer_note'] ?? null,
+            'reviewed_by' => $request->user()->id,
+            'reviewed_at' => now(),
+        ]);
+
+        return back()->with('success', $validated['status'] === 'approved'
+            ? 'Branch access approved.'
+            : 'Branch access request rejected.');
     }
 
     public function adminCatalog(Request $request): InertiaResponse
@@ -457,7 +526,7 @@ class ReservationController extends Controller
     public function adminReports(Request $request): InertiaResponse
     {
         $this->authorizeRoles($request, ['admin', 'manager']);
-        $catalog = $this->catalog();
+        $catalog = $this->catalogForUser($this->catalog(), $request->user());
         $bookings = $this->adminReservations(['assignedStaff:id,name']);
 
         return Inertia::render('Admin/Reports', [
@@ -479,12 +548,14 @@ class ReservationController extends Controller
             'to' => ['nullable', 'date', 'after_or_equal:from'],
         ]);
 
-        $bookings = Reservation::query()
+        $bookingsQuery = Reservation::query()
             ->with('assignedStaff:id,name')
             ->when($validated['branch'] ?? null, fn ($query, $branch) => $query->where('branch_code', $branch))
             ->when($validated['status'] ?? null, fn ($query, $status) => $query->where('status', $status))
             ->when($validated['from'] ?? null, fn ($query, $from) => $query->whereDate('event_date', '>=', $from))
-            ->when($validated['to'] ?? null, fn ($query, $to) => $query->whereDate('event_date', '<=', $to))
+            ->when($validated['to'] ?? null, fn ($query, $to) => $query->whereDate('event_date', '<=', $to));
+
+        $bookings = $this->scopeToAccessibleBranches($bookingsQuery, $request->user())
             ->orderBy('event_date')
             ->orderBy('event_time')
             ->get();
@@ -575,7 +646,7 @@ class ReservationController extends Controller
 
         $catalog = $this->catalog();
         $today = now()->toDateString();
-        $todayBookings = Reservation::query()
+        $todayBookings = $this->scopeToAccessibleBranches(Reservation::query(), $request->user())
             ->when($request->user()->role === 'staff', function ($query) use ($request) {
                 $query->where(function ($inner) use ($request) {
                     $inner->where('assigned_staff_id', $request->user()->id)
@@ -586,7 +657,7 @@ class ReservationController extends Controller
             ->whereIn('status', ['confirmed', 'rescheduled', 'checked_in'])
             ->orderBy('event_time')
             ->get();
-        $relevantBookings = Reservation::query()
+        $relevantBookings = $this->scopeToAccessibleBranches(Reservation::query(), $request->user())
             ->when($request->user()->role === 'staff', function ($query) use ($request) {
                 $query->where(function ($inner) use ($request) {
                     $inner->where('assigned_staff_id', $request->user()->id)
@@ -664,6 +735,7 @@ class ReservationController extends Controller
     public function updateBookingStatus(Request $request, Reservation $reservation): RedirectResponse
     {
         $this->authorizeRoles($request, ['admin', 'manager']);
+        $this->authorizeBranchAccess($request, $reservation->branch_code);
 
         $validated = $request->validate([
             'status' => ['required', Rule::in(['pending_review', 'confirmed', 'checked_in', 'completed', 'cancelled'])],
@@ -691,10 +763,18 @@ class ReservationController extends Controller
     public function assignCrew(Request $request, Reservation $reservation): RedirectResponse
     {
         $this->authorizeRoles($request, ['admin', 'manager']);
+        $this->authorizeBranchAccess($request, $reservation->branch_code);
 
         $validated = $request->validate([
             'assigned_staff_id' => ['nullable', Rule::exists('users', 'id')],
         ]);
+
+        if (! empty($validated['assigned_staff_id'])) {
+            $staff = User::findOrFail($validated['assigned_staff_id']);
+            abort_unless(in_array($staff->role, ['staff', 'manager'], true), 422, 'Only staff or managers can be assigned.');
+            abort_unless($staff->branch_code === $reservation->branch_code, 422, 'The selected employee belongs to another branch.');
+            $this->authorizeBranchAccess($request, $staff->branch_code);
+        }
 
         $reservation->update([
             'assigned_staff_id' => $validated['assigned_staff_id'] ?? null,
@@ -732,6 +812,8 @@ class ReservationController extends Controller
             'password' => ['required', 'confirmed', Password::defaults()],
         ]);
 
+        $this->authorizeBranchAssignment($request, $validated['role'], $validated['branch_code'] ?? null);
+
         User::create([
             'name' => $validated['name'],
             'email' => $validated['email'],
@@ -757,6 +839,8 @@ class ReservationController extends Controller
             'branch_code' => ['nullable', 'string', Rule::exists('branches', 'code')],
             'password' => ['nullable', 'confirmed', Password::defaults()],
         ]);
+
+        $this->authorizeBranchAssignment($request, $validated['role'], $validated['branch_code'] ?? null);
 
         $updates = [
             'name' => $validated['name'],
@@ -916,7 +1000,7 @@ class ReservationController extends Controller
 
     public function storeBranch(Request $request): RedirectResponse
     {
-        $this->authorizeRoles($request, ['admin', 'manager']);
+        $this->authorizeRoles($request, ['master_admin']);
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
@@ -961,6 +1045,7 @@ class ReservationController extends Controller
     public function updateBranch(Request $request, Branch $branch): RedirectResponse
     {
         $this->authorizeRoles($request, ['admin', 'manager']);
+        $this->authorizeBranchAccess($request, $branch->code);
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
@@ -1001,7 +1086,7 @@ class ReservationController extends Controller
 
     public function destroyBranch(Request $request, Branch $branch): RedirectResponse
     {
-        $this->authorizeRoles($request, ['admin', 'manager']);
+        $this->authorizeRoles($request, ['master_admin']);
 
         $branch->delete();
 
@@ -1011,6 +1096,7 @@ class ReservationController extends Controller
     public function storeInventoryItem(Request $request, Branch $branch): RedirectResponse
     {
         $this->authorizeRoles($request, ['admin', 'manager']);
+        $this->authorizeBranchAccess($request, $branch->code);
 
         $validated = $request->validate([
             'item' => ['required', 'string', 'max:255'],
@@ -1034,6 +1120,7 @@ class ReservationController extends Controller
     public function updateInventoryItem(Request $request, BranchInventoryItem $inventoryItem): RedirectResponse
     {
         $this->authorizeRoles($request, ['admin', 'manager']);
+        $this->authorizeBranchAccess($request, $inventoryItem->branch?->code ?? '');
 
         $validated = $request->validate([
             'item' => ['required', 'string', 'max:255'],
@@ -1049,6 +1136,7 @@ class ReservationController extends Controller
     public function updateServiceStatus(Request $request, Reservation $reservation): RedirectResponse
     {
         $this->authorizeRoles($request, ['admin', 'manager', 'staff']);
+        $this->authorizeBranchAccess($request, $reservation->branch_code);
 
         $validated = $request->validate([
             'service_status' => ['required', Rule::in(['available', 'cleaning', 'in_progress'])],
@@ -1064,6 +1152,7 @@ class ReservationController extends Controller
     public function updateServiceAdjustments(Request $request, Reservation $reservation): RedirectResponse
     {
         $this->authorizeRoles($request, ['admin', 'manager', 'staff']);
+        $this->authorizeBranchAccess($request, $reservation->branch_code);
 
         $validated = $request->validate([
             'duration_hours' => ['required', 'integer', 'min:1'],
@@ -1141,6 +1230,8 @@ class ReservationController extends Controller
             return back()->with('error', 'No reservation matched that code.');
         }
 
+        $this->authorizeBranchAccess($request, $reservation->branch_code);
+
         if (! in_array($reservation->status, ['confirmed', 'rescheduled'], true)) {
             return back()->with('error', 'This booking must be confirmed by admin before staff can check it in.');
         }
@@ -1161,7 +1252,11 @@ class ReservationController extends Controller
 
         $days = $request->integer('days', 60);
 
-        return response()->json($this->availabilityPayload($this->catalog(), $days));
+        $catalog = $request->user()?->role === 'customer'
+            ? $this->catalog()
+            : $this->catalogForUser($this->catalog(), $request->user());
+
+        return response()->json($this->availabilityPayload($catalog, $days));
     }
 
     public function paymentProof(Request $request, Reservation $reservation): StreamedResponse
@@ -1397,9 +1492,11 @@ class ReservationController extends Controller
 
     protected function adminReservations(array $with = [], ?array $statuses = null)
     {
-        return Reservation::query()
+        $query = Reservation::query()
             ->with($with)
-            ->when($statuses, fn ($query) => $query->whereIn('status', $statuses))
+            ->when($statuses, fn ($query) => $query->whereIn('status', $statuses));
+
+        return $this->scopeToAccessibleBranches($query, request()->user())
             ->orderBy('event_date')
             ->orderBy('event_time')
             ->get();
@@ -1407,14 +1504,22 @@ class ReservationController extends Controller
 
     protected function adminStatsBookings()
     {
-        return Reservation::query()
+        return $this->scopeToAccessibleBranches(Reservation::query(), request()->user())
             ->get(['id', 'status', 'event_time', 'total_amount', 'branch_code']);
     }
 
     protected function adminUsers()
     {
-        return User::query()
+        $query = User::query()
             ->with('branch:id,code,name')
+            ->when(request()->user()?->role !== 'master_admin', function ($query) {
+                $branchCodes = $this->accessibleBranchCodes(request()->user());
+
+                $query->where(function ($inner) use ($branchCodes) {
+                    $inner->whereIn('branch_code', $branchCodes)
+                        ->orWhere('id', request()->user()?->id);
+                });
+            })
             ->orderByRaw("CASE role WHEN 'master_admin' THEN 1 WHEN 'admin' THEN 2 WHEN 'manager' THEN 3 WHEN 'staff' THEN 4 ELSE 5 END")
             ->orderBy('name')
             ->get(['id', 'name', 'email', 'phone', 'role', 'branch_code', 'profile_photo_path', 'created_at'])
@@ -1429,6 +1534,8 @@ class ReservationController extends Controller
                 'profile_photo_url' => $user->profile_photo_url,
                 'created_at' => optional($user->created_at)->format('M j, Y g:i A'),
             ]);
+
+        return $query;
     }
 
     protected function adminBranchList(): array
@@ -1437,7 +1544,7 @@ class ReservationController extends Controller
 
         if ($this->hasTableSafely('branches')) {
             $branches = $this->runDatabaseCheck(
-                fn () => Branch::query()->orderBy('name')->get(),
+                fn () => $this->scopeToAccessibleBranches(Branch::query(), request()->user(), 'code')->orderBy('name')->get(),
                 collect()
             );
 
@@ -1460,7 +1567,12 @@ class ReservationController extends Controller
             }
         }
 
-        return collect($this->catalog()['branches'])->values()->map(fn ($branch) => [
+        $accessibleCodes = $this->accessibleBranchCodes(request()->user());
+
+        return collect($this->catalog()['branches'])
+            ->filter(fn ($branch, $code) => request()->user()?->role === 'master_admin'
+                || in_array((string) ($branch['code'] ?? $code), $accessibleCodes, true))
+            ->values()->map(fn ($branch) => [
             'id' => null,
             'code' => $branch['code'],
             'name' => $branch['name'],
@@ -1479,8 +1591,12 @@ class ReservationController extends Controller
 
     protected function adminStaffUsers()
     {
-        return User::query()
+        $query = User::query()
             ->whereIn('role', ['staff', 'manager'])
+            ->when(request()->user()?->role !== 'master_admin', fn ($query) => $query->whereIn(
+                'branch_code',
+                $this->accessibleBranchCodes(request()->user())
+            ))
             ->orderBy('name')
             ->get(['id', 'name', 'email', 'role', 'branch_code'])
             ->map(fn (User $user) => [
@@ -1489,6 +1605,139 @@ class ReservationController extends Controller
                 'role' => $user->role,
                 'branch_code' => $user->branch_code,
             ]);
+
+        return $query;
+    }
+
+    protected function accessibleBranchCodes(?User $user): array
+    {
+        if (! $user) {
+            return [];
+        }
+
+        if ($user->role === 'master_admin') {
+            return $this->runDatabaseCheck(
+                fn () => Branch::query()->pluck('code')->map(fn ($code) => (string) $code)->all(),
+                []
+            );
+        }
+
+        $codes = collect([$user->branch_code])->filter();
+
+        if ($user->role === 'admin' && Schema::hasTable('branch_access_requests')) {
+            $approvedCodes = $this->runDatabaseCheck(
+                fn () => BranchAccessRequest::query()
+                    ->where('user_id', $user->id)
+                    ->where('status', 'approved')
+                    ->pluck('branch_code'),
+                collect()
+            );
+
+            $codes = $codes->merge($approvedCodes);
+        }
+
+        return $codes->map(fn ($code) => (string) $code)->unique()->values()->all();
+    }
+
+    protected function canAccessBranch(?User $user, ?string $branchCode): bool
+    {
+        return $user && $branchCode && ($user->role === 'master_admin'
+            || in_array($branchCode, $this->accessibleBranchCodes($user), true));
+    }
+
+    protected function authorizeBranchAccess(Request $request, ?string $branchCode): void
+    {
+        abort_unless($this->canAccessBranch($request->user(), $branchCode), 403, 'You do not have access to this branch.');
+    }
+
+    protected function scopeToAccessibleBranches($query, ?User $user, string $column = 'branch_code')
+    {
+        if ($user?->role === 'master_admin') {
+            return $query;
+        }
+
+        return $query->whereIn($column, $this->accessibleBranchCodes($user));
+    }
+
+    protected function catalogForUser(array $catalog, ?User $user): array
+    {
+        if ($user?->role === 'master_admin') {
+            return $catalog;
+        }
+
+        $accessibleCodes = $this->accessibleBranchCodes($user);
+        $catalog['branches'] = collect($catalog['branches'] ?? [])
+            ->filter(fn ($branch, $code) => in_array((string) ($branch['code'] ?? $code), $accessibleCodes, true))
+            ->all();
+
+        return $catalog;
+    }
+
+    protected function requestableBranches(User $user): array
+    {
+        if ($user->role !== 'admin') {
+            return [];
+        }
+
+        $accessibleCodes = $this->accessibleBranchCodes($user);
+
+        return Branch::query()
+            ->where('is_active', true)
+            ->whereNotIn('code', $accessibleCodes)
+            ->orderBy('name')
+            ->get(['code', 'name', 'city'])
+            ->map(fn (Branch $branch) => [
+                'code' => $branch->code,
+                'name' => $branch->name,
+                'city' => $branch->city,
+            ])->values()->all();
+    }
+
+    protected function branchAccessRequestsFor(User $user): array
+    {
+        if ($user->role !== 'admin' || ! Schema::hasTable('branch_access_requests')) {
+            return [];
+        }
+
+        return BranchAccessRequest::query()
+            ->where('user_id', $user->id)
+            ->with(['branch:id,code,name', 'reviewer:id,name'])
+            ->latest()
+            ->get()
+            ->map(fn (BranchAccessRequest $accessRequest) => $this->serializeBranchAccessRequest($accessRequest))
+            ->values()->all();
+    }
+
+    protected function pendingBranchAccessRequests(): array
+    {
+        if (! Schema::hasTable('branch_access_requests')) {
+            return [];
+        }
+
+        return BranchAccessRequest::query()
+            ->where('status', 'pending')
+            ->with(['branch:id,code,name', 'user:id,name,email,branch_code'])
+            ->oldest()
+            ->get()
+            ->map(fn (BranchAccessRequest $accessRequest) => $this->serializeBranchAccessRequest($accessRequest))
+            ->values()->all();
+    }
+
+    protected function serializeBranchAccessRequest(BranchAccessRequest $accessRequest): array
+    {
+        return [
+            'id' => $accessRequest->id,
+            'branch_code' => $accessRequest->branch_code,
+            'branch_name' => $accessRequest->branch?->name ?? $accessRequest->branch_code,
+            'status' => $accessRequest->status,
+            'request_message' => $accessRequest->request_message,
+            'reviewer_note' => $accessRequest->reviewer_note,
+            'requester_name' => $accessRequest->user?->name,
+            'requester_email' => $accessRequest->user?->email,
+            'reviewer_name' => $accessRequest->reviewer?->name,
+            'created_at' => optional($accessRequest->created_at)->format('M j, Y g:i A'),
+            'reviewed_at' => optional($accessRequest->reviewed_at)->format('M j, Y g:i A'),
+        ];
     }
 
     protected function menuCategoryCatalog(): array
@@ -2634,14 +2883,15 @@ class ReservationController extends Controller
 
     protected function pendingReservationAlerts(int $limit = 4): array
     {
-        $pending = Reservation::query()
+        $baseQuery = $this->scopeToAccessibleBranches(Reservation::query(), request()->user());
+        $pending = (clone $baseQuery)
             ->where('status', 'pending_review')
             ->orderByDesc('created_at')
             ->limit($limit)
             ->get();
 
         return [
-            'count' => Reservation::query()->where('status', 'pending_review')->count(),
+            'count' => (clone $baseQuery)->where('status', 'pending_review')->count(),
             'items' => $pending->map(fn (Reservation $reservation) => [
                 'id' => $reservation->id,
                 'booking_reference' => $reservation->booking_reference,
@@ -2657,8 +2907,11 @@ class ReservationController extends Controller
     protected function inventorySnapshot(array $catalog, $bookings): array
     {
         if ($this->hasTableSafely('branches') && $this->hasTableSafely('branch_inventory_items')) {
-            $branches = $this->runDatabaseCheck(fn () => Branch::query()
-                ->where('is_active', true)
+            $branches = $this->runDatabaseCheck(fn () => $this->scopeToAccessibleBranches(
+                Branch::query()->where('is_active', true),
+                request()->user(),
+                'code'
+            )
                 ->with(['inventoryItems' => fn ($query) => $query->orderBy('sort_order')->orderBy('item')])
                 ->orderBy('name')
                 ->get(), collect());
@@ -2872,6 +3125,29 @@ class ReservationController extends Controller
         if ($user->role === 'master_admin' && $request->user()?->role !== 'master_admin') {
             abort(403, 'Only a Master Admin can manage another Master Admin account.');
         }
+
+        if ($request->user()?->role !== 'master_admin') {
+            abort_unless(
+                $user->branch_code && $this->canAccessBranch($request->user(), $user->branch_code),
+                403,
+                'You can only manage accounts assigned to a branch you can access.'
+            );
+        }
+    }
+
+    protected function authorizeBranchAssignment(Request $request, string $role, ?string $branchCode): void
+    {
+        if ($request->user()?->role === 'master_admin') {
+            return;
+        }
+
+        if (in_array($role, ['admin', 'manager', 'staff'], true)) {
+            abort_unless($branchCode, 422, 'A branch assignment is required for operational accounts.');
+        }
+
+        if ($branchCode) {
+            $this->authorizeBranchAccess($request, $branchCode);
+        }
     }
 
     protected function authorizeReservationAccess(Request $request, Reservation $reservation, bool $allowOperations = false): void
@@ -2882,7 +3158,9 @@ class ReservationController extends Controller
             return;
         }
 
-        if ($allowOperations && in_array($user?->role, ['master_admin', 'admin', 'manager', 'staff'], true)) {
+        if ($allowOperations
+            && in_array($user?->role, ['master_admin', 'admin', 'manager', 'staff'], true)
+            && $this->canAccessBranch($user, $reservation->branch_code)) {
             return;
         }
 

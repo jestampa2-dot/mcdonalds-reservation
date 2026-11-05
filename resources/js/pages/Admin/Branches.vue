@@ -6,6 +6,7 @@ import AdminQuickLinks from '@/Components/AdminQuickLinks.vue'
 
 const props = defineProps({
   branches: Array,
+  isMasterAdmin: Boolean,
 })
 
 const emptyBranchEdit = (branch) => ({
@@ -83,7 +84,7 @@ const deleteBranch = (id) => {
 
     <section class="mcd-section">
       <div class="mcd-grid mcd-grid--2">
-        <article class="mcd-panel p-6">
+        <article v-if="isMasterAdmin" class="mcd-panel p-6">
           <p class="mcd-chip">Add branch</p>
           <form class="mt-5 grid gap-4" @submit.prevent="createBranch">
             <div class="mcd-grid mcd-grid--2">
@@ -150,7 +151,7 @@ const deleteBranch = (id) => {
                 </div>
                 <div class="flex flex-wrap gap-3">
                   <button type="submit" class="mcd-button">Save changes</button>
-                  <button type="button" class="mcd-button mcd-button--ghost" @click="deleteBranch(branch.id)">Delete branch</button>
+                  <button v-if="isMasterAdmin" type="button" class="mcd-button mcd-button--ghost" @click="deleteBranch(branch.id)">Delete branch</button>
                 </div>
               </div>
             </form>

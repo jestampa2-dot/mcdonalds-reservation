@@ -48,6 +48,8 @@ Route::prefix('mobile')->group(function () {
         Route::get('/operations', [MobileOperationsController::class, 'mobileOperations']);
         Route::get('/admin/availability-day/{branchCode}/{date}', [MobileOperationsController::class, 'mobileAvailabilityDay'])
             ->where('date', '\d{4}-\d{2}-\d{2}');
+        Route::post('/admin/branch-access-requests', [MobileOperationsController::class, 'mobileStoreBranchAccessRequest']);
+        Route::post('/admin/branch-access-requests/{branchAccessRequest}/review', [MobileOperationsController::class, 'mobileReviewBranchAccessRequest']);
         Route::post('/staff/check-in', [MobileOperationsController::class, 'mobileCheckIn']);
         Route::post('/staff/reservations/{reservation}/service-status', [MobileOperationsController::class, 'mobileUpdateServiceStatus']);
         Route::post('/staff/reservations/{reservation}/adjustments', [MobileOperationsController::class, 'mobileUpdateServiceAdjustments']);

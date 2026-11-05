@@ -12,8 +12,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
-use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class MobileReservationController extends ReservationController
 {
@@ -121,7 +121,7 @@ class MobileReservationController extends ReservationController
         ]);
     }
 
-    public function mobilePaymentProof(Request $request, Reservation $reservation): BinaryFileResponse
+    public function mobilePaymentProof(Request $request, Reservation $reservation): StreamedResponse
     {
         return $this->paymentProof($request, $reservation);
     }

@@ -98,7 +98,7 @@ class BookingSmsTest extends TestCase
     public function test_web_and_mobile_admin_updates_both_queue_alerts(): void
     {
         $reservation = $this->booking();
-        $admin = User::factory()->create(['role' => 'admin']);
+        $admin = User::factory()->create(['role' => 'admin', 'branch_code' => 'srg-surigao']);
 
         $this->actingAs($admin)->post('/admin/reservations/'.$reservation->id.'/status', [
             'status' => 'confirmed',
@@ -338,6 +338,7 @@ class BookingSmsTest extends TestCase
             'booking_reference' => 'SMS-'.Str::upper(Str::random(8)),
             'reservation_type' => 'birthday',
             'branch' => "McDonald's Surigao City",
+            'branch_code' => 'srg-surigao',
             'event_date' => now()->addDays(5)->toDateString(),
             'event_time' => '10:00:00',
             'guests' => 15,

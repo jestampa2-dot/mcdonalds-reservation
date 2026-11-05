@@ -17,6 +17,8 @@ import {
   fetchAvailabilityDay,
   fetchOperations,
   getReservationPaymentProofUrl,
+  requestBranchAccess,
+  reviewBranchAccess,
   updateAdminBookingStatus,
   updateAdminCrew,
   updateAdminUser,
@@ -53,6 +55,7 @@ function defaultUserForm() {
     email: '',
     phone: '',
     role: 'customer',
+    branch_code: '',
     password: '',
     password_confirmation: '',
   };
@@ -89,6 +92,8 @@ export default function OperationsScreen() {
   const [adminAdjustmentState, setAdminAdjustmentState] = useState<Record<number, AdjustmentState>>({});
   const [userCreateForm, setUserCreateForm] = useState(defaultUserForm());
   const [accountEdits, setAccountEdits] = useState<Record<number, any>>({});
+  const [branchAccessCode, setBranchAccessCode] = useState('');
+  const [branchAccessMessage, setBranchAccessMessage] = useState('');
   const [branchCreateForm, setBranchCreateForm] = useState(defaultBranchForm());
   const [branchEdits, setBranchEdits] = useState<Record<number, any>>({});
   const [bookingSettingsForm, setBookingSettingsForm] = useState({
@@ -148,6 +153,7 @@ export default function OperationsScreen() {
               email: account.email ?? '',
               phone: account.phone ?? '',
               role: account.role ?? 'customer',
+              branch_code: account.branch_code ?? '',
               password: '',
               password_confirmation: '',
             },
@@ -776,6 +782,56 @@ export default function OperationsScreen() {
             </Panel>
 
             <Panel>
+              <SectionHeading label="Admin" title="Branch permissions" />
+              {admin.accounts?.isMasterAdmin ? (
+                <View style={styles.stack}>
+                  {(admin.accounts?.pendingBranchAccessRequests ?? []).map((accessRequest: any) => (
+                    <View key={`access-${accessRequest.id}`} style={styles.cardSoft}>
+                      <Text style={styles.cardTitle}>{accessRequest.requester_name}</Text>
+                      <Text style={styles.cardMeta}>{accessRequest.requester_email}</Text>
+                      <Text style={styles.helperStrong}>Requests {accessRequest.branch_name}</Text>
+                      {accessRequest.request_message ? <Text style={styles.helper}>{accessRequest.request_message}</Text> : null}
+                      <View style={styles.buttonStack}>
+                        <AppButton label="Approve access" onPress={() => void runAction(() => reviewBranchAccess(token, accessRequest.id, 'approved'), 'Access approved')} />
+                        <AppButton label="Reject request" onPress={() => void runAction(() => reviewBranchAccess(token, accessRequest.id, 'rejected'), 'Request rejected')} tone="ghost" />
+                      </View>
+                    </View>
+                  ))}
+                  {!(admin.accounts?.pendingBranchAccessRequests ?? []).length ? (
+                    <Text style={styles.helper}>No pending branch access requests.</Text>
+                  ) : null}
+                </View>
+              ) : user.role === 'admin' ? (
+                <View style={styles.stack}>
+                  <Text style={styles.helper}>Select another branch and ask the Master Admin for permission.</Text>
+                  <View style={styles.tagWrap}>
+                    {(admin.accounts?.requestableBranches ?? []).map((branch: any) => (
+                      <Tag key={`request-${branch.code}`} label={branch.name} active={branchAccessCode === branch.code} onPress={() => setBranchAccessCode(branch.code)} />
+                    ))}
+                  </View>
+                  <Field label="Reason (optional)" value={branchAccessMessage} onChangeText={setBranchAccessMessage} multiline />
+                  <AppButton
+                    label="Request branch access"
+                    onPress={() => void runAction(async () => {
+                      const response = await requestBranchAccess(token, branchAccessCode, branchAccessMessage);
+                      setBranchAccessCode('');
+                      setBranchAccessMessage('');
+                      return response;
+                    }, 'Request sent')}
+                  />
+                  {(admin.accounts?.myBranchAccessRequests ?? []).map((accessRequest: any) => (
+                    <View key={`my-access-${accessRequest.id}`} style={styles.cardSoft}>
+                      <Text style={styles.cardTitle}>{accessRequest.branch_name}</Text>
+                      <Text style={styles.cardMeta}>Status: {accessRequest.status}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <Text style={styles.helper}>Your account is limited to its assigned branch.</Text>
+              )}
+            </Panel>
+
+            <Panel>
               <SectionHeading label="Admin" title="Accounts" />
               {admin.accounts?.canManageAccounts ? (
                 <View style={styles.stack}>
@@ -786,6 +842,13 @@ export default function OperationsScreen() {
                   <View style={styles.tagWrap}>
                     {manageableRoles.map((role) => (
                       <Tag key={role} label={role} active={userCreateForm.role === role} onPress={() => setUserCreateForm((current) => ({ ...current, role }))} />
+                    ))}
+                  </View>
+                  <Text style={styles.helperStrong}>Assigned branch</Text>
+                  <View style={styles.tagWrap}>
+                    <Tag label="No branch" active={!userCreateForm.branch_code} onPress={() => setUserCreateForm((current) => ({ ...current, branch_code: '' }))} />
+                    {(admin.accounts?.branches ?? []).map((branch: any) => (
+                      <Tag key={`new-user-${branch.code}`} label={branch.name} active={userCreateForm.branch_code === branch.code} onPress={() => setUserCreateForm((current) => ({ ...current, branch_code: branch.code }))} />
                     ))}
                   </View>
                   <Field label="Password" value={userCreateForm.password} onChangeText={(value) => setUserCreateForm((current) => ({ ...current, password: value }))} secureTextEntry />
@@ -821,6 +884,13 @@ export default function OperationsScreen() {
                             <Tag key={`${account.id}-${role}`} label={role} active={accountEdits[account.id]?.role === role} onPress={() => setAccountEdits((current) => ({ ...current, [account.id]: { ...current[account.id], role } }))} />
                           ))}
                         </View>
+                        <Text style={styles.helperStrong}>Assigned branch</Text>
+                        <View style={styles.tagWrap}>
+                          <Tag label="No branch" active={!accountEdits[account.id]?.branch_code} onPress={() => setAccountEdits((current) => ({ ...current, [account.id]: { ...current[account.id], branch_code: '' } }))} />
+                          {(admin.accounts?.branches ?? []).map((branch: any) => (
+                            <Tag key={`${account.id}-branch-${branch.code}`} label={branch.name} active={accountEdits[account.id]?.branch_code === branch.code} onPress={() => setAccountEdits((current) => ({ ...current, [account.id]: { ...current[account.id], branch_code: branch.code } }))} />
+                          ))}
+                        </View>
                         <Field label="New password" value={accountEdits[account.id]?.password ?? ''} onChangeText={(value) => setAccountEdits((current) => ({ ...current, [account.id]: { ...current[account.id], password: value } }))} secureTextEntry />
                         <Field label="Confirm password" value={accountEdits[account.id]?.password_confirmation ?? ''} onChangeText={(value) => setAccountEdits((current) => ({ ...current, [account.id]: { ...current[account.id], password_confirmation: value } }))} secureTextEntry />
                         <View style={styles.buttonStack}>
@@ -836,7 +906,8 @@ export default function OperationsScreen() {
 
             <Panel>
               <SectionHeading label="Admin" title="Branches and inventory" />
-              <View style={styles.stack}>
+              {admin.dashboard?.isMasterAdmin ? (
+                <View style={styles.stack}>
                 <Field label="Branch name" value={branchCreateForm.name} onChangeText={(value) => setBranchCreateForm((current) => ({ ...current, name: value }))} />
                 <Field label="City" value={branchCreateForm.city} onChangeText={(value) => setBranchCreateForm((current) => ({ ...current, city: value }))} />
                 <Field label="Code" value={branchCreateForm.code} onChangeText={(value) => setBranchCreateForm((current) => ({ ...current, code: value }))} />
@@ -870,7 +941,8 @@ export default function OperationsScreen() {
                     )
                   }
                 />
-              </View>
+                </View>
+              ) : null}
 
               <View style={styles.stack}>
                 {(admin.branches?.branches ?? []).map((branch: any) => (
@@ -911,7 +983,9 @@ export default function OperationsScreen() {
                         }
                         tone="secondary"
                       />
-                      <AppButton label="Delete branch" onPress={() => void runAction(() => deleteBranch(token, branch.id), 'Branch deleted')} tone="ghost" />
+                      {admin.dashboard?.isMasterAdmin ? (
+                        <AppButton label="Delete branch" onPress={() => void runAction(() => deleteBranch(token, branch.id), 'Branch deleted')} tone="ghost" />
+                      ) : null}
                     </View>
                   </View>
                 ))}

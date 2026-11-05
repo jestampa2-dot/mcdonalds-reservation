@@ -33,6 +33,8 @@ Route::middleware('auth')->group(function () {
         ->name('admin.availability.day');
     Route::get('/admin/branches', [ReservationController::class, 'adminBranches'])->name('admin.branches');
     Route::get('/admin/accounts', [ReservationController::class, 'adminAccounts'])->name('admin.accounts');
+    Route::post('/admin/branch-access-requests', [ReservationController::class, 'storeBranchAccessRequest'])->name('admin.branch-access-requests.store');
+    Route::post('/admin/branch-access-requests/{branchAccessRequest}/review', [ReservationController::class, 'reviewBranchAccessRequest'])->name('admin.branch-access-requests.review');
     Route::get('/admin/catalog', [ReservationController::class, 'adminCatalog'])->name('admin.catalog');
     Route::get('/admin/reports', [ReservationController::class, 'adminReports'])->name('admin.reports');
     Route::get('/admin/reports/export', [ReservationController::class, 'exportAdminReport'])->name('admin.reports.export');

@@ -176,6 +176,7 @@ class MobileApiTest extends TestCase
         $eventType = array_key_first($bookingOptions['catalog']['eventTypes']);
         $branch = collect($bookingOptions['catalog']['branches'])
             ->first(fn (array $item) => (bool) ($item['supports'][$eventType] ?? false));
+        $admin->update(['branch_code' => $branch['code']]);
         $packageCode = $bookingOptions['catalog']['packages'][$eventType][0]['code'];
         $roomChoice = $bookingOptions['roomChoices'][0]['code'];
 

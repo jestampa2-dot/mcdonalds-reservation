@@ -82,6 +82,16 @@ class User extends Authenticatable
         return $this->belongsTo(Branch::class, 'branch_code', 'code');
     }
 
+    public function branchAccessRequests()
+    {
+        return $this->hasMany(BranchAccessRequest::class);
+    }
+
+    public function reviewedBranchAccessRequests()
+    {
+        return $this->hasMany(BranchAccessRequest::class, 'reviewed_by');
+    }
+
     public function sentReservationInvitations()
     {
         return $this->hasMany(ReservationInvitation::class, 'inviter_id');
