@@ -1,0 +1,26 @@
+# Dependencies are restored by EAS from package-lock.json.
+node_modules/
+
+# Local Expo, Metro, and native build output.
+.expo/
+dist/
+dist-*/
+web-build/
+builds/
+android/
+ios/
+.kotlin/
+*.tsbuildinfo
+*.log
+
+# Local editor and OS files.
+.vscode/
+.DS_Store
+
+# Credentials and machine-specific environment files.
+.env*.local
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision

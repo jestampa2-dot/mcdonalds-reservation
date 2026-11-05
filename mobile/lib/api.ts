@@ -133,7 +133,21 @@ let apiBaseUrlHydration: Promise<string> | null = null;
 async function hydrateApiBaseUrl() {
   if (!apiBaseUrlHydration) {
     apiBaseUrlHydration = AsyncStorage.getItem(apiBaseUrlStorageKey)
-      .then((storedApiBaseUrl) => {
+      .then(async (storedApiBaseUrl) => {
+        const configuredApiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim() || '';
+
+        if (
+          storedApiBaseUrl
+          && configuredApiBaseUrl
+          && isLocalDevelopmentApiBaseUrl(storedApiBaseUrl)
+          && !isLocalDevelopmentApiBaseUrl(configuredApiBaseUrl)
+        ) {
+          apiBaseUrl = normalizeApiBaseUrl(configuredApiBaseUrl);
+          await AsyncStorage.setItem(apiBaseUrlStorageKey, apiBaseUrl);
+
+          return apiBaseUrl;
+        }
+
         if (storedApiBaseUrl) {
           apiBaseUrl = normalizeApiBaseUrl(storedApiBaseUrl);
         }
@@ -192,15 +206,19 @@ async function requestJson<T>(path: string, options: ApiRequestOptions = {}): Pr
       signal: controller.signal,
     });
   } catch (error) {
+    const connectionHelp = isLocalDevelopmentApiBaseUrl(apiBaseUrl)
+      ? 'Check that Laravel is running and that your phone is on the same Wi-Fi.'
+      : 'Check your internet connection and try again.';
+
     if (error instanceof Error && error.name === 'AbortError') {
       throw new ApiError(
-        `The reservation server at ${apiBaseUrl} is taking too long to respond. Check that Laravel is running and that your phone can reach this address.`,
+        `The reservation server at ${apiBaseUrl} is taking too long to respond. ${connectionHelp}`,
         0,
       );
     }
 
     throw new ApiError(
-      `Unable to reach the reservation server at ${apiBaseUrl}. Make sure the computer server is running and the phone is on the same Wi-Fi, or change the server address below.`,
+      `Unable to reach the reservation server at ${apiBaseUrl}. ${connectionHelp}`,
       0,
     );
   } finally {
