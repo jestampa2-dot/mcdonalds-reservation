@@ -27,10 +27,23 @@ function configureGoogleSignIn() {
   }
 }
 
+export async function clearGoogleAccountSession(): Promise<void> {
+  if (!webClientId) {
+    return;
+  }
+
+  configureGoogleSignIn();
+
+  if (GoogleSignin.hasPreviousSignIn()) {
+    await GoogleSignin.signOut();
+  }
+}
+
 export async function chooseGoogleAccount(): Promise<string | null> {
   configureGoogleSignIn();
 
   await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+  await clearGoogleAccountSession();
   const response = await GoogleSignin.signIn();
 
   if (!isSuccessResponse(response)) {

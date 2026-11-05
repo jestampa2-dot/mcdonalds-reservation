@@ -4,6 +4,7 @@ import { InteractionManager } from 'react-native';
 
 import { ApiError, fetchCurrentUser, fetchDashboard, fetchProfile, googleLogin, login, logout, register } from '@/lib/api';
 import { removeCaches, writeCache } from '@/lib/cache';
+import { clearGoogleAccountSession } from '@/lib/google-auth';
 import type { MobileUser } from '@/lib/types';
 
 type LoginPayload = {
@@ -162,6 +163,12 @@ export function AuthProvider({ children }: PropsWithChildren) {
       } catch {
         // Ignore network logout failures and clear the local token anyway.
       }
+    }
+
+    try {
+      await clearGoogleAccountSession();
+    } catch {
+      // Local app logout must still succeed if Google Play Services is unavailable.
     }
 
     setUser(null);

@@ -2,7 +2,7 @@
   "expo": {
     "name": "McDonalds Reservations Mobile",
     "slug": "mcdonalds-reservations-mobile",
-    "version": "1.5.1",
+    "version": "1.5.2",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "mcdreservations",
@@ -12,7 +12,7 @@
     },
     "android": {
       "package": "com.mcdbooker.reservations",
-      "versionCode": 16,
+      "versionCode": 17,
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
