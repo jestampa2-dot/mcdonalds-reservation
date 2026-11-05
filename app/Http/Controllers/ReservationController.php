@@ -44,7 +44,7 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
 use Inertia\Response as InertiaResponse;
-use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use RuntimeException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
@@ -183,7 +183,22 @@ class ReservationController extends Controller
             ->all();
         $manualMenuItems = $this->resolveManualMenuSelections($catalog, $validated['manual_menu_items'] ?? []);
 
-        $proofPath = $request->file('payment_proof')->store('payment-proofs', 'public');
+        try {
+            $proofDisk = Storage::disk('public');
+            $proofDisk->makeDirectory('payment-proofs');
+            $proofPath = $proofDisk->putFile('payment-proofs', $request->file('payment_proof'));
+
+            if (! $proofPath) {
+                throw new RuntimeException('The payment proof could not be written to public storage.');
+            }
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return back()->withErrors([
+                'payment_proof' => 'We could not save your payment proof. Please select the image again and retry.',
+            ])->with('error', 'Your reservation was not submitted because the payment proof could not be saved. Please try again.')->withInput();
+        }
+
         $bookingReference = strtoupper('MCR-'.Str::random(8));
         $receipt = $this->buildReceipt(
             $validated['event_type'],
@@ -1149,21 +1164,28 @@ class ReservationController extends Controller
         return response()->json($this->availabilityPayload($this->catalog(), $days));
     }
 
-    public function paymentProof(Request $request, Reservation $reservation): BinaryFileResponse
+    public function paymentProof(Request $request, Reservation $reservation): StreamedResponse
     {
         $this->authorizeReservationAccess($request, $reservation, true);
 
-        abort_unless($reservation->payment_proof_path && Storage::disk('public')->exists($reservation->payment_proof_path), 404);
+        $proofDisk = Storage::disk('public');
+        $proofPath = $reservation->payment_proof_path;
 
-        $filePath = Storage::disk('public')->path($reservation->payment_proof_path);
-        $downloadName = $reservation->booking_reference.'-payment-proof.'.pathinfo($reservation->payment_proof_path, PATHINFO_EXTENSION);
+        abort_unless($proofPath && $proofDisk->exists($proofPath), 404);
 
-        if ($request->boolean('download')) {
-            return response()->download($filePath, $downloadName);
-        }
+        $proofStream = $proofDisk->readStream($proofPath);
+        abort_unless(is_resource($proofStream), 404);
 
-        return response()->file($filePath, [
-            'Content-Disposition' => 'inline; filename="'.$downloadName.'"',
+        $downloadName = $reservation->booking_reference.'-payment-proof.'.pathinfo($proofPath, PATHINFO_EXTENSION);
+        $disposition = $request->boolean('download') ? 'attachment' : 'inline';
+        $mimeType = $proofDisk->mimeType($proofPath) ?: 'application/octet-stream';
+
+        return response()->stream(function () use ($proofStream) {
+            fpassthru($proofStream);
+            fclose($proofStream);
+        }, 200, [
+            'Content-Type' => $mimeType,
+            'Content-Disposition' => $disposition.'; filename="'.$downloadName.'"',
         ]);
     }
 
