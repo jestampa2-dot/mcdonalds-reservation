@@ -199,21 +199,11 @@ export default function DashboardScreen() {
       const response = await createReservationInvitation(token, inviteReservationId, {
         name: invitationForm.name.trim(),
         phone: invitationForm.phone.trim(),
-        email: invitationForm.email.trim() || undefined,
+        email: invitationForm.email.trim(),
       });
       setInviteReservationId(null);
       setInvitationForm(emptyInvitationForm);
-      if (response.sms_queued) {
-        Alert.alert('Invitation sent', response.message);
-      } else {
-        const smsBody = `You're invited to ${response.invitation.package_name ?? 'a McDonald\'s event'} at ${response.invitation.branch ?? 'McDonald\'s'} on ${response.invitation.event_date ?? 'the scheduled date'} at ${response.invitation.event_time_label ?? 'the scheduled time'}. Open McD Reservations to reply. Ref ${response.invitation.booking_reference ?? ''}`;
-        const smsUrl = `sms:${response.invitation.invitee_phone}?body=${encodeURIComponent(smsBody)}`;
-
-        Alert.alert('Invitation saved', `${response.message} You can send it from your phone instead.`, [
-          { text: 'Not now', style: 'cancel' },
-          { text: 'Open Messages', onPress: () => void Linking.openURL(smsUrl) },
-        ]);
-      }
+      Alert.alert(response.email_queued ? 'Invitation emailed' : 'Invitation saved', response.message);
       await loadDashboard();
     } catch (error) {
       const message = error instanceof ApiError ? Object.values(error.errors ?? {})[0]?.[0] ?? error.message : 'Unable to send the invitation.';
@@ -555,7 +545,7 @@ export default function DashboardScreen() {
           <View style={styles.modalPanel}>
             <SectionEyebrow>Invite a customer</SectionEyebrow>
             <SectionTitle>Send an event invitation</SectionTitle>
-            <Text style={styles.helperText}>They will receive an SMS and can accept or decline from their customer account.</Text>
+            <Text style={styles.helperText}>They will receive an automatic email and can accept or decline from their customer account.</Text>
             <CustomerField
               label="Customer name"
               value={invitationForm.name}
@@ -564,20 +554,20 @@ export default function DashboardScreen() {
               autoCapitalize="words"
             />
             <CustomerField
-              label="Philippine mobile number"
+              label="Email address"
+              value={invitationForm.email}
+              onChangeText={(email) => setInvitationForm((current) => ({ ...current, email }))}
+              placeholder="guest@gmail.com"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <CustomerField
+              label="Contact mobile number"
               value={invitationForm.phone}
               onChangeText={(phone) => setInvitationForm((current) => ({ ...current, phone }))}
               placeholder="0917 123 4567"
               keyboardType="phone-pad"
-            />
-            <CustomerField
-              label="Email (optional)"
-              value={invitationForm.email}
-              onChangeText={(email) => setInvitationForm((current) => ({ ...current, email }))}
-              placeholder="customer@example.com"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
             />
             <View style={styles.modalActions}>
               <CustomerButton
@@ -589,7 +579,7 @@ export default function DashboardScreen() {
               <CustomerButton
                 label={sendingInvitation ? 'Sending...' : 'Send invitation'}
                 icon="send"
-                disabled={sendingInvitation || !invitationForm.name.trim() || !invitationForm.phone.trim()}
+                disabled={sendingInvitation || !invitationForm.name.trim() || !invitationForm.email.trim() || !invitationForm.phone.trim()}
                 onPress={() => void handleSendInvitation()}
               />
             </View>

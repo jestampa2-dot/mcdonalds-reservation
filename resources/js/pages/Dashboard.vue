@@ -17,7 +17,6 @@ const invitationOpen = reactive(Object.fromEntries(props.bookings.map((booking) 
 const invitationBusy = reactive({})
 const invitationErrors = reactive({})
 const invitationNotices = reactive({})
-const invitationFallbacks = reactive({})
 const responseBusy = reactive({})
 
 const timeOptions = props.slotOptions.map((value) => {
@@ -84,20 +83,11 @@ const sendInvitation = async (booking) => {
   invitationBusy[booking.id] = true
   invitationErrors[booking.id] = ''
   invitationNotices[booking.id] = ''
-  invitationFallbacks[booking.id] = null
 
   try {
     const response = await window.axios.post(route('reservations.invitations.store', booking.id), invitationForms[booking.id])
-    const invitation = response.data.invitation
     invitationForms[booking.id] = emptyInvitationForm()
     invitationNotices[booking.id] = response.data.message
-
-    if (!response.data.sms_queued) {
-      invitationFallbacks[booking.id] = {
-        phone: invitation.invitee_phone,
-        message: `You're invited to ${invitation.package_name || 'a McDonald\'s event'} at ${invitation.branch || 'McDonald\'s'} on ${invitation.event_date || 'the scheduled date'} at ${invitation.event_time_label || 'the scheduled time'}. Sign in to McD Reservations to reply. Ref ${invitation.booking_reference || ''}`,
-      }
-    }
 
     router.reload({ only: ['bookings', 'receivedInvitations'], preserveScroll: true, preserveState: true })
   } catch (error) {
@@ -135,20 +125,6 @@ const respondToInvitation = async (invitationId, status) => {
   }
 }
 
-const fallbackSmsHref = (fallback) =>
-  fallback ? `sms:${fallback.phone}?body=${encodeURIComponent(fallback.message)}` : '#'
-
-const copyFallbackInvitation = async (bookingId) => {
-  const fallback = invitationFallbacks[bookingId]
-  if (!fallback) return
-
-  try {
-    await navigator.clipboard.writeText(`${fallback.phone}\n${fallback.message}`)
-    invitationNotices[bookingId] = 'Invitation text copied. Send it using your preferred messaging app.'
-  } catch {
-    invitationErrors[bookingId] = 'Copying was blocked by the browser. Select the message and copy it manually.'
-  }
-}
 </script>
 
 <template>
@@ -280,7 +256,7 @@ const copyFallbackInvitation = async (bookingId) => {
                 <div class="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">Guest invitations</p>
-                    <p class="mt-1 text-sm text-slate-600">Invite a customer by SMS and let them RSVP from the web or mobile app.</p>
+                    <p class="mt-1 text-sm text-slate-600">Email an invitation automatically and let the guest RSVP from the web or mobile app.</p>
                   </div>
                   <button type="button" class="mcd-button mcd-button--ghost" @click="invitationOpen[booking.id] = !invitationOpen[booking.id]">
                     {{ invitationOpen[booking.id] ? 'Close invitation form' : 'Invite guest' }}
@@ -293,12 +269,12 @@ const copyFallbackInvitation = async (bookingId) => {
                     <input v-model="invitationForms[booking.id].name" required maxlength="100" class="mcd-input" autocomplete="name" />
                   </label>
                   <label class="grid gap-2 text-sm font-bold text-slate-700">
-                    Philippine mobile number
-                    <input v-model="invitationForms[booking.id].phone" required maxlength="30" class="mcd-input" inputmode="tel" autocomplete="tel" placeholder="0917 123 4567" />
+                    Email address
+                    <input v-model="invitationForms[booking.id].email" required type="email" maxlength="191" class="mcd-input" autocomplete="email" placeholder="guest@gmail.com" />
                   </label>
                   <label class="grid gap-2 text-sm font-bold text-slate-700 md:col-span-2">
-                    Email address (optional)
-                    <input v-model="invitationForms[booking.id].email" type="email" maxlength="191" class="mcd-input" autocomplete="email" />
+                    Contact mobile number
+                    <input v-model="invitationForms[booking.id].phone" required maxlength="30" class="mcd-input" inputmode="tel" autocomplete="tel" placeholder="0917 123 4567" />
                   </label>
                   <div class="md:col-span-2">
                     <button type="submit" class="mcd-button" :disabled="invitationBusy[booking.id]">
@@ -310,20 +286,11 @@ const copyFallbackInvitation = async (bookingId) => {
                 <p v-if="invitationNotices[booking.id]" class="mt-3 rounded-2xl bg-emerald-50 p-3 text-sm font-bold text-emerald-800">{{ invitationNotices[booking.id] }}</p>
                 <p v-if="invitationErrors[booking.id]" class="mt-3 rounded-2xl bg-red-50 p-3 text-sm font-bold text-red-800">{{ invitationErrors[booking.id] }}</p>
 
-                <div v-if="invitationFallbacks[booking.id]" class="mt-3 rounded-2xl bg-amber-100 p-4">
-                  <p class="text-sm font-bold text-amber-950">Automatic SMS is unavailable. The invitation is saved in the app, and you can send this prepared text manually.</p>
-                  <p class="mt-2 break-words text-sm text-amber-900">{{ invitationFallbacks[booking.id].message }}</p>
-                  <div class="mt-3 flex flex-wrap gap-3">
-                    <a :href="fallbackSmsHref(invitationFallbacks[booking.id])" class="mcd-button mcd-button--ghost">Open SMS app</a>
-                    <button type="button" class="mcd-button mcd-button--ghost" @click="copyFallbackInvitation(booking.id)">Copy message</button>
-                  </div>
-                </div>
-
                 <div v-if="booking.invitations?.length" class="mt-4 grid gap-3">
                   <article v-for="invitation in booking.invitations" :key="invitation.id" class="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-slate-50 p-4">
                     <div>
                       <p class="font-black text-slate-900">{{ invitation.invitee_name }}</p>
-                      <p class="text-sm text-slate-600">{{ invitation.invitee_phone }}<span v-if="invitation.invitee_email"> | {{ invitation.invitee_email }}</span></p>
+                      <p class="text-sm text-slate-600">{{ invitation.invitee_email }} | {{ invitation.invitee_phone }}</p>
                     </div>
                     <div class="flex items-center gap-3">
                       <StatusBadge :value="invitation.status" />

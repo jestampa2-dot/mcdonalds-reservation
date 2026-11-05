@@ -19,13 +19,13 @@ chmod -R ug+rwX /var/www/html/storage/app/public
 sed -ri "s/^Listen [0-9]+$/Listen ${APP_PORT}/" /etc/apache2/ports.conf
 sed -ri "s/<VirtualHost \*:[0-9]+>/<VirtualHost *:${APP_PORT}>/" /etc/apache2/sites-available/*.conf
 
-# Run the database-backed SMS queue beside Apache. Keeping both processes in
-# this container avoids a second Railway service while still allowing booking
-# and invitation SMS jobs to leave the queue automatically.
+# Run the database-backed invitation email queue beside Apache. Keeping both
+# processes in this container avoids a second Railway service while still
+# allowing automatic guest invitations to leave the queue immediately.
 php artisan queue:work sms \
-    --queue=sms \
-    --tries=1 \
-    --timeout=20 \
+    --queue=email \
+    --tries=3 \
+    --timeout=30 \
     --sleep=1 &
 SMS_WORKER_PID=$!
 

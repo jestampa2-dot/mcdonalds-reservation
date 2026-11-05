@@ -417,9 +417,9 @@ export function rescheduleReservation(token: string, reservationId: number, payl
 export function createReservationInvitation(
   token: string,
   reservationId: number,
-  payload: { name: string; phone: string; email?: string },
+  payload: { name: string; phone: string; email: string },
 ) {
-  return requestJson<{ message: string; sms_queued: boolean; invitation: EventInvitation }>(
+  return requestJson<{ message: string; email_queued: boolean; invitation: EventInvitation }>(
     `/api/mobile/reservations/${reservationId}/invitations`,
     {
       method: 'POST',

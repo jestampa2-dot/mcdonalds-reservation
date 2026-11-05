@@ -6,7 +6,6 @@ use App\Models\Reservation;
 use App\Models\ReservationInvitation;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -18,11 +17,7 @@ class WebInvitationTest extends TestCase
     {
         parent::setUp();
 
-        config()->set([
-            'sms.enabled' => false,
-            'sms.textbee.api_key' => '',
-        ]);
-        Http::preventStrayRequests();
+        config()->set('mail.default', 'array');
     }
 
     public function test_booking_owner_can_invite_and_cancel_a_guest_from_the_web(): void
@@ -37,7 +32,7 @@ class WebInvitationTest extends TestCase
         ]);
 
         $response->assertCreated()
-            ->assertJsonPath('sms_queued', false)
+            ->assertJsonPath('email_queued', true)
             ->assertJsonPath('invitation.invitee_name', 'Web Guest');
 
         $invitation = ReservationInvitation::firstOrFail();

@@ -2,14 +2,14 @@
 
 namespace Tests\Feature;
 
-use App\Jobs\SendInvitationSms;
+use App\Jobs\SendInvitationEmail;
+use App\Mail\ReservationInvitationMail;
 use App\Models\Reservation;
 use App\Models\ReservationInvitation;
-use App\Models\SmsMessage;
 use App\Models\User;
-use App\Services\TextBeeSmsGateway;
+use App\Services\InvitationEmailGateway;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -22,16 +22,10 @@ class MobileInvitationTest extends TestCase
     {
         parent::setUp();
 
-        config()->set([
-            'sms.enabled' => true,
-            'sms.textbee.api_key' => 'fake-test-key',
-            'sms.textbee.device_id' => 'fake-device-id',
-            'sms.textbee.base_url' => 'https://api.textbee.dev/api/v1',
-        ]);
-        Http::preventStrayRequests();
+        config()->set('mail.default', 'array');
     }
 
-    public function test_booking_owner_can_invite_a_registered_customer_by_sms_and_in_app(): void
+    public function test_booking_owner_can_invite_a_registered_customer_by_email_and_in_app(): void
     {
         $owner = $this->customer('owner@example.com', '09171234567');
         $invitee = $this->customer('guest@example.com', '09181234567', true);
@@ -43,7 +37,7 @@ class MobileInvitationTest extends TestCase
             'phone' => '+63 918 123 4567',
             'email' => strtoupper($invitee->email),
         ])->assertCreated()
-            ->assertJsonPath('sms_queued', true)
+            ->assertJsonPath('email_queued', true)
             ->assertJsonPath('invitation.status', 'pending')
             ->assertJsonPath('invitation.invitee_phone', '+639181234567');
 
@@ -52,13 +46,6 @@ class MobileInvitationTest extends TestCase
             'invitee_user_id' => $invitee->id,
             'invitee_phone' => '+639181234567',
             'status' => 'pending',
-        ]);
-        $this->assertDatabaseHas('sms_messages', [
-            'user_id' => $owner->id,
-            'reservation_id' => $reservation->id,
-            'recipient' => '+639181234567',
-            'event' => 'invitation',
-            'status' => 'queued',
         ]);
         $this->assertDatabaseCount('sms_jobs', 1);
 
@@ -119,12 +106,12 @@ class MobileInvitationTest extends TestCase
             'name' => $owner->name,
             'phone' => $owner->phone,
             'email' => $owner->email,
-        ])->assertUnprocessable()->assertJsonValidationErrors('phone');
+        ])->assertUnprocessable()->assertJsonValidationErrors('email');
 
         $payload = ['name' => 'Guest', 'phone' => '09181234567', 'email' => 'guest@example.com'];
         $this->postJson("/api/mobile/reservations/{$reservation->id}/invitations", $payload)->assertCreated();
         $this->postJson("/api/mobile/reservations/{$reservation->id}/invitations", $payload)
-            ->assertUnprocessable()->assertJsonValidationErrors('phone');
+            ->assertUnprocessable()->assertJsonValidationErrors('email');
 
         $reservation->update(['status' => 'cancelled']);
         $this->postJson("/api/mobile/reservations/{$reservation->id}/invitations", [
@@ -133,13 +120,8 @@ class MobileInvitationTest extends TestCase
         ])->assertUnprocessable();
     }
 
-    public function test_invitation_worker_sends_once_and_skips_a_declined_invitation(): void
+    public function test_invitation_worker_emails_a_pending_invitation_and_skips_a_declined_invitation(): void
     {
-        Http::fake([
-            'https://api.textbee.dev/api/v1/gateway/send-sms' => Http::response([
-                'data' => ['success' => true, 'smsBatchId' => 'invite-batch-id'],
-            ]),
-        ]);
         $owner = $this->customer('owner@example.com', '09171234567');
         $reservation = $this->reservation($owner);
         Sanctum::actingAs($owner);
@@ -147,32 +129,27 @@ class MobileInvitationTest extends TestCase
         $this->postJson("/api/mobile/reservations/{$reservation->id}/invitations", [
             'name' => 'Guest',
             'phone' => '09181234567',
+            'email' => 'guest@example.com',
         ])->assertCreated();
 
-        $sms = SmsMessage::firstOrFail();
         $invitation = ReservationInvitation::firstOrFail();
-        $job = new SendInvitationSms($sms->id, $invitation->id);
-        $job->handle(app(TextBeeSmsGateway::class));
-        $job->handle(app(TextBeeSmsGateway::class));
+        $this->assertStringContainsString(
+            'View invitation and RSVP',
+            (new ReservationInvitationMail($invitation->load(['reservation', 'inviter'])))->render(),
+        );
+        Mail::fake();
+        (new SendInvitationEmail($invitation->id))->handle(app(InvitationEmailGateway::class));
 
-        $this->assertSame('accepted', $sms->fresh()->status);
-        Http::assertSentCount(1);
+        Mail::assertSent(ReservationInvitationMail::class, fn (ReservationInvitationMail $mail) =>
+            $mail->hasTo('guest@example.com') && $mail->invitation->is($invitation));
 
-        $secondSms = SmsMessage::create([
-            'user_id' => $owner->id,
-            'reservation_id' => $reservation->id,
-            'recipient' => $invitation->invitee_phone,
-            'event' => 'invitation',
-            'message' => 'Invitation test',
-        ]);
         $invitation->update(['status' => 'declined', 'responded_at' => now()]);
-        (new SendInvitationSms($secondSms->id, $invitation->id))->handle(app(TextBeeSmsGateway::class));
+        (new SendInvitationEmail($invitation->id))->handle(app(InvitationEmailGateway::class));
 
-        $this->assertSame('skipped', $secondSms->fresh()->status);
-        Http::assertSentCount(1);
+        Mail::assertSent(ReservationInvitationMail::class, 1);
     }
 
-    public function test_broken_sms_queue_does_not_prevent_an_in_app_invitation(): void
+    public function test_broken_email_queue_does_not_prevent_an_in_app_invitation(): void
     {
         $owner = $this->customer('owner@example.com', '09171234567');
         $reservation = $this->reservation($owner);
@@ -182,15 +159,15 @@ class MobileInvitationTest extends TestCase
         $this->postJson("/api/mobile/reservations/{$reservation->id}/invitations", [
             'name' => 'Guest',
             'phone' => '09181234567',
+            'email' => 'guest@example.com',
         ])->assertCreated()
-            ->assertJsonPath('sms_queued', false)
+            ->assertJsonPath('email_queued', false)
             ->assertJsonPath('invitation.status', 'pending');
 
         $this->assertDatabaseHas('reservation_invitations', [
             'reservation_id' => $reservation->id,
             'invitee_phone' => '+639181234567',
         ]);
-        $this->assertDatabaseCount('sms_messages', 0);
     }
 
     private function customer(string $email, string $phone, bool $smsEnabled = false): User

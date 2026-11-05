@@ -3,18 +3,16 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\ReservationController;
-use App\Jobs\SendInvitationSms;
+use App\Jobs\SendInvitationEmail;
 use App\Models\Reservation;
 use App\Models\ReservationInvitation;
-use App\Models\SmsMessage;
 use App\Models\User;
-use App\Services\TextBeeSmsGateway;
+use App\Services\InvitationEmailGateway;
 use App\Support\ReservationInvitationPresenter;
 use App\Support\SmsPhoneNumber;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Bus;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -37,7 +35,7 @@ class MobileInvitationController extends ReservationController
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:100'],
             'phone' => ['required', 'string', 'max:30'],
-            'email' => ['nullable', 'email', 'max:191'],
+            'email' => ['required', 'email', 'max:191'],
         ]);
         $phone = SmsPhoneNumber::normalize($validated['phone']);
 
@@ -47,15 +45,15 @@ class MobileInvitationController extends ReservationController
             ]);
         }
 
-        $email = isset($validated['email']) ? Str::lower(trim($validated['email'])) : null;
+        $email = Str::lower(trim($validated['email']));
         $invitee = $this->findCustomer($email, $phone);
         $inviter = $request->user();
 
         if (($invitee && (int) $invitee->id === (int) $inviter->id)
             || SmsPhoneNumber::normalize($inviter->phone) === $phone
-            || ($email && Str::lower($inviter->email) === $email)) {
+            || Str::lower($inviter->email) === $email) {
             throw ValidationException::withMessages([
-                'phone' => ['You cannot invite your own account to your event.'],
+                'email' => ['You cannot invite your own account to your event.'],
             ]);
         }
 
@@ -63,22 +61,18 @@ class MobileInvitationController extends ReservationController
             ->where('reservation_id', $reservation->id)
             ->whereIn('status', ['pending', 'accepted'])
             ->where(function ($query) use ($phone, $email) {
-                $query->where('invitee_phone', $phone);
-
-                if ($email) {
-                    $query->orWhere('invitee_email', $email);
-                }
+                $query->where('invitee_phone', $phone)
+                    ->orWhere('invitee_email', $email);
             })
             ->exists();
 
         if ($duplicate) {
             throw ValidationException::withMessages([
-                'phone' => ['This customer already has an active invitation for the event.'],
+                'email' => ['This customer already has an active invitation for the event.'],
             ]);
         }
 
-        $shouldSendSms = app(TextBeeSmsGateway::class)->configured()
-            && (! $invitee || $invitee->sms_notifications_enabled);
+        $shouldSendEmail = app(InvitationEmailGateway::class)->configured();
 
         $invitation = ReservationInvitation::create([
             'reservation_id' => $reservation->id,
@@ -90,24 +84,14 @@ class MobileInvitationController extends ReservationController
             'token' => (string) Str::uuid(),
             'status' => 'pending',
         ]);
-        $smsQueued = false;
+        $emailQueued = false;
 
-        if ($shouldSendSms) {
+        if ($shouldSendEmail) {
             try {
-                DB::transaction(function () use ($invitation, $reservation, $inviter, $phone) {
-                    $sms = SmsMessage::create([
-                        'user_id' => $inviter->id,
-                        'reservation_id' => $reservation->id,
-                        'recipient' => $phone,
-                        'event' => 'invitation',
-                        'message' => $this->invitationSms($invitation, $reservation, $inviter),
-                    ]);
-
-                    Bus::dispatch(new SendInvitationSms($sms->id, $invitation->id));
-                });
-                $smsQueued = true;
+                Bus::dispatch(new SendInvitationEmail($invitation->id));
+                $emailQueued = true;
             } catch (Throwable $exception) {
-                Log::warning('Invitation saved, but its SMS could not be queued.', [
+                Log::warning('Invitation saved, but its email could not be queued.', [
                     'invitation_id' => $invitation->id,
                     'error_type' => get_class($exception),
                 ]);
@@ -117,10 +101,10 @@ class MobileInvitationController extends ReservationController
         $invitation->load(['reservation', 'inviter']);
 
         return response()->json([
-            'message' => $smsQueued
-                ? 'Invitation saved in the app and queued for SMS delivery.'
-                : 'Invitation saved in the app. SMS is unavailable or the customer disabled SMS notifications.',
-            'sms_queued' => $smsQueued,
+            'message' => $emailQueued
+                ? 'Invitation saved in the app and queued for email delivery.'
+                : 'Invitation saved in the app, but automatic email is not configured.',
+            'email_queued' => $emailQueued,
             'invitation' => ReservationInvitationPresenter::forMobile($invitation),
         ], Response::HTTP_CREATED);
     }
@@ -210,20 +194,4 @@ class MobileInvitationController extends ReservationController
         return $user->role === 'customer' && ($matchesEmail || $matchesPhone);
     }
 
-    private function invitationSms(ReservationInvitation $invitation, Reservation $reservation, User $inviter): string
-    {
-        $sender = Str::limit($this->plainText(Str::before($inviter->name, ' ')), 20, '');
-        $event = Str::limit($this->plainText($reservation->package_name ?: $reservation->reservation_type), 28, '');
-        $branch = Str::limit($this->plainText($reservation->branch), 24, '');
-        $date = $reservation->event_date?->format('d M Y');
-        $time = \Carbon\Carbon::parse($reservation->event_time)->format('g:i A');
-        $reference = Str::limit($this->plainText($reservation->booking_reference), 24, '');
-
-        return Str::limit("McD invite from {$sender}: {$event}, {$date} {$time} at {$branch}. Open McD Reservations to reply. Ref {$reference}", 160, '');
-    }
-
-    private function plainText(string $value): string
-    {
-        return trim(preg_replace('/[^\x20-\x7E]/', '', Str::ascii($value)));
-    }
 }
