@@ -19,4 +19,33 @@ chmod -R ug+rwX /var/www/html/storage/app/public
 sed -ri "s/^Listen [0-9]+$/Listen ${APP_PORT}/" /etc/apache2/ports.conf
 sed -ri "s/<VirtualHost \*:[0-9]+>/<VirtualHost *:${APP_PORT}>/" /etc/apache2/sites-available/*.conf
 
-exec apache2-foreground
+# Run the database-backed SMS queue beside Apache. Keeping both processes in
+# this container avoids a second Railway service while still allowing booking
+# and invitation SMS jobs to leave the queue automatically.
+php artisan queue:work sms \
+    --queue=sms \
+    --tries=1 \
+    --timeout=20 \
+    --sleep=1 &
+SMS_WORKER_PID=$!
+
+apache2-foreground &
+APACHE_PID=$!
+
+shutdown() {
+    trap - TERM INT
+    kill -TERM "$APACHE_PID" "$SMS_WORKER_PID" 2>/dev/null || true
+    wait "$APACHE_PID" 2>/dev/null || true
+    wait "$SMS_WORKER_PID" 2>/dev/null || true
+}
+
+trap 'shutdown; exit 0' TERM INT
+
+# If Apache or the queue worker exits unexpectedly, stop the other process and
+# let Railway restart the container instead of leaving a half-working service.
+while kill -0 "$APACHE_PID" 2>/dev/null && kill -0 "$SMS_WORKER_PID" 2>/dev/null; do
+    sleep 2
+done
+
+shutdown
+exit 1
