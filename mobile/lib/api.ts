@@ -233,10 +233,18 @@ async function requestJson<T>(path: string, options: ApiRequestOptions = {}): Pr
     const connectionHelp = isLocalDevelopmentApiBaseUrl(apiBaseUrl)
       ? 'Check that Laravel is running and that your phone is on the same Wi-Fi.'
       : 'Check your internet connection and try again.';
+    const isUploadRequest = body instanceof FormData;
 
     if (error instanceof Error && error.name === 'AbortError') {
       throw new ApiError(
         `The reservation server at ${apiBaseUrl} is taking too long to respond. ${connectionHelp}`,
+        0,
+      );
+    }
+
+    if (isUploadRequest) {
+      throw new ApiError(
+        `The payment proof could not be uploaded to ${apiBaseUrl}. ${connectionHelp} Your booking was not duplicated; you can safely try again.`,
         0,
       );
     }

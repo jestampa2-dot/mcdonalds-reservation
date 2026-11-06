@@ -35,6 +35,7 @@ RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
 
 WORKDIR /var/www/html
 
+COPY docker/php-upload.ini /usr/local/etc/php/conf.d/99-upload.ini
 COPY . .
 
 RUN composer install \

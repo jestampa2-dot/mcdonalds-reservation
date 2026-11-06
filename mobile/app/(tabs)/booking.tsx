@@ -1,4 +1,5 @@
 import * as ImagePicker from 'expo-image-picker';
+import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -487,30 +488,38 @@ export default function BookingScreen() {
   }
 
   async function selectPaymentProof() {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.8,
-    });
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 1,
+      });
 
-    if (result.canceled || !result.assets[0]) {
-      return;
+      if (result.canceled || !result.assets[0]) {
+        return;
+      }
+
+      const asset = result.assets[0];
+      const resizeActions = asset.width > 1600
+        ? [{ resize: { width: 1600 } }]
+        : [];
+      const normalizedImage = await manipulateAsync(asset.uri, resizeActions, {
+        compress: 0.72,
+        format: SaveFormat.JPEG,
+      });
+
+      setPaymentProof({
+        uri: normalizedImage.uri,
+        name: `payment-proof-${Date.now()}.jpg`,
+        type: 'image/jpeg',
+      });
+    } catch {
+      Alert.alert(
+        'Unable to prepare image',
+        'The selected image could not be prepared for upload. Choose a JPG or PNG image and try again.',
+      );
     }
-
-    const asset = result.assets[0];
-
-    if (asset.fileSize && asset.fileSize > 4 * 1024 * 1024) {
-      Alert.alert('Image is too large', 'Choose a payment proof image that is 4 MB or smaller.');
-      return;
-    }
-
-    setPaymentProof({
-      uri: asset.uri,
-      name: asset.fileName ?? `payment-proof-${Date.now()}.jpg`,
-      type: asset.mimeType ?? 'image/jpeg',
-      size: asset.fileSize,
-    });
   }
 
   function validationMessageForStep(step: number) {
@@ -1063,33 +1072,43 @@ export default function BookingScreen() {
                 ))}
               </ScrollView>
 
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
+              <View style={styles.menuGrid}>
                 {visibleMenuItems.map((item) => (
-                  <CustomerCard key={item.code} style={styles.menuCard}>
-                    <View style={styles.menuImageMock}>
-                      <Text style={styles.menuImageLabel}>{item.name}</Text>
+                  <View key={item.code} style={[styles.menuCard, isWide ? styles.menuCardWide : null]}>
+                    <View style={styles.menuItemHeader}>
+                      <Text style={styles.menuItemTitle}>{item.name}</Text>
+                      <Text style={styles.menuItemMeta}>Choose a size and quantity</Text>
                     </View>
                     {item.options.map((option) => {
                       const quantity = manualSelections.find((entry) => entry.option_code === option.code)?.quantity ?? 0;
                       return (
-                        <View key={option.code} style={styles.menuOptionBlock}>
-                          <Text style={styles.menuPrice}>{formatCurrency(option.price)}</Text>
-                          <Text style={styles.menuOptionLabel}>{option.label}</Text>
+                        <View key={option.code} style={[styles.menuOptionBlock, quantity > 0 ? styles.menuOptionBlockActive : null]}>
+                          <View style={styles.menuOptionInfo}>
+                            <Text style={styles.menuOptionLabel}>{option.label}</Text>
+                            <Text style={styles.menuPrice}>{formatCurrency(option.price)}</Text>
+                          </View>
                           <View style={styles.stepperRow}>
-                            <Pressable onPress={() => updateManualSelection(option.code, 'decrement')} style={styles.stepperButton}>
-                              <Text style={styles.stepperButtonText}>-</Text>
+                            <Pressable
+                              accessibilityLabel={`Remove one ${item.name} ${option.label}`}
+                              disabled={quantity === 0}
+                              onPress={() => updateManualSelection(option.code, 'decrement')}
+                              style={[styles.stepperButton, quantity === 0 ? styles.stepperButtonDisabled : null]}>
+                              <Text style={[styles.stepperButtonText, quantity === 0 ? styles.stepperButtonTextDisabled : null]}>-</Text>
                             </Pressable>
                             <Text style={styles.stepperValue}>{quantity}</Text>
-                            <Pressable onPress={() => updateManualSelection(option.code, 'increment')} style={styles.stepperButton}>
+                            <Pressable
+                              accessibilityLabel={`Add one ${item.name} ${option.label}`}
+                              onPress={() => updateManualSelection(option.code, 'increment')}
+                              style={styles.stepperButton}>
                               <Text style={styles.stepperButtonText}>+</Text>
                             </Pressable>
                           </View>
                         </View>
                       );
                     })}
-                  </CustomerCard>
+                  </View>
                 ))}
-              </ScrollView>
+              </View>
             </CustomerCard>
                   ) : null}
 
@@ -1705,25 +1724,54 @@ const createStyles = (colors: AppThemeColors) => StyleSheet.create({
     fontSize: 13,
     lineHeight: 17,
   },
-  menuCard: {
-    width: 200,
+  menuGrid: {
     gap: 12,
   },
-  menuImageMock: {
-    height: 90,
-    borderRadius: 14,
-    backgroundColor: colors.surfaceMuted,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 10,
+  menuCard: {
+    width: '100%',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.surface,
+    padding: 14,
+    gap: 12,
   },
-  menuImageLabel: {
+  menuCardWide: {
+    maxWidth: 620,
+  },
+  menuItemHeader: {
+    gap: 3,
+  },
+  menuItemTitle: {
     color: colors.text,
+    fontSize: 17,
     fontWeight: '900',
-    textAlign: 'center',
+  },
+  menuItemMeta: {
+    color: colors.textMuted,
+    fontSize: 12,
+    lineHeight: 17,
   },
   menuOptionBlock: {
-    gap: 6,
+    minHeight: 62,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.surfaceMuted,
+    padding: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  menuOptionBlockActive: {
+    borderColor: palette.brandRed,
+    backgroundColor: colors.dangerSurface,
+  },
+  menuOptionInfo: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
   },
   menuPrice: {
     color: colors.brandText,
@@ -1738,15 +1786,20 @@ const createStyles = (colors: AppThemeColors) => StyleSheet.create({
   stepperRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
   },
   stepperButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    backgroundColor: '#FF4B45',
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    backgroundColor: palette.brandRed,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  stepperButtonDisabled: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.line,
   },
   stepperButtonText: {
     color: '#FFFFFF',
@@ -1754,10 +1807,13 @@ const createStyles = (colors: AppThemeColors) => StyleSheet.create({
     fontSize: 18,
     lineHeight: 20,
   },
+  stepperButtonTextDisabled: {
+    color: colors.textSubtle,
+  },
   stepperValue: {
     color: colors.text,
     fontWeight: '900',
-    minWidth: 12,
+    minWidth: 20,
     textAlign: 'center',
   },
   summaryRow: {
