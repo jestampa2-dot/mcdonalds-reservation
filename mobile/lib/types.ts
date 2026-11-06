@@ -70,6 +70,7 @@ export type ManualMenuItem = {
   description?: string | null;
   badge?: string | null;
   artwork?: string | null;
+  image_url?: string | null;
   options: ManualMenuOption[];
 };
 

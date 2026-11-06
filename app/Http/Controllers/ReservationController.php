@@ -1776,6 +1776,7 @@ class ReservationController extends Controller
                 'description' => $item->description,
                 'badge' => $item->badge,
                 'artwork' => $item->artwork,
+                'image_url' => $this->menuArtworkUrl($item->artwork),
                 'options' => $item->options->map(fn (MenuItemOption $option) => [
                     'code' => $option->code,
                     'label' => $option->label,
@@ -1784,6 +1785,31 @@ class ReservationController extends Controller
                 ])->values()->all(),
             ])->values()->all(),
         ])->values()->all();
+    }
+
+    protected function menuArtworkUrl(?string $artwork): string
+    {
+        $availableArtwork = [
+            'burger',
+            'chicken-burger',
+            'shrimp-burger',
+            'sandwich',
+            'chicken',
+            'nuggets',
+            'fillet',
+            'rice-bowl',
+            'pasta',
+            'fries',
+            'combo',
+            'drink',
+            'breakfast',
+            'dessert',
+            'sharing',
+        ];
+
+        $image = in_array($artwork, $availableArtwork, true) ? $artwork : 'sharing';
+
+        return "/images/menu/{$image}.webp";
     }
 
     protected function branchCatalog(array $eventTypeCodes = []): array

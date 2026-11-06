@@ -32,26 +32,15 @@ const selectedOptionByItem = reactive({})
 const formatCurrency = (value) =>
   `\u20B1${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
-const artworkLabel = (artwork) => {
-  const map = {
-    burger: 'BG',
-    'chicken-burger': 'CB',
-    'shrimp-burger': 'SB',
-    sandwich: 'SW',
-    chicken: 'CK',
-    nuggets: 'NG',
-    fillet: 'FL',
-    'rice-bowl': 'RB',
-    pasta: 'PA',
-    fries: 'FR',
-    combo: 'CB',
-    drink: 'DR',
-    breakfast: 'BF',
-    dessert: 'DS',
-    sharing: 'SH',
+const menuImageUrl = (item) => item.image_url || '/images/menu/sharing.webp'
+
+const useMenuImageFallback = (event) => {
+  if (event.currentTarget.dataset.fallbackApplied) {
+    return
   }
 
-  return map[artwork] ?? 'MC'
+  event.currentTarget.dataset.fallbackApplied = 'true'
+  event.currentTarget.src = '/images/menu/sharing.webp'
 }
 
 const optionIndex = computed(() =>
@@ -231,7 +220,15 @@ const viewTray = (event) => {
       <div class="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
         <article v-for="item in selectedCategoryItems" :key="item.code" class="mcd-order-card">
           <div class="mcd-order-card__visual">
-            <span>{{ artworkLabel(item.artwork) }}</span>
+            <img
+              :src="menuImageUrl(item)"
+              :alt="item.name"
+              width="640"
+              height="640"
+              loading="lazy"
+              decoding="async"
+              @error="useMenuImageFallback"
+            />
           </div>
 
           <div class="mcd-order-card__body">

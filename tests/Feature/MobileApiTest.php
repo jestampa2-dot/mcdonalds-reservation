@@ -26,14 +26,24 @@ class MobileApiTest extends TestCase
                 'stats',
             ]);
 
-        $this->getJson('/api/mobile/booking-options')
+        $bookingOptions = $this->getJson('/api/mobile/booking-options');
+
+        $bookingOptions
             ->assertOk()
+            ->assertJsonPath('catalog.menuCategories.0.items.0.image_url', '/images/menu/burger.webp')
             ->assertJsonStructure([
                 'catalog' => [
                     'eventTypes',
                     'branches',
                     'packages',
                     'menuBundles',
+                    'menuCategories' => [
+                        '*' => [
+                            'items' => [
+                                '*' => ['code', 'name', 'image_url'],
+                            ],
+                        ],
+                    ],
                     'addOns',
                     'roomChoices',
                     'bookingWindow',
@@ -53,6 +63,12 @@ class MobileApiTest extends TestCase
                     'room_choice',
                 ],
             ]);
+
+        collect($bookingOptions->json('catalog.menuCategories'))
+            ->flatMap(fn (array $category) => $category['items'])
+            ->pluck('image_url')
+            ->unique()
+            ->each(fn (string $imageUrl) => $this->assertFileExists(public_path(ltrim($imageUrl, '/'))));
     }
 
     public function test_guest_can_register_and_receive_a_mobile_token(): void

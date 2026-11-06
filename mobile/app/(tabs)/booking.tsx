@@ -1075,6 +1075,16 @@ export default function BookingScreen() {
               <View style={styles.menuGrid}>
                 {visibleMenuItems.map((item) => (
                   <View key={item.code} style={[styles.menuCard, isWide ? styles.menuCardWide : null]}>
+                    {item.image_url ? (
+                      <View style={styles.menuVisual}>
+                        <Image
+                          source={{ uri: resolveApiUrl(item.image_url) ?? undefined }}
+                          style={styles.menuImage}
+                          resizeMode="contain"
+                          accessibilityLabel={`${item.name} menu item`}
+                        />
+                      </View>
+                    ) : null}
                     <View style={styles.menuItemHeader}>
                       <Text style={styles.menuItemTitle}>{item.name}</Text>
                       <Text style={styles.menuItemMeta}>Choose a size and quantity</Text>
@@ -1738,6 +1748,18 @@ const createStyles = (colors: AppThemeColors) => StyleSheet.create({
   },
   menuCardWide: {
     maxWidth: 620,
+  },
+  menuVisual: {
+    height: 170,
+    borderRadius: 16,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceMuted,
+  },
+  menuImage: {
+    width: '100%',
+    height: '100%',
   },
   menuItemHeader: {
     gap: 3,
