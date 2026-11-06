@@ -43,7 +43,7 @@ import { useAppPreferences } from '@/lib/preferences';
 import { AppThemeColors, useAppTheme } from '@/lib/theme';
 import type { AvailabilityDate, BookingOptionsPayload } from '@/lib/types';
 
-const bookingOptionsCacheKey = 'mobile-cache:booking-options';
+const bookingOptionsCacheKey = 'mobile-cache:booking-options:v2';
 const bookingOptionsCacheTtlMs = 1000 * 60 * 30;
 
 type PickedImage = {
@@ -226,6 +226,7 @@ export default function BookingScreen() {
       setPaymentProof(null);
       setActiveCategory(cachedPayload.data.catalog.menuCategories[0]?.code ?? null);
       setLoading(false);
+      void loadBookingOptions(true);
     })();
 
     return () => {
