@@ -2,6 +2,7 @@
 import ApplicationLogo from '@/Components/ApplicationLogo.vue'
 import { Link } from '@inertiajs/vue3'
 import FlashToast from '@/Components/FlashToast.vue'
+import LanguageToggle from '@/Components/LanguageToggle.vue'
 import ThemeToggle from '@/Components/ThemeToggle.vue'
 
 const authPhotos = [
@@ -48,6 +49,7 @@ defineProps({
   <div class="auth-shell">
     <FlashToast />
     <div class="auth-shell__theme">
+      <LanguageToggle />
       <ThemeToggle />
     </div>
     <div class="auth-shell__glow auth-shell__glow--left"></div>

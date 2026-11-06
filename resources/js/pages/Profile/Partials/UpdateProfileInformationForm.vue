@@ -23,6 +23,8 @@ const form = useForm({
     birth_date: props.profile.birth_date ?? '',
     gender: props.profile.gender ?? 'prefer_not_to_say',
     address_line: props.profile.address_line ?? '',
+    barangay: props.profile.barangay ?? '',
+    municipality: props.profile.municipality ?? props.profile.city ?? '',
     city: props.profile.city ?? '',
     province: props.profile.province ?? '',
     postal_code: props.profile.postal_code ?? '',
@@ -195,19 +197,33 @@ const submitProfile = () => {
                 <InputError class="mt-2" :message="form.errors.address_line" />
             </div>
 
-            <div class="grid gap-6 md:grid-cols-3">
+            <div class="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
                 <div class="grid gap-2">
-                    <label for="city" class="text-sm font-black uppercase tracking-[0.08em] text-slate-600">City / Municipality</label>
+                    <label for="barangay" class="text-sm font-black uppercase tracking-[0.08em] text-slate-600">Barangay</label>
 
                     <input
-                        id="city"
+                        id="barangay"
                         type="text"
-                        v-model="form.city"
+                        v-model="form.barangay"
+                        class="mcd-input"
+                        autocomplete="address-level3"
+                    />
+
+                    <InputError class="mt-2" :message="form.errors.barangay" />
+                </div>
+
+                <div class="grid gap-2">
+                    <label for="municipality" class="text-sm font-black uppercase tracking-[0.08em] text-slate-600">Municipality / City</label>
+
+                    <input
+                        id="municipality"
+                        type="text"
+                        v-model="form.municipality"
                         class="mcd-input"
                         autocomplete="address-level2"
                     />
 
-                    <InputError class="mt-2" :message="form.errors.city" />
+                    <InputError class="mt-2" :message="form.errors.municipality" />
                 </div>
 
                 <div class="grid gap-2">

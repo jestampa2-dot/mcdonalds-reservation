@@ -233,6 +233,7 @@ const refreshStaffView = () => {
                   <StatusBadge :value="booking.service_status" />
                 </div>
                 <p class="mt-2 text-sm text-slate-600">{{ booking.package_name }} | {{ booking.branch }}</p>
+                <p class="mt-1 text-sm text-slate-500">Venue: {{ booking.venue_name || booking.branch }}<span v-if="booking.venue_full_address"> | {{ booking.venue_full_address }}</span></p>
                 <p class="mt-1 text-sm text-slate-500">{{ booking.event_date }} | {{ booking.event_time }} | {{ booking.duration_hours }} hours</p>
                 <p class="mt-1 text-sm text-slate-500">Customer: {{ booking.customer_name }}</p>
                 <p v-if="booking.manual_menu_items?.length" class="mt-1 text-sm text-slate-500">

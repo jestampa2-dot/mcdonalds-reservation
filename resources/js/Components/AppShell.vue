@@ -3,7 +3,9 @@ import ApplicationLogo from '@/Components/ApplicationLogo.vue'
 import { computed } from 'vue'
 import { Head, Link, usePage } from '@inertiajs/vue3'
 import FlashToast from '@/Components/FlashToast.vue'
+import LanguageToggle from '@/Components/LanguageToggle.vue'
 import ThemeToggle from '@/Components/ThemeToggle.vue'
+import { useLanguage } from '@/composables/useLanguage'
 
 const props = defineProps({
   title: {
@@ -14,11 +16,12 @@ const props = defineProps({
 
 const page = usePage()
 const user = computed(() => page.props.auth?.user)
+const { t } = useLanguage()
 
 const navLinks = computed(() => {
   const links = [
     {
-      label: 'Home',
+      label: t('home'),
       href: route('home'),
       current: 'home',
     },
@@ -26,12 +29,12 @@ const navLinks = computed(() => {
 
   if (!user.value) {
     links.push({
-      label: 'Login',
+      label: t('login'),
       href: route('login'),
       current: 'login',
     })
     links.push({
-      label: 'Register',
+      label: t('register'),
       href: route('register'),
       current: 'register',
     })
@@ -39,17 +42,17 @@ const navLinks = computed(() => {
   }
 
   links.push({
-    label: 'Book Event',
+    label: t('bookEvent'),
     href: route('reservations.create'),
     current: 'reservations.create',
   })
   links.push({
-    label: 'My Dashboard',
+    label: t('dashboard'),
     href: route('dashboard'),
     current: 'dashboard',
   })
   links.push({
-    label: 'My Account',
+    label: t('account'),
     href: route('profile.edit'),
     current: 'profile.*',
   })
@@ -64,7 +67,7 @@ const navLinks = computed(() => {
 
   if (['master_admin', 'admin', 'manager', 'staff'].includes(user.value.role)) {
     links.push({
-      label: 'Staff View',
+      label: t('staffView'),
       href: route('staff.dashboard'),
       current: 'staff.*',
     })
@@ -86,7 +89,7 @@ const roleLabel = computed(() => {
 
 const workspaceSubtitle = computed(() => {
   if (!user.value) {
-    return 'Browse and book.'
+    return t('browseAndBook')
   }
 
   if (user.value.role === 'master_admin') {
@@ -101,7 +104,7 @@ const workspaceSubtitle = computed(() => {
     return 'Check-ins, prep, and floor updates.'
   }
 
-  return 'Bookings, payments, and event details.'
+  return t('customerWorkspace')
 })
 
 const userInitials = computed(() => {
@@ -166,6 +169,7 @@ const isLinkActive = (link) => {
           </div>
 
           <div class="mcd-toolbar__actions">
+            <LanguageToggle />
             <ThemeToggle />
 
             <div class="mcd-toolbar__profile">
@@ -188,7 +192,7 @@ const isLinkActive = (link) => {
               prefetch
               class="mcd-nav__button"
             >
-              Sign in
+              {{ t('signIn') }}
             </Link>
             <Link
               v-else
@@ -197,7 +201,7 @@ const isLinkActive = (link) => {
               as="button"
               class="mcd-nav__button"
             >
-              Logout
+              {{ t('logout') }}
             </Link>
           </div>
         </header>

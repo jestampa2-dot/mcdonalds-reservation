@@ -1,4 +1,8 @@
 <script setup>
+import { useLanguage } from '@/composables/useLanguage'
+
+const { t } = useLanguage()
+
 defineProps({
   form: {
     type: Object,
@@ -108,9 +112,9 @@ defineProps({
     <section class="mcd-panel p-6">
       <div class="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">2. Date, time, and branch</p>
-          <h2 class="mt-3 text-3xl">Set the schedule and location.</h2>
-          <p class="mt-2 text-sm text-slate-500">Choose the branch, room, and exact schedule for the event.</p>
+          <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">{{ t('scheduleStep') }}</p>
+          <h2 class="mt-3 text-3xl">{{ t('scheduleLocation') }}</h2>
+          <p class="mt-2 text-sm text-slate-500">{{ t('scheduleHelp') }}</p>
         </div>
         <div class="rounded-3xl bg-red-50 px-5 py-4 text-sm font-semibold text-red-800">
           Hours: {{ bookingWindowLabel }}
@@ -119,7 +123,7 @@ defineProps({
 
       <div class="mt-6 grid gap-4 xl:grid-cols-2">
         <div class="mcd-field">
-          <label>Branch</label>
+          <label>{{ t('branch') }}</label>
           <select v-model="form.branch_code" class="mcd-select">
             <option v-for="item in supportedBranches" :key="item.code" :value="item.code">
               {{ item.name }} | {{ item.city }}
@@ -129,7 +133,7 @@ defineProps({
         </div>
 
         <div class="mcd-field">
-          <label>Room rental</label>
+          <label>{{ t('roomRental') }}</label>
           <div class="grid gap-3 md:grid-cols-3">
             <label
               v-for="item in roomChoices"
@@ -143,6 +147,49 @@ defineProps({
             </label>
           </div>
           <p v-if="form.errors.room_choice" class="text-sm text-red-700">{{ form.errors.room_choice }}</p>
+        </div>
+      </div>
+
+      <div class="mt-6 rounded-[2rem] border border-amber-200 bg-amber-50/70 p-5">
+        <div class="grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
+          <div class="mcd-field">
+            <label>{{ t('venueQuestion') }}</label>
+            <select v-model="form.venue_type" class="mcd-select">
+              <option value="branch">{{ t('selectedBranchVenue') }}</option>
+              <option value="custom">{{ t('customVenue') }}</option>
+            </select>
+            <p class="text-sm text-slate-600">{{ t('venueBranchHelp') }}</p>
+            <p v-if="form.errors.venue_type" class="text-sm text-red-700">{{ form.errors.venue_type }}</p>
+          </div>
+
+          <div v-if="form.venue_type === 'branch'" class="rounded-3xl bg-white px-5 py-4 shadow-sm">
+            <p class="text-xs font-black uppercase tracking-[0.18em] text-red-700">{{ t('eventVenue') }}</p>
+            <p class="mt-2 text-lg font-black text-slate-900">{{ branch?.name ?? 'Select a branch' }}</p>
+            <p class="text-sm text-slate-500">{{ branch?.city }}</p>
+          </div>
+        </div>
+
+        <div v-if="form.venue_type === 'custom'" class="mt-5 grid gap-4 md:grid-cols-2">
+          <div class="mcd-field">
+            <label>{{ t('venueName') }}</label>
+            <input v-model="form.venue_name" type="text" class="mcd-input" placeholder="Example: Family residence or community hall" />
+            <p v-if="form.errors.venue_name" class="text-sm text-red-700">{{ form.errors.venue_name }}</p>
+          </div>
+          <div class="mcd-field">
+            <label>{{ t('venueAddress') }}</label>
+            <input v-model="form.venue_address" type="text" class="mcd-input" placeholder="House number, street, building, or landmark" />
+            <p v-if="form.errors.venue_address" class="text-sm text-red-700">{{ form.errors.venue_address }}</p>
+          </div>
+          <div class="mcd-field">
+            <label>{{ t('barangay') }}</label>
+            <input v-model="form.venue_barangay" type="text" class="mcd-input" placeholder="Barangay" />
+            <p v-if="form.errors.venue_barangay" class="text-sm text-red-700">{{ form.errors.venue_barangay }}</p>
+          </div>
+          <div class="mcd-field">
+            <label>{{ t('municipality') }}</label>
+            <input v-model="form.venue_municipality" type="text" class="mcd-input" placeholder="Municipality or city" />
+            <p v-if="form.errors.venue_municipality" class="text-sm text-red-700">{{ form.errors.venue_municipality }}</p>
+          </div>
         </div>
       </div>
 

@@ -35,6 +35,7 @@ import { ApiError, createReservation, fetchBookingOptions, resolveApiUrl } from 
 import { useAuth } from '@/lib/auth';
 import { readCacheEnvelope, writeCache } from '@/lib/cache';
 import { addHoursToTime, formatCurrency, formatLongDate, formatMonthLabel, formatTimeLabel } from '@/lib/formatters';
+import { translate } from '@/lib/i18n';
 import { useAppPreferences } from '@/lib/preferences';
 import { AppThemeColors, useAppTheme } from '@/lib/theme';
 import type { AvailabilityDate, BookingOptionsPayload } from '@/lib/types';
@@ -89,6 +90,7 @@ export default function BookingScreen() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const { preferences } = useAppPreferences();
+  const t = useCallback((key: string) => translate(preferences.language, key), [preferences.language]);
   const { token, user } = useAuth();
   const [payload, setPayload] = useState<BookingOptionsPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -105,6 +107,11 @@ export default function BookingScreen() {
   const [guests, setGuests] = useState('10');
   const [eventType, setEventType] = useState('birthday');
   const [branchCode, setBranchCode] = useState('');
+  const [venueType, setVenueType] = useState<'branch' | 'custom'>('branch');
+  const [venueName, setVenueName] = useState('');
+  const [venueAddress, setVenueAddress] = useState('');
+  const [venueBarangay, setVenueBarangay] = useState('');
+  const [venueMunicipality, setVenueMunicipality] = useState('');
   const [eventDate, setEventDate] = useState('');
   const [calendarMonth, setCalendarMonth] = useState('');
   const [eventTime, setEventTime] = useState('');
@@ -141,6 +148,11 @@ export default function BookingScreen() {
       await writeCache(bookingOptionsCacheKey, response);
       setEventType(nextEventType);
       setBranchCode(nextBranch);
+      setVenueType('branch');
+      setVenueName('');
+      setVenueAddress('');
+      setVenueBarangay('');
+      setVenueMunicipality('');
       setEventDate(response.defaults.event_date);
       setCalendarMonth(monthFromDate(response.defaults.event_date));
       setEventTime(response.defaults.event_time);
@@ -496,6 +508,9 @@ export default function BookingScreen() {
     if (step === 2) {
       if (!selectedBranch) return 'Choose a branch that supports this event type.';
       if (!roomChoices.some((item) => item.code === roomChoice)) return 'Choose a room for the event.';
+      if (venueType === 'custom' && (!venueName.trim() || !venueAddress.trim() || !venueBarangay.trim() || !venueMunicipality.trim())) {
+        return 'Enter the venue name, address, barangay, and municipality.';
+      }
       if (!selectedDateAvailability || selectedDateAvailability.status === 'full') return 'Choose an available reservation date.';
       if (!startSlots.some((slot) => slot.time === eventTime)) return 'Choose an available start time.';
     }
@@ -588,6 +603,13 @@ export default function BookingScreen() {
       const formData = new FormData();
       formData.append('event_type', eventType);
       formData.append('branch_code', branchCode);
+      formData.append('venue_type', venueType);
+      if (venueType === 'custom') {
+        formData.append('venue_name', venueName.trim());
+        formData.append('venue_address', venueAddress.trim());
+        formData.append('venue_barangay', venueBarangay.trim());
+        formData.append('venue_municipality', venueMunicipality.trim());
+      }
       formData.append('event_date', eventDate);
       formData.append('event_time', eventTime);
       formData.append('duration_hours', String(durationHours));
@@ -730,7 +752,7 @@ export default function BookingScreen() {
                   {currentStep === 2 ? (
                     <View style={styles.stepStack}>
             <CustomerCard>
-              <SectionEyebrow>Choose a branch</SectionEyebrow>
+              <SectionEyebrow>{t('chooseBranch')}</SectionEyebrow>
               <SectionTitle>Book and manage events</SectionTitle>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
                 {supportedBranches.map((branch) => (
@@ -774,13 +796,37 @@ export default function BookingScreen() {
               ) : null}
             </CustomerCard>
 
+            <CustomerCard tone="cream">
+              <SectionEyebrow>{t('eventVenue')}</SectionEyebrow>
+              <SectionTitle>{t('venueQuestion')}</SectionTitle>
+              <Text style={styles.inputLabel}>{t('locationType')}</Text>
+              <View style={styles.chipRow}>
+                <CustomerChip label={t('selectedBranch')} active={venueType === 'branch'} onPress={() => setVenueType('branch')} />
+                <CustomerChip label={t('anotherVenue')} active={venueType === 'custom'} onPress={() => setVenueType('custom')} tone="green" />
+              </View>
+              <Text style={styles.fieldHelp}>{t('venueHelp')}</Text>
+              {venueType === 'branch' ? (
+                <View style={styles.venueSummary}>
+                  <Text style={styles.branchCardTitle}>{selectedBranch?.name ?? 'Choose a branch'}</Text>
+                  <Text style={styles.branchCardMeta}>{selectedBranch?.city}</Text>
+                </View>
+              ) : (
+                <View style={styles.stepStack}>
+                  <CustomerField label={t('venueName')} value={venueName} onChangeText={setVenueName} placeholder="Family residence or community hall" />
+                  <CustomerField label={t('venueAddress')} value={venueAddress} onChangeText={setVenueAddress} placeholder="House number, street, building, or landmark" />
+                  <CustomerField label={t('barangay')} value={venueBarangay} onChangeText={setVenueBarangay} placeholder={t('barangay')} />
+                  <CustomerField label={t('municipality')} value={venueMunicipality} onChangeText={setVenueMunicipality} placeholder={t('municipality')} />
+                </View>
+              )}
+            </CustomerCard>
+
             <CustomerCard>
               <View style={styles.sectionHeaderRow}>
                 <View style={{ gap: 2 }}>
-                  <SectionEyebrow>Reservation schedule</SectionEyebrow>
-                  <SectionTitle>Pick your date and time</SectionTitle>
+                  <SectionEyebrow>{t('reservationSchedule')}</SectionEyebrow>
+                  <SectionTitle>{t('pickDateTime')}</SectionTitle>
                 </View>
-                <CustomerButton label="Refresh now" onPress={() => void loadBookingOptions(true)} tone="secondary" compact />
+                <CustomerButton label={t('refresh')} onPress={() => void loadBookingOptions(true)} tone="secondary" compact />
               </View>
 
               <View style={styles.monthSwitcher}>
@@ -1529,6 +1575,19 @@ const createStyles = (colors: AppThemeColors) => StyleSheet.create({
     color: colors.text,
     fontSize: 13,
     fontWeight: '800',
+  },
+  fieldHelp: {
+    color: colors.textMuted,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  venueSummary: {
+    borderRadius: 18,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.line,
+    padding: 16,
+    gap: 4,
   },
   packageGrid: {
     flexDirection: 'row',

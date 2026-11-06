@@ -21,6 +21,7 @@ import { ApiError, deleteProfile, fetchProfile, updateProfile, updateProfilePass
 import { useAuth } from '@/lib/auth';
 import { readCacheEnvelope, writeCache } from '@/lib/cache';
 import { getInitials } from '@/lib/formatters';
+import { translate } from '@/lib/i18n';
 import { useAppPreferences } from '@/lib/preferences';
 import { AppThemeColors, useAppTheme } from '@/lib/theme';
 import type { ProfilePayload } from '@/lib/types';
@@ -43,6 +44,7 @@ export default function AccountScreen() {
   const { colors, preference, setMode, fontSize, setFontSize } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const { preferences, setPreference, setPushNotifications, setAppLockEnabled } = useAppPreferences();
+  const t = useCallback((key: string) => translate(preferences.language, key), [preferences.language]);
   const { token, user, refreshUser, signOut } = useAuth();
   const [profile, setProfile] = useState<ProfilePayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -62,6 +64,8 @@ export default function AccountScreen() {
     birth_date: '',
     gender: 'prefer_not_to_say',
     address_line: '',
+    barangay: '',
+    municipality: '',
     city: '',
     province: '',
     postal_code: '',
@@ -107,6 +111,8 @@ export default function AccountScreen() {
         birth_date: response.profile.birth_date ?? '',
         gender: response.profile.gender ?? 'prefer_not_to_say',
         address_line: response.profile.address_line ?? '',
+        barangay: response.profile.barangay ?? '',
+        municipality: response.profile.municipality ?? response.profile.city ?? '',
         city: response.profile.city ?? '',
         province: response.profile.province ?? '',
         postal_code: response.profile.postal_code ?? '',
@@ -147,6 +153,8 @@ export default function AccountScreen() {
           birth_date: cachedProfile.data.birth_date ?? '',
           gender: cachedProfile.data.gender ?? 'prefer_not_to_say',
           address_line: cachedProfile.data.address_line ?? '',
+          barangay: cachedProfile.data.barangay ?? '',
+          municipality: cachedProfile.data.municipality ?? cachedProfile.data.city ?? '',
           city: cachedProfile.data.city ?? '',
           province: cachedProfile.data.province ?? '',
           postal_code: cachedProfile.data.postal_code ?? '',
@@ -444,7 +452,7 @@ export default function AccountScreen() {
             </CustomerCard>
             <CustomerCard tone="cream" style={styles.infoPill}>
               <Text style={styles.infoLabel}>Location</Text>
-              <Text style={styles.infoValue}>{profile?.city || profile?.province ? profile?.full_address : 'Add your location'}</Text>
+              <Text style={styles.infoValue}>{profile?.municipality || profile?.city || profile?.province ? profile?.full_address : 'Add your location'}</Text>
             </CustomerCard>
           </View>
         </CustomerCard>
@@ -482,7 +490,8 @@ export default function AccountScreen() {
             ))}
           </View>
           <CustomerField label="Street address" value={profileForm.address_line} onChangeText={(value) => setProfileValue('address_line', value)} />
-          <CustomerField label="City" value={profileForm.city} onChangeText={(value) => setProfileValue('city', value)} />
+          <CustomerField label="Barangay" value={profileForm.barangay} onChangeText={(value) => setProfileValue('barangay', value)} />
+          <CustomerField label="Municipality / City" value={profileForm.municipality} onChangeText={(value) => setProfileValue('municipality', value)} />
           <CustomerField label="Province" value={profileForm.province} onChangeText={(value) => setProfileValue('province', value)} />
           <CustomerField label="Postal code" value={profileForm.postal_code} onChangeText={(value) => setProfileValue('postal_code', value)} keyboardType="numeric" />
           <CustomerButton label="Save profile" onPress={() => void saveProfile()} loading={savingProfile} />
@@ -614,10 +623,10 @@ export default function AccountScreen() {
         <CustomerCard style={styles.panelCard}>
           <SectionEyebrow>5. General preferences</SectionEyebrow>
           <SectionTitle>Booking defaults</SectionTitle>
-          <Text style={styles.settingLabel}>Language</Text>
+          <Text style={styles.settingLabel}>{t('language')}</Text>
           <View style={styles.chipRow}>
             <CustomerChip label="English" active={preferences.language === 'en'} onPress={() => setPreference('language', 'en')} />
-            <CustomerChip label="Filipino dates" active={preferences.language === 'fil'} onPress={() => setPreference('language', 'fil')} tone="green" />
+            <CustomerChip label="Filipino" active={preferences.language === 'fil'} onPress={() => setPreference('language', 'fil')} tone="green" />
           </View>
           <Text style={styles.settingLabel}>Date format</Text>
           <View style={styles.chipRow}>

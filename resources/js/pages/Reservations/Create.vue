@@ -48,6 +48,11 @@ let availabilityTimer = null
 const form = useForm({
   event_type: initialEventType,
   branch_code: initialBranchCode,
+  venue_type: 'branch',
+  venue_name: '',
+  venue_address: '',
+  venue_barangay: '',
+  venue_municipality: '',
   event_date: defaultEventDate,
   event_time: defaultEventTime,
   event_end_time: '',
@@ -652,6 +657,9 @@ const validationMessageForStep = (step) => {
     if (!(props.roomChoices ?? []).some((item) => item.code === form.room_choice)) {
       return 'Choose a room for the event.'
     }
+    if (form.venue_type === 'custom' && (!form.venue_name.trim() || !form.venue_address.trim() || !form.venue_barangay.trim() || !form.venue_municipality.trim())) {
+      return 'Enter the venue name, address, barangay, and municipality.'
+    }
     if (!selectedDateCard.value || selectedDateCard.value.computed_status === 'full') {
       return 'Choose an available reservation date.'
     }
@@ -737,7 +745,7 @@ const stepForServerErrors = (errors) => {
   const errorFields = Object.keys(errors ?? {})
   const groups = [
     { step: 1, fields: ['event_type'] },
-    { step: 2, fields: ['branch_code', 'room_choice', 'event_date', 'event_time', 'event_end_time', 'duration_hours'] },
+    { step: 2, fields: ['branch_code', 'room_choice', 'venue_type', 'venue_name', 'venue_address', 'venue_barangay', 'venue_municipality', 'event_date', 'event_time', 'event_end_time', 'duration_hours'] },
     { step: 3, fields: ['guests', 'package_code', 'menu_bundles'] },
     { step: 4, fields: ['manual_menu_items'] },
     { step: 5, fields: ['add_ons'] },

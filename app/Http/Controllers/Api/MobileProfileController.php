@@ -93,6 +93,8 @@ class MobileProfileController extends Controller
             'birth_date' => optional($user->birth_date)->format('Y-m-d'),
             'gender' => $user->gender,
             'address_line' => $user->address_line,
+            'barangay' => $user->barangay,
+            'municipality' => $user->municipality,
             'city' => $user->city,
             'province' => $user->province,
             'postal_code' => $user->postal_code,
@@ -101,7 +103,8 @@ class MobileProfileController extends Controller
             'role' => $user->role,
             'full_address' => collect([
                 $user->address_line,
-                $user->city,
+                $user->barangay,
+                $user->municipality ?: $user->city,
                 $user->province,
                 $user->postal_code,
             ])->filter()->implode(', '),

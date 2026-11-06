@@ -98,6 +98,9 @@ class MobileReservationController extends ReservationController
         return response()->json([
             'bookings' => $bookings->map(function (Reservation $reservation) {
                 $payload = $this->serializeReservation($reservation);
+                $payload['pass_image_data_url'] = $payload['can_show_qr_pass']
+                    ? 'data:image/png;base64,'.base64_encode($this->buildPassQr($reservation))
+                    : null;
                 $payload['invitations'] = $reservation->invitations
                     ->sortByDesc('created_at')
                     ->map(function (ReservationInvitation $invitation) use ($reservation) {
@@ -139,6 +142,11 @@ class MobileReservationController extends ReservationController
         $validated = $request->validate([
             'event_type' => ['required', Rule::in(array_keys($catalog['eventTypes']))],
             'branch_code' => ['required', Rule::in(array_keys($catalog['branches']))],
+            'venue_type' => ['nullable', Rule::in(['branch', 'custom'])],
+            'venue_name' => ['nullable', 'required_if:venue_type,custom', 'string', 'max:255'],
+            'venue_address' => ['nullable', 'required_if:venue_type,custom', 'string', 'max:500'],
+            'venue_barangay' => ['nullable', 'required_if:venue_type,custom', 'string', 'max:255'],
+            'venue_municipality' => ['nullable', 'required_if:venue_type,custom', 'string', 'max:255'],
             'event_date' => ['required', 'date', 'after_or_equal:today'],
             'event_time' => ['required', Rule::in($catalog['slotOptions'])],
             'event_end_time' => ['nullable', 'date_format:H:i'],
@@ -263,6 +271,11 @@ class MobileReservationController extends ReservationController
             'event_materials' => collect($addOns)->pluck('name')->implode(', '),
             'branch' => $branch['name'],
             'branch_code' => $branch['code'],
+            'venue_type' => $validated['venue_type'] ?? 'branch',
+            'venue_name' => ($validated['venue_type'] ?? 'branch') === 'custom' ? $validated['venue_name'] : $branch['name'],
+            'venue_address' => ($validated['venue_type'] ?? 'branch') === 'custom' ? $validated['venue_address'] : ($branch['city'] ?? null),
+            'venue_barangay' => ($validated['venue_type'] ?? 'branch') === 'custom' ? $validated['venue_barangay'] : null,
+            'venue_municipality' => ($validated['venue_type'] ?? 'branch') === 'custom' ? $validated['venue_municipality'] : ($branch['city'] ?? null),
             'event_date' => $validated['event_date'],
             'event_time' => $validated['event_time'],
             'duration_hours' => (int) $validated['duration_hours'],

@@ -191,6 +191,9 @@ const respondToInvitation = async (invitationId, status) => {
               <p class="mt-2 text-sm text-slate-500">
                 {{ booking.booking_reference }} | {{ booking.branch }} | {{ booking.event_date }} at {{ booking.event_time }}
               </p>
+              <p class="mt-1 text-sm text-slate-500">
+                Venue: {{ booking.venue_name || booking.branch }}<span v-if="booking.venue_full_address"> | {{ booking.venue_full_address }}</span>
+              </p>
             </div>
             <div class="text-right">
               <p class="text-sm uppercase tracking-[0.25em] text-slate-500">Total</p>

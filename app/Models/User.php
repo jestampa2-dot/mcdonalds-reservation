@@ -28,6 +28,8 @@ class User extends Authenticatable
         'birth_date',
         'gender',
         'address_line',
+        'barangay',
+        'municipality',
         'city',
         'province',
         'postal_code',

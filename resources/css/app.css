@@ -1606,6 +1606,9 @@
   top: 2.75rem;
   right: 2.75rem;
   z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
 }
 
 html[data-theme='dark'] .theme-toggle {

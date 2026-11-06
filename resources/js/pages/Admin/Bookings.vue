@@ -149,6 +149,7 @@ const refreshBookings = () => {
                           <StatusBadge :value="booking.service_status" />
                         </div>
                         <p class="mt-2 text-sm text-slate-600">{{ booking.package_name }} | {{ booking.event_date }} | {{ booking.event_time }}</p>
+                        <p class="mt-1 text-sm text-slate-500">Venue: {{ booking.venue_name || booking.branch }}<span v-if="booking.venue_full_address"> | {{ booking.venue_full_address }}</span></p>
                         <p class="mt-1 text-sm text-slate-500">Customer: {{ booking.customer_name }}</p>
                         <p class="mt-1 text-sm text-slate-500">Contact: {{ booking.customer_email }} | {{ booking.customer_phone }}</p>
                         <p class="mt-1 text-sm text-slate-500">Duration: {{ booking.duration_hours }} hours</p>

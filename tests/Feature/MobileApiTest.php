@@ -149,12 +149,16 @@ class MobileApiTest extends TestCase
             'birth_date' => '1999-02-15',
             'gender' => 'prefer_not_to_say',
             'address_line' => '456 Updated Street',
+            'barangay' => 'Barangay Central',
+            'municipality' => 'Quezon City',
             'city' => 'Quezon City',
             'province' => 'Metro Manila',
             'postal_code' => '1100',
         ])
             ->assertOk()
             ->assertJsonPath('profile.name', 'Updated Mobile Name')
+            ->assertJsonPath('profile.barangay', 'Barangay Central')
+            ->assertJsonPath('profile.municipality', 'Quezon City')
             ->assertJsonPath('profile.city', 'Quezon City');
     }
 
@@ -183,6 +187,11 @@ class MobileApiTest extends TestCase
         $response = $this->post('/api/mobile/reservations', [
             'event_type' => $eventType,
             'branch_code' => $branch['code'],
+            'venue_type' => 'custom',
+            'venue_name' => 'Customer Family Residence',
+            'venue_address' => '123 Celebration Street',
+            'venue_barangay' => 'Barangay Happy',
+            'venue_municipality' => 'Surigao City',
             'event_date' => $bookingOptions['defaults']['event_date'],
             'event_time' => $bookingOptions['defaults']['event_time'],
             'duration_hours' => $bookingOptions['defaults']['duration_hours'],
@@ -206,6 +215,10 @@ class MobileApiTest extends TestCase
             'user_id' => $customer->id,
             'booking_reference' => $bookingReference,
             'status' => 'pending_review',
+            'venue_type' => 'custom',
+            'venue_name' => 'Customer Family Residence',
+            'venue_barangay' => 'Barangay Happy',
+            'venue_municipality' => 'Surigao City',
         ]);
         Storage::disk('public')->assertExists($storedReservation->payment_proof_path);
 
@@ -227,7 +240,10 @@ class MobileApiTest extends TestCase
         $this->getJson('/api/mobile/dashboard')
             ->assertOk()
             ->assertJsonPath('bookings.0.booking_reference', $bookingReference)
-            ->assertJsonPath('bookings.0.status', 'confirmed');
+            ->assertJsonPath('bookings.0.status', 'confirmed')
+            ->assertJsonPath('bookings.0.venue_name', 'Customer Family Residence')
+            ->assertJsonPath('bookings.0.venue_full_address', '123 Celebration Street, Barangay Happy, Surigao City')
+            ->assertJsonPath('bookings.0.pass_image_data_url', fn ($value) => str_starts_with($value, 'data:image/png;base64,'));
 
         $this->get("/api/mobile/reservations/{$reservationId}/payment-proof")
             ->assertOk()

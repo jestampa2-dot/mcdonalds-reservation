@@ -389,6 +389,8 @@ export default function DashboardScreen() {
                       <Text style={styles.bookingReference}>{booking.booking_reference}</Text>
                       <Text style={styles.bookingTitle}>{booking.package_name}</Text>
                       <Text style={styles.bookingMeta}>{booking.branch}</Text>
+                      <Text style={styles.bookingMeta}>Venue: {booking.venue_name || booking.branch}</Text>
+                      {booking.venue_full_address ? <Text style={styles.bookingMeta}>{booking.venue_full_address}</Text> : null}
                       <Text style={styles.bookingMeta}>
                         {formatLongDate(booking.event_date, preferences.dateFormat, preferences.language)} -{' '}
                         {preferences.timeFormat === '24-hour'
@@ -427,10 +429,12 @@ export default function DashboardScreen() {
                     <View style={styles.mediaPanel}>
                       <SectionEyebrow>Event start QR pass</SectionEyebrow>
                       <Image
-                        source={{
-                          uri: getReservationPassUrl(booking.id),
-                          headers: { Authorization: `Bearer ${token}` },
-                        }}
+                        source={booking.pass_image_data_url
+                          ? { uri: booking.pass_image_data_url }
+                          : {
+                              uri: getReservationPassUrl(booking.id),
+                              headers: { Authorization: `Bearer ${token}` },
+                            }}
                         style={styles.qrImage}
                         resizeMode="contain"
                       />

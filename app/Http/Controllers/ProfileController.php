@@ -31,6 +31,8 @@ class ProfileController extends Controller
                 'birth_date' => optional($request->user()->birth_date)->format('Y-m-d'),
                 'gender' => $request->user()->gender,
                 'address_line' => $request->user()->address_line,
+                'barangay' => $request->user()->barangay,
+                'municipality' => $request->user()->municipality,
                 'city' => $request->user()->city,
                 'province' => $request->user()->province,
                 'postal_code' => $request->user()->postal_code,

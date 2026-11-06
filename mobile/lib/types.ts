@@ -7,6 +7,8 @@ export type MobileUser = {
   birth_date: string | null;
   gender: string | null;
   address_line: string | null;
+  barangay: string | null;
+  municipality: string | null;
   city: string | null;
   province: string | null;
   postal_code: string | null;
@@ -192,6 +194,12 @@ export type ReservationRecord = {
   room_choice: string;
   branch: string;
   branch_code: string;
+  venue_type: 'branch' | 'custom';
+  venue_name: string;
+  venue_address?: string | null;
+  venue_barangay?: string | null;
+  venue_municipality?: string | null;
+  venue_full_address?: string | null;
   event_date: string;
   event_start_time: string;
   event_start_label: string;
@@ -213,6 +221,7 @@ export type ReservationRecord = {
   };
   check_in_code?: string | null;
   can_show_qr_pass?: boolean;
+  pass_image_data_url?: string | null;
   pass_url?: string | null;
   pass_preview_url?: string | null;
   qr_check_in_url?: string | null;
@@ -242,6 +251,8 @@ export type ProfilePayload = {
   birth_date: string | null;
   gender: string | null;
   address_line: string | null;
+  barangay: string | null;
+  municipality: string | null;
   city: string | null;
   province: string | null;
   postal_code: string | null;
