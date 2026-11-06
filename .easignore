@@ -1,0 +1,27 @@
+# Recreated dependencies and local/generated Expo artifacts.
+node_modules/
+builds/
+.expo/
+dist/
+dist-*/
+web-build/
+android/
+ios/
+.kotlin/
+.vscode/
+*.log
+*.tsbuildinfo
+.env*.local
+
+# Laravel-only dependencies, generated data, tests, and research artifacts.
+vendor/
+storage/
+public/
+database/
+resources/
+routes/
+tests/
+bootstrap/
+config/
+*.docx
+*.pdf
