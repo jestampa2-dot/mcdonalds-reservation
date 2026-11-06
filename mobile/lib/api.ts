@@ -13,6 +13,15 @@ import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
 const apiBaseUrlStorageKey = 'mcdonalds-reservations:api-base-url';
+const hostedApiBaseUrl = 'https://mcdonalds-reservations-web-production.up.railway.app';
+
+function isInstalledReleaseBuild() {
+  return typeof __DEV__ === 'undefined' || !__DEV__;
+}
+
+function getConfiguredHostedApiBaseUrl() {
+  return process.env.EXPO_PUBLIC_API_BASE_URL?.trim() || hostedApiBaseUrl;
+}
 
 function apiBaseUrlFromHost(hostUri?: string | null) {
   if (!hostUri) {
@@ -81,6 +90,10 @@ function isLocalDevelopmentApiBaseUrl(apiBaseUrl?: string | null) {
 }
 
 function getFallbackApiBaseUrl() {
+  if (isInstalledReleaseBuild()) {
+    return hostedApiBaseUrl;
+  }
+
   const expoDevServerBaseUrl = getExpoDevServerApiBaseUrl();
 
   if (expoDevServerBaseUrl) {
@@ -97,6 +110,10 @@ function getFallbackApiBaseUrl() {
 function resolveApiBaseUrl() {
   const configuredApiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim() || '';
   const expoDevServerBaseUrl = getExpoDevServerApiBaseUrl();
+
+  if (isInstalledReleaseBuild()) {
+    return configuredApiBaseUrl || hostedApiBaseUrl;
+  }
 
   if (expoDevServerBaseUrl && (!configuredApiBaseUrl || isLocalDevelopmentApiBaseUrl(configuredApiBaseUrl))) {
     return expoDevServerBaseUrl;
@@ -135,6 +152,13 @@ async function hydrateApiBaseUrl() {
     apiBaseUrlHydration = AsyncStorage.getItem(apiBaseUrlStorageKey)
       .then(async (storedApiBaseUrl) => {
         const configuredApiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim() || '';
+
+        if (isInstalledReleaseBuild()) {
+          apiBaseUrl = normalizeApiBaseUrl(configuredApiBaseUrl || hostedApiBaseUrl);
+          await AsyncStorage.setItem(apiBaseUrlStorageKey, apiBaseUrl);
+
+          return apiBaseUrl;
+        }
 
         if (
           storedApiBaseUrl
@@ -251,7 +275,20 @@ export function getApiBaseUrl() {
   return apiBaseUrl;
 }
 
+export function isHostedApiLocked() {
+  return isInstalledReleaseBuild();
+}
+
 export async function setApiBaseUrl(value: string) {
+  if (isInstalledReleaseBuild()) {
+    const onlineApiBaseUrl = normalizeApiBaseUrl(getConfiguredHostedApiBaseUrl());
+    apiBaseUrl = onlineApiBaseUrl;
+    apiBaseUrlHydration = Promise.resolve(onlineApiBaseUrl);
+    await AsyncStorage.setItem(apiBaseUrlStorageKey, onlineApiBaseUrl);
+
+    return onlineApiBaseUrl;
+  }
+
   const normalizedApiBaseUrl = normalizeApiBaseUrl(value);
   apiBaseUrl = normalizedApiBaseUrl;
   apiBaseUrlHydration = Promise.resolve(normalizedApiBaseUrl);
@@ -395,7 +432,7 @@ export function createReservation(payload: FormData, token: string) {
     method: 'POST',
     body: payload,
     token,
-    timeoutMs: 60000,
+    timeoutMs: 120000,
   });
 }
 

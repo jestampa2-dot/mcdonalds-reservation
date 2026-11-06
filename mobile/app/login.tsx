@@ -13,7 +13,7 @@ import {
   SectionEyebrow,
   SectionTitle,
 } from '@/components/customer-ui';
-import { ApiError } from '@/lib/api';
+import { ApiError, isHostedApiLocked } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { chooseGoogleAccount, googleSignInErrorMessage, isGoogleSignInConfigured } from '@/lib/google-auth';
 import { AppThemeColors, useAppTheme } from '@/lib/theme';
@@ -27,6 +27,7 @@ export default function LoginScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
   const googleEnabled = isGoogleSignInConfigured();
+  const onlineServerLocked = isHostedApiLocked();
 
   async function handleSubmit() {
     const normalizedEmail = email.trim().toLowerCase();
@@ -138,7 +139,9 @@ export default function LoginScreen() {
         </CustomerCard>
 
         <Text style={styles.tip}>
-          If you test on a real phone, set <Text style={styles.code}>EXPO_PUBLIC_API_BASE_URL</Text> to your computer&apos;s LAN address instead of <Text style={styles.code}>127.0.0.1</Text>.
+          {onlineServerLocked
+            ? 'This installed app connects securely to the online reservation server using mobile data or any internet connection.'
+            : <>For local development, set <Text style={styles.code}>EXPO_PUBLIC_API_BASE_URL</Text> to the Laravel server address.</>}
         </Text>
       </View>
     </CustomerPage>

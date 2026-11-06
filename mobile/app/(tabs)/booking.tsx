@@ -1,4 +1,5 @@
 import * as ImagePicker from 'expo-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -31,7 +32,7 @@ import {
   ThemeToggleButton,
 } from '@/components/customer-ui';
 import { palette } from '@/constants/palette';
-import { ApiError, createReservation, fetchBookingOptions, resolveApiUrl } from '@/lib/api';
+import { ApiError, createReservation, fetchBookingOptions, isHostedApiLocked, resolveApiUrl } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { readCacheEnvelope, writeCache } from '@/lib/cache';
 import { addHoursToTime, formatCurrency, formatLongDate, formatMonthLabel, formatTimeLabel } from '@/lib/formatters';
@@ -54,6 +55,15 @@ type ManualSelection = {
   option_code: string;
   quantity: number;
 };
+
+function createClientSubmissionId() {
+  const bytes = Array.from({ length: 16 }, () => Math.floor(Math.random() * 256));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = bytes.map((value) => value.toString(16).padStart(2, '0')).join('');
+
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 
 const wizardSteps = [
   { order: 1, label: 'Event', hint: 'Choose the occasion.' },
@@ -122,8 +132,11 @@ export default function BookingScreen() {
   const [addOns, setAddOns] = useState<string[]>([]);
   const [manualSelections, setManualSelections] = useState<ManualSelection[]>([]);
   const hasPayloadRef = useRef(false);
+  const submissionIdRef = useRef<string | null>(null);
+  const submissionSignatureRef = useRef<string | null>(null);
   const { width } = useWindowDimensions();
   const isWide = width >= 760;
+  const onlineServerLocked = isHostedApiLocked();
 
   const loadBookingOptions = useCallback(async (nextRefreshing = false) => {
     try {
@@ -600,7 +613,53 @@ export default function BookingScreen() {
 
     try {
       setSubmitting(true);
+      const submissionSignature = JSON.stringify({
+        eventType,
+        branchCode,
+        venueType,
+        venueName: venueName.trim(),
+        venueAddress: venueAddress.trim(),
+        venueBarangay: venueBarangay.trim(),
+        venueMunicipality: venueMunicipality.trim(),
+        eventDate,
+        eventTime,
+        durationHours,
+        roomChoice,
+        guests: guestCount,
+        packageCode,
+        menuBundles,
+        addOns,
+        manualSelections,
+        notes: notes.trim(),
+        paymentProof: paymentProof.uri,
+      });
+      const pendingSubmissionKey = `mobile-booking:pending-submission:${user.id}`;
+
+      if (!submissionIdRef.current || submissionSignatureRef.current !== submissionSignature) {
+        const savedSubmission = await AsyncStorage.getItem(pendingSubmissionKey).catch(() => null);
+        let parsedSubmission: { id?: string; signature?: string } | null = null;
+
+        if (savedSubmission) {
+          try {
+            parsedSubmission = JSON.parse(savedSubmission) as { id?: string; signature?: string };
+          } catch {
+            await AsyncStorage.removeItem(pendingSubmissionKey).catch(() => undefined);
+          }
+        }
+
+        submissionIdRef.current = parsedSubmission?.signature === submissionSignature && parsedSubmission.id
+          ? parsedSubmission.id
+          : createClientSubmissionId();
+        submissionSignatureRef.current = submissionSignature;
+      }
+
+      await AsyncStorage.setItem(pendingSubmissionKey, JSON.stringify({
+        id: submissionIdRef.current,
+        signature: submissionSignature,
+      })).catch(() => undefined);
+
       const formData = new FormData();
+      formData.append('client_submission_id', submissionIdRef.current);
       formData.append('event_type', eventType);
       formData.append('branch_code', branchCode);
       formData.append('venue_type', venueType);
@@ -637,20 +696,28 @@ export default function BookingScreen() {
       );
 
       const response = await createReservation(formData, token);
+      submissionIdRef.current = null;
+      submissionSignatureRef.current = null;
+      await AsyncStorage.removeItem(pendingSubmissionKey).catch(() => undefined);
       Alert.alert('Reservation submitted', `${response.message}\n\nReference: ${response.reservation.booking_reference}`);
       router.push('/(tabs)/dashboard');
     } catch (error) {
       const message = error instanceof ApiError ? Object.values(error.errors ?? {})[0]?.[0] ?? error.message : 'Unable to submit the reservation right now.';
 
       if (error instanceof ApiError && error.status === 0) {
-        Alert.alert('Booking failed', message, [
+        const actions = [
           { text: 'Cancel', style: 'cancel' },
           { text: 'Try again', onPress: () => void submitReservation() },
-          {
+        ] as any[];
+
+        if (!onlineServerLocked) {
+          actions.push({
             text: 'Change server',
             onPress: () => router.push({ pathname: '/(tabs)', params: { serverSettings: String(Date.now()) } }),
-          },
-        ]);
+          });
+        }
+
+        Alert.alert('Booking failed', message, actions);
       } else {
         Alert.alert('Booking failed', message);
       }
@@ -677,11 +744,13 @@ export default function BookingScreen() {
             <SectionTitle>Booking data is unavailable</SectionTitle>
             <Text style={styles.helperText}>{errorMessage}</Text>
             <CustomerButton label="Reload booking data" onPress={() => void loadBookingOptions()} tone="ghost" />
-            <CustomerButton
-              label="Change server"
-              onPress={() => router.push({ pathname: '/(tabs)', params: { serverSettings: String(Date.now()) } })}
-              tone="secondary"
-            />
+            {!onlineServerLocked ? (
+              <CustomerButton
+                label="Change server"
+                onPress={() => router.push({ pathname: '/(tabs)', params: { serverSettings: String(Date.now()) } })}
+                tone="secondary"
+              />
+            ) : null}
           </CustomerCard>
         ) : null}
 

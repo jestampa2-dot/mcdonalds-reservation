@@ -10,10 +10,13 @@ use App\Support\SmsPhoneNumber;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use RuntimeException;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Throwable;
 
 class MobileReservationController extends ReservationController
 {
@@ -142,6 +145,7 @@ class MobileReservationController extends ReservationController
         $validated = $request->validate([
             'event_type' => ['required', Rule::in(array_keys($catalog['eventTypes']))],
             'branch_code' => ['required', Rule::in(array_keys($catalog['branches']))],
+            'client_submission_id' => ['nullable', 'uuid'],
             'venue_type' => ['nullable', Rule::in(['branch', 'custom'])],
             'venue_name' => ['nullable', 'required_if:venue_type,custom', 'string', 'max:255'],
             'venue_address' => ['nullable', 'required_if:venue_type,custom', 'string', 'max:500'],
@@ -164,6 +168,20 @@ class MobileReservationController extends ReservationController
             'notes' => ['nullable', 'string', 'max:1000'],
             'payment_proof' => ['required', 'image', 'max:4096'],
         ]);
+
+        if (! empty($validated['client_submission_id'])) {
+            $existingReservation = Reservation::query()
+                ->where('user_id', $customer->id)
+                ->where('client_submission_id', $validated['client_submission_id'])
+                ->first();
+
+            if ($existingReservation) {
+                return response()->json([
+                    'message' => 'This reservation was already submitted successfully. No duplicate booking was created.',
+                    'reservation' => $this->serializeReservation($existingReservation),
+                ]);
+            }
+        }
 
         $themeCodes = collect($catalog['addOns'])
             ->where('kind', 'theme')
@@ -244,7 +262,26 @@ class MobileReservationController extends ReservationController
             ->all();
 
         $manualMenuItems = $this->resolveManualMenuSelections($catalog, $validated['manual_menu_items'] ?? []);
-        $proofPath = $request->file('payment_proof')->store('payment-proofs', 'public');
+
+        try {
+            $proofDisk = Storage::disk('public');
+            $proofDisk->makeDirectory('payment-proofs');
+            $proofPath = $proofDisk->putFile('payment-proofs', $request->file('payment_proof'));
+
+            if (! $proofPath) {
+                throw new RuntimeException('The payment proof could not be written to public storage.');
+            }
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return response()->json([
+                'message' => 'Your reservation was not submitted because the payment proof could not be saved. Please retry with the same image.',
+                'errors' => [
+                    'payment_proof' => ['We could not save your payment proof. Please select the image again and retry.'],
+                ],
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
         $bookingReference = strtoupper('MCR-'.Str::random(8));
         $receipt = $this->buildReceipt(
             $validated['event_type'],
@@ -256,8 +293,10 @@ class MobileReservationController extends ReservationController
             (int) $validated['duration_hours']
         );
 
-        $reservation = Reservation::create([
-            'user_id' => $customer->id,
+        try {
+            $reservation = Reservation::create([
+                'user_id' => $customer->id,
+                'client_submission_id' => $validated['client_submission_id'] ?? null,
             'name' => $customer->name,
             'email' => $customer->email,
             'phone' => $customer->phone ?: 'Not provided',
@@ -293,8 +332,31 @@ class MobileReservationController extends ReservationController
             'check_in_code' => substr(hash('sha256', $bookingReference), 0, 10),
             'notes' => $validated['notes'] ?? null,
             'status' => 'pending_review',
-            'service_status' => 'available',
-        ]);
+                'service_status' => 'available',
+            ]);
+        } catch (Throwable $exception) {
+            Storage::disk('public')->delete($proofPath);
+
+            if (! empty($validated['client_submission_id'])) {
+                $existingReservation = Reservation::query()
+                    ->where('user_id', $customer->id)
+                    ->where('client_submission_id', $validated['client_submission_id'])
+                    ->first();
+
+                if ($existingReservation) {
+                    return response()->json([
+                        'message' => 'This reservation was already submitted successfully. No duplicate booking was created.',
+                        'reservation' => $this->serializeReservation($existingReservation),
+                    ]);
+                }
+            }
+
+            report($exception);
+
+            return response()->json([
+                'message' => 'The reservation server could not finish saving this booking. Nothing was charged or duplicated. Please try again.',
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
 
         return response()->json([
             'message' => 'Reservation submitted. Your payment proof is queued for review.',

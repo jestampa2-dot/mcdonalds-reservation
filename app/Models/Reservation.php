@@ -15,6 +15,7 @@ class Reservation extends Model
         'email',
         'phone',
         'booking_reference',
+        'client_submission_id',
         'reservation_type',
         'package_name',
         'package_code',

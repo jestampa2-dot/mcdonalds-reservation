@@ -7,6 +7,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -183,8 +184,10 @@ class MobileApiTest extends TestCase
         $admin->update(['branch_code' => $branch['code']]);
         $packageCode = $bookingOptions['catalog']['packages'][$eventType][0]['code'];
         $roomChoice = $bookingOptions['roomChoices'][0]['code'];
+        $clientSubmissionId = (string) Str::uuid();
 
         $response = $this->post('/api/mobile/reservations', [
+            'client_submission_id' => $clientSubmissionId,
             'event_type' => $eventType,
             'branch_code' => $branch['code'],
             'venue_type' => 'custom',
@@ -221,6 +224,30 @@ class MobileApiTest extends TestCase
             'venue_municipality' => 'Surigao City',
         ]);
         Storage::disk('public')->assertExists($storedReservation->payment_proof_path);
+
+        $this->post('/api/mobile/reservations', [
+            'client_submission_id' => $clientSubmissionId,
+            'event_type' => $eventType,
+            'branch_code' => $branch['code'],
+            'venue_type' => 'custom',
+            'venue_name' => 'Customer Family Residence',
+            'venue_address' => '123 Celebration Street',
+            'venue_barangay' => 'Barangay Happy',
+            'venue_municipality' => 'Surigao City',
+            'event_date' => $bookingOptions['defaults']['event_date'],
+            'event_time' => $bookingOptions['defaults']['event_time'],
+            'duration_hours' => $bookingOptions['defaults']['duration_hours'],
+            'room_choice' => $roomChoice,
+            'guests' => 12,
+            'package_code' => $packageCode,
+            'payment_proof' => UploadedFile::fake()->image('payment-proof-retry.jpg'),
+        ], [
+            'Accept' => 'application/json',
+        ])->assertOk()
+            ->assertJsonPath('reservation.id', $reservationId)
+            ->assertJsonPath('message', 'This reservation was already submitted successfully. No duplicate booking was created.');
+
+        $this->assertSame(1, Reservation::where('client_submission_id', $clientSubmissionId)->count());
 
         Sanctum::actingAs($admin);
 

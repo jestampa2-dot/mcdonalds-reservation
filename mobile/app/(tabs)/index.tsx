@@ -14,7 +14,7 @@ import {
   SectionEyebrow,
   SectionTitle,
 } from '@/components/customer-ui';
-import { ApiError, fetchHome, getApiBaseUrl, setApiBaseUrl, testApiBaseUrl } from '@/lib/api';
+import { ApiError, fetchHome, getApiBaseUrl, isHostedApiLocked, setApiBaseUrl, testApiBaseUrl } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { readCacheEnvelope, writeCache } from '@/lib/cache';
 import { formatCurrency } from '@/lib/formatters';
@@ -67,6 +67,7 @@ export default function HomeScreen() {
   const lastLoadedAtRef = useRef(0);
   const { width } = useWindowDimensions();
   const isWide = width >= 760;
+  const onlineServerLocked = isHostedApiLocked();
 
   const loadHome = useCallback(async (nextRefreshing = false) => {
     try {
@@ -109,14 +110,14 @@ export default function HomeScreen() {
   }, [loadHome, serverUrl]);
 
   useEffect(() => {
-    if (!serverSettings) {
+    if (!serverSettings || onlineServerLocked) {
       return;
     }
 
     setServerError('');
     setServerUrl(getApiBaseUrl());
     setShowServerSettings(true);
-  }, [serverSettings]);
+  }, [onlineServerLocked, serverSettings]);
 
   useEffect(() => {
     let active = true;
@@ -165,17 +166,19 @@ export default function HomeScreen() {
           <Text style={styles.helperText}>{errorMessage}</Text>
           <View style={styles.connectionActions}>
             <CustomerButton label="Try again" onPress={() => void loadHome()} tone="ghost" />
-            <CustomerButton
-              label={showServerSettings ? 'Hide server settings' : 'Change server'}
-              onPress={() => {
-                setServerError('');
-                setServerUrl(getApiBaseUrl());
-                setShowServerSettings((visible) => !visible);
-              }}
-              tone="secondary"
-            />
+            {!onlineServerLocked ? (
+              <CustomerButton
+                label={showServerSettings ? 'Hide server settings' : 'Change server'}
+                onPress={() => {
+                  setServerError('');
+                  setServerUrl(getApiBaseUrl());
+                  setShowServerSettings((visible) => !visible);
+                }}
+                tone="secondary"
+              />
+            ) : null}
           </View>
-          {showServerSettings ? (
+          {showServerSettings && !onlineServerLocked ? (
             <View style={styles.serverSettings}>
               <CustomerField
                 label="Server address"
