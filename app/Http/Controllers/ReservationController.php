@@ -1765,30 +1765,58 @@ class ReservationController extends Controller
             ->orderBy('sort_order')
             ->get(), collect());
 
-        return $categories->map(fn (MenuCategory $category) => [
-            'code' => $category->code,
-            'name' => $category->name,
-            'icon' => $category->icon,
-            'description' => $category->description,
-            'items' => $category->items->map(fn (MenuItem $item) => [
-                'code' => $item->code,
-                'name' => $item->name,
-                'description' => $item->description,
-                'badge' => $item->badge,
-                'artwork' => $item->artwork,
-                'image_url' => $this->menuArtworkUrl($item->artwork),
-                'options' => $item->options->map(fn (MenuItemOption $option) => [
-                    'code' => $option->code,
-                    'label' => $option->label,
-                    'price' => (float) $option->price,
-                    'prep_label' => $option->prep_label,
-                ])->values()->all(),
-            ])->values()->all(),
-        ])->values()->all();
+        return $categories
+            ->map(function (MenuCategory $category) {
+                $items = $category->items->map(fn (MenuItem $item) => [
+                    'code' => $item->code,
+                    'name' => $item->name,
+                    'description' => $item->description,
+                    'badge' => $item->badge,
+                    'artwork' => $item->artwork,
+                    'image_url' => $this->menuArtworkUrl($item->artwork, $item->code),
+                    'options' => $item->options->map(fn (MenuItemOption $option) => [
+                        'code' => $option->code,
+                        'label' => $option->label,
+                        'price' => (float) $option->price,
+                        'prep_label' => $option->prep_label,
+                    ])->values()->all(),
+                ])->values()->all();
+
+                return [
+                    'code' => $category->code,
+                    'name' => $category->name,
+                    'icon' => $category->icon,
+                    'description' => $category->description,
+                    'items' => $items,
+                ];
+            })
+            ->filter(fn (array $category) => count($category['items']) > 0)
+            ->values()
+            ->all();
     }
 
-    protected function menuArtworkUrl(?string $artwork): string
+    protected function menuArtworkUrl(?string $artwork, ?string $itemCode = null): string
     {
+        $itemArtwork = [
+            'apple-pie' => 'apple-pie',
+            'coke' => 'cola',
+            'coke-zero-sugar' => 'cola',
+            'sprite' => 'lemon-lime-soda',
+            'royal' => 'orange-soda',
+            'iced-tea' => 'iced-tea',
+            'orange-juice' => 'orange-juice',
+            'apple-juice' => 'apple-juice',
+            'coke-mcfloat' => 'cola-float',
+            'cotton-candy-mcfloat' => 'cotton-candy-float',
+            'raspberry-mcfloat' => 'raspberry-float',
+            'grape-mcfloat' => 'grape-float',
+            'royal-mcfloat' => 'orange-float',
+        ];
+
+        if ($itemCode && isset($itemArtwork[$itemCode])) {
+            return "/images/menu/{$itemArtwork[$itemCode]}.webp";
+        }
+
         $availableArtwork = [
             'burger',
             'chicken-burger',
@@ -1804,10 +1832,9 @@ class ReservationController extends Controller
             'drink',
             'breakfast',
             'dessert',
-            'sharing',
         ];
 
-        $image = in_array($artwork, $availableArtwork, true) ? $artwork : 'sharing';
+        $image = in_array($artwork, $availableArtwork, true) ? $artwork : 'combo';
 
         return "/images/menu/{$image}.webp";
     }

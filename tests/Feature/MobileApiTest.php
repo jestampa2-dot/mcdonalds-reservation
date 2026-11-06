@@ -64,8 +64,31 @@ class MobileApiTest extends TestCase
                 ],
             ]);
 
-        collect($bookingOptions->json('catalog.menuCategories'))
-            ->flatMap(fn (array $category) => $category['items'])
+        $menuCategories = collect($bookingOptions->json('catalog.menuCategories'));
+        $menuItems = $menuCategories->flatMap(fn (array $category) => $category['items']);
+
+        $this->assertFalse($menuCategories->contains('code', 'sharing'));
+        $this->assertTrue($menuCategories->every(fn (array $category) => count($category['items']) > 0));
+
+        collect([
+            'apple-pie' => '/images/menu/apple-pie.webp',
+            'coke' => '/images/menu/cola.webp',
+            'sprite' => '/images/menu/lemon-lime-soda.webp',
+            'royal' => '/images/menu/orange-soda.webp',
+            'iced-tea' => '/images/menu/iced-tea.webp',
+            'orange-juice' => '/images/menu/orange-juice.webp',
+            'apple-juice' => '/images/menu/apple-juice.webp',
+            'coke-mcfloat' => '/images/menu/cola-float.webp',
+            'cotton-candy-mcfloat' => '/images/menu/cotton-candy-float.webp',
+            'raspberry-mcfloat' => '/images/menu/raspberry-float.webp',
+            'grape-mcfloat' => '/images/menu/grape-float.webp',
+            'royal-mcfloat' => '/images/menu/orange-float.webp',
+        ])->each(fn (string $imageUrl, string $itemCode) => $this->assertSame(
+            $imageUrl,
+            $menuItems->firstWhere('code', $itemCode)['image_url'] ?? null,
+        ));
+
+        $menuItems
             ->pluck('image_url')
             ->unique()
             ->each(fn (string $imageUrl) => $this->assertFileExists(public_path(ltrim($imageUrl, '/'))));

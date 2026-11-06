@@ -1,5 +1,6 @@
 import * as ImagePicker from 'expo-image-picker';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
+import { File } from 'expo-file-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -508,11 +509,13 @@ export default function BookingScreen() {
         compress: 0.72,
         format: SaveFormat.JPEG,
       });
+      const normalizedFile = new File(normalizedImage.uri);
 
       setPaymentProof({
         uri: normalizedImage.uri,
         name: `payment-proof-${Date.now()}.jpg`,
         type: 'image/jpeg',
+        size: normalizedFile.size,
       });
     } catch {
       Alert.alert(
@@ -695,14 +698,8 @@ export default function BookingScreen() {
         formData.append('notes', notes.trim());
       }
 
-      formData.append(
-        'payment_proof',
-        {
-          uri: paymentProof.uri,
-          name: paymentProof.name,
-          type: paymentProof.type,
-        } as any,
-      );
+      const paymentProofFile = new File(paymentProof.uri);
+      formData.append('payment_proof', paymentProofFile, paymentProof.name);
 
       const response = await createReservation(formData, token);
       submissionIdRef.current = null;

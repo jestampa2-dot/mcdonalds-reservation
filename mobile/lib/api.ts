@@ -10,6 +10,7 @@ import type {
 } from '@/lib/types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
+import { fetch as expoFetch } from 'expo/fetch';
 import { Platform } from 'react-native';
 
 const apiBaseUrlStorageKey = 'mcdonalds-reservations:api-base-url';
@@ -223,12 +224,14 @@ async function requestJson<T>(path: string, options: ApiRequestOptions = {}): Pr
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    response = await fetch(`${apiBaseUrl}${path}`, {
+    const requestFetch = body instanceof FormData ? expoFetch : globalThis.fetch;
+
+    response = await requestFetch(`${apiBaseUrl}${path}`, {
       ...rest,
       headers: requestHeaders,
       body,
       signal: controller.signal,
-    });
+    }) as unknown as Response;
   } catch (error) {
     const connectionHelp = isLocalDevelopmentApiBaseUrl(apiBaseUrl)
       ? 'Check that Laravel is running and that your phone is on the same Wi-Fi.'

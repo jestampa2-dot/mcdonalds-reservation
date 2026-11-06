@@ -32,7 +32,7 @@ const selectedOptionByItem = reactive({})
 const formatCurrency = (value) =>
   `\u20B1${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
-const menuImageUrl = (item) => item.image_url || '/images/menu/sharing.webp'
+const menuImageUrl = (item) => item.image_url || '/images/menu/combo.webp'
 
 const useMenuImageFallback = (event) => {
   if (event.currentTarget.dataset.fallbackApplied) {
@@ -40,7 +40,7 @@ const useMenuImageFallback = (event) => {
   }
 
   event.currentTarget.dataset.fallbackApplied = 'true'
-  event.currentTarget.src = '/images/menu/sharing.webp'
+  event.currentTarget.src = '/images/menu/combo.webp'
 }
 
 const optionIndex = computed(() =>
