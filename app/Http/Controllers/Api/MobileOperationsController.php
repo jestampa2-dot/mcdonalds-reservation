@@ -623,6 +623,10 @@ class MobileOperationsController extends ReservationController
             'duration_hours' => (int) $validated['duration_hours'],
             'service_adjustments' => $serviceAdjustments,
             'total_amount' => $receipt['total_raw'],
+            'payment_amount_due' => $this->paymentAmountDue(
+                $receipt['total_raw'],
+                $reservation->payment_type ?: 'full_payment'
+            ),
         ]);
 
         return response()->json([
@@ -699,17 +703,11 @@ class MobileOperationsController extends ReservationController
                 'stats' => $this->adminStats($this->adminStatsBookings()),
                 'groupedBookings' => $this->groupedBookings($catalog, $pendingBookings),
                 'staffUsers' => $this->adminStaffUsers(),
-                'menuBundles' => $catalog['menuBundles'],
-                'addOns' => $catalog['addOns'],
-                'durationOptions' => range(1, 16),
             ],
             'confirmedEvents' => [
                 'stats' => $this->adminStats($this->adminStatsBookings()),
                 'confirmedEvents' => $confirmedBookings->map(fn (Reservation $reservation) => $this->serializeReservation($reservation))->values(),
                 'staffUsers' => $this->adminStaffUsers(),
-                'menuBundles' => $catalog['menuBundles'],
-                'addOns' => $catalog['addOns'],
-                'durationOptions' => range(1, 16),
             ],
             'availability' => [
                 'availability' => $availability,
@@ -766,6 +764,12 @@ class MobileOperationsController extends ReservationController
             'reports' => [
                 'pricing' => $catalog['pricing'],
                 'report' => $this->analyticsReport($allBookings),
+                'completedEvents' => $allBookings
+                    ->where('status', 'completed')
+                    ->sortByDesc('event_date')
+                    ->take(50)
+                    ->map(fn (Reservation $reservation) => $this->serializeReservation($reservation))
+                    ->values(),
                 'inventory' => $this->inventorySnapshot($catalog, $allBookings),
                 'staffAssignments' => $this->staffAssignments($catalog, $allBookings),
             ],
@@ -811,9 +815,6 @@ class MobileOperationsController extends ReservationController
             'notifications' => $this->upcomingEventNotifications($relevantBookings, 6),
             'history' => $this->eventHistory($relevantBookings, 8),
             'statusOptions' => ['available', 'cleaning', 'in_progress'],
-            'menuBundles' => $catalog['menuBundles'],
-            'addOns' => $catalog['addOns'],
-            'durationOptions' => range(1, 16),
         ];
     }
 

@@ -115,6 +115,7 @@ export default function BookingScreen() {
   const [stepError, setStepError] = useState('');
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [paymentProof, setPaymentProof] = useState<PickedImage | null>(null);
+  const [paymentType, setPaymentType] = useState<'down_payment' | 'full_payment'>('full_payment');
   const [notes, setNotes] = useState('');
   const [guests, setGuests] = useState('10');
   const [eventType, setEventType] = useState('birthday');
@@ -180,6 +181,7 @@ export default function BookingScreen() {
       setNotes('');
       setGuests('10');
       setPaymentProof(null);
+      setPaymentType('full_payment');
       setActiveCategory(response.catalog.menuCategories[0]?.code ?? null);
     } catch (error) {
       setErrorMessage(error instanceof ApiError ? error.message : 'Unable to load booking options right now.');
@@ -224,6 +226,7 @@ export default function BookingScreen() {
       setNotes('');
       setGuests('10');
       setPaymentProof(null);
+      setPaymentType('full_payment');
       setActiveCategory(cachedPayload.data.catalog.menuCategories[0]?.code ?? null);
       setLoading(false);
       void loadBookingOptions(true);
@@ -408,6 +411,10 @@ export default function BookingScreen() {
     };
   }, [durationHours, eventDate, payload, selectedAddOns, selectedBundles, selectedManualItems, selectedPackage]);
 
+  const downPaymentPercentage = payload?.catalog.pricing.down_payment_percentage ?? 50;
+  const paymentAmountDue = pricingPreview.total * (paymentType === 'down_payment' ? downPaymentPercentage / 100 : 1);
+  const paymentBalance = Math.max(pricingPreview.total - paymentAmountDue, 0);
+
   const selectedRoom = roomChoices.find((choice) => choice.code === roomChoice);
   const receiptLines = useMemo(() => {
     const lines = [];
@@ -487,6 +494,10 @@ export default function BookingScreen() {
         item.option_code === optionCode ? { ...item, quantity: nextQuantity } : item,
       );
     });
+  }
+
+  function removeManualSelection(optionCode: string) {
+    setManualSelections((current) => current.filter((item) => item.option_code !== optionCode));
   }
 
   async function selectPaymentProof() {
@@ -644,6 +655,7 @@ export default function BookingScreen() {
         addOns,
         manualSelections,
         notes: notes.trim(),
+        paymentType,
         paymentProof: paymentProof.uri,
       });
       const pendingSubmissionKey = `mobile-booking:pending-submission:${user.id}`;
@@ -698,6 +710,8 @@ export default function BookingScreen() {
       if (notes.trim()) {
         formData.append('notes', notes.trim());
       }
+
+      formData.append('payment_type', paymentType);
 
       const paymentProofFile = new File(paymentProof.uri);
       formData.append('payment_proof', paymentProofFile, paymentProof.name);
@@ -1117,6 +1131,35 @@ export default function BookingScreen() {
                   </View>
                 ))}
               </View>
+
+              {selectedManualItems.length > 0 ? (
+                <View style={styles.manualTray}>
+                  <View style={styles.manualTrayHeader}>
+                    <View style={styles.manualTrayCopy}>
+                      <Text style={styles.menuItemTitle}>Manual tray</Text>
+                      <Text style={styles.menuItemMeta}>Remove any item before continuing.</Text>
+                    </View>
+                    <Text style={styles.manualTrayTotal}>
+                      {formatCurrency(selectedManualItems.reduce((sum, item) => sum + item.lineTotal, 0))}
+                    </Text>
+                  </View>
+                  {selectedManualItems.map((item) => (
+                    <View key={`tray-${item.optionCode}`} style={styles.manualTrayItem}>
+                      <View style={styles.manualTrayCopy}>
+                        <Text style={styles.menuOptionLabel}>{item.itemName}</Text>
+                        <Text style={styles.menuItemMeta}>{item.optionLabel} · {item.quantity} qty · {formatCurrency(item.lineTotal)}</Text>
+                      </View>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Remove ${item.itemName} ${item.optionLabel} from the manual tray`}
+                        onPress={() => removeManualSelection(item.optionCode)}
+                        style={styles.removeManualButton}>
+                        <Text style={styles.removeManualButtonText}>Remove</Text>
+                      </Pressable>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
             </CustomerCard>
                   ) : null}
 
@@ -1239,6 +1282,31 @@ export default function BookingScreen() {
             <CustomerCard>
               <SectionEyebrow>7. Payment</SectionEyebrow>
               <SectionTitle>Upload proof and confirm.</SectionTitle>
+              <Text style={styles.inputLabel}>Payment method</Text>
+              <View style={styles.chipRow}>
+                <CustomerChip
+                  label={`Down payment (${downPaymentPercentage}%)`}
+                  active={paymentType === 'down_payment'}
+                  onPress={() => setPaymentType('down_payment')}
+                  tone="pink"
+                />
+                <CustomerChip
+                  label="Full payment"
+                  active={paymentType === 'full_payment'}
+                  onPress={() => setPaymentType('full_payment')}
+                  tone="green"
+                />
+              </View>
+              <View style={styles.paymentChoiceSummary}>
+                <View style={styles.paymentChoiceColumn}>
+                  <Text style={styles.menuItemMeta}>Amount to pay now</Text>
+                  <Text style={styles.paymentChoiceAmount}>{formatCurrency(paymentAmountDue)}</Text>
+                </View>
+                <View style={styles.paymentChoiceColumn}>
+                  <Text style={styles.menuItemMeta}>Remaining balance</Text>
+                  <Text style={styles.paymentChoiceAmount}>{formatCurrency(paymentBalance)}</Text>
+                </View>
+              </View>
               <Text style={styles.helperText}>Choose a JPG, PNG, or another image format up to 4 MB.</Text>
               <CustomerButton
                 label={paymentProof ? 'Replace payment proof' : 'Choose payment proof'}
@@ -1261,8 +1329,8 @@ export default function BookingScreen() {
                 <View style={styles.wizardFooter}>
                   <CustomerButton label="Back" onPress={previousStep} tone="ghost" disabled={currentStep === 1 || submitting} compact />
                   <View style={styles.footerCopy}>
-                    <Text style={styles.footerLabel}>{wizardSteps[currentStep - 1].label}</Text>
-                    <Text style={styles.footerValue}>{currentStep === 7 ? formatCurrency(pricingPreview.total) : `${currentStep} / ${wizardSteps.length}`}</Text>
+                    <Text style={styles.footerLabel}>{wizardSteps[currentStep - 1].label} · Running total</Text>
+                    <Text style={styles.footerValue}>{formatCurrency(pricingPreview.total)}</Text>
                   </View>
                   {currentStep < wizardSteps.length ? (
                     <CustomerButton label="Continue" onPress={continueWizard} compact />
@@ -1544,6 +1612,24 @@ const createStyles = (colors: AppThemeColors) => StyleSheet.create({
     flexWrap: 'wrap',
     gap: 8,
   },
+  paymentChoiceSummary: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    borderRadius: 18,
+    backgroundColor: colors.surfaceMuted,
+    padding: 12,
+  },
+  paymentChoiceColumn: {
+    flexGrow: 1,
+    minWidth: 140,
+    gap: 4,
+  },
+  paymentChoiceAmount: {
+    color: colors.brandText,
+    fontSize: 18,
+    fontWeight: '900',
+  },
   horizontalScroll: {
     gap: 10,
   },
@@ -1746,6 +1832,55 @@ const createStyles = (colors: AppThemeColors) => StyleSheet.create({
   },
   menuCardWide: {
     maxWidth: 620,
+  },
+  manualTray: {
+    marginTop: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.surfaceMuted,
+    padding: 14,
+    gap: 10,
+  },
+  manualTrayHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  manualTrayItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    borderRadius: 16,
+    backgroundColor: colors.surface,
+    padding: 12,
+  },
+  manualTrayCopy: {
+    flex: 1,
+    minWidth: 0,
+    gap: 3,
+  },
+  manualTrayTotal: {
+    color: colors.brandText,
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  removeManualButton: {
+    minHeight: 38,
+    justifyContent: 'center',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.dangerBorder,
+    backgroundColor: colors.dangerSurface,
+    paddingHorizontal: 12,
+  },
+  removeManualButtonText: {
+    color: colors.brandText,
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
   },
   menuVisual: {
     height: 170,

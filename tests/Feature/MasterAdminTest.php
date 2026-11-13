@@ -113,7 +113,33 @@ class MasterAdminTest extends TestCase
         $response->assertOk()
             ->assertHeader('content-type', 'text/csv; charset=UTF-8');
 
-        $this->assertStringContainsString($reservation->booking_reference, $response->streamedContent());
+        $content = $response->streamedContent();
+        $this->assertStringContainsString($reservation->booking_reference, $content);
+        $this->assertStringContainsString('Payment method', $content);
+        $this->assertStringContainsString('Remaining balance', $content);
+    }
+
+    public function test_completed_event_report_includes_the_final_bill_and_payment_plan(): void
+    {
+        $master = User::factory()->create(['role' => 'master_admin']);
+        $reservation = $this->reservation(User::factory()->create(['role' => 'customer']));
+        $reservation->update([
+            'status' => 'completed',
+            'payment_type' => 'down_payment',
+            'payment_amount_due' => 2500,
+        ]);
+
+        $this->actingAs($master)
+            ->get(route('admin.reports'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Admin/Reports')
+                ->has('completedEvents', 1)
+                ->where('completedEvents.0.booking_reference', $reservation->booking_reference)
+                ->where('completedEvents.0.payment_type', 'down_payment')
+                ->where('completedEvents.0.payment_amount_due', 2500)
+                ->where('completedEvents.0.payment_balance', 2500)
+            );
     }
 
     private function branch(): Branch

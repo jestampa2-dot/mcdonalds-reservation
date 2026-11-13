@@ -11,14 +11,13 @@ const props = defineProps({
   stats: Array,
   confirmedEvents: Array,
   staffUsers: Array,
-  menuBundles: Array,
-  addOns: Array,
-  durationOptions: Array,
 })
 
 const searchQuery = ref('')
 const isRefreshing = ref(false)
 let refreshTimer = null
+const formatCurrency = (value) =>
+  `\u20B1${Number(value ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 const filteredConfirmedEvents = useSearchCollection(
   () => props.confirmedEvents,
@@ -40,11 +39,6 @@ const filteredConfirmedEvents = useSearchCollection(
 
 const statusState = reactive(Object.fromEntries(props.confirmedEvents.map((booking) => [booking.id, booking.status])))
 const crewState = reactive(Object.fromEntries(props.confirmedEvents.map((booking) => [booking.id, booking.assigned_staff_id ?? ''])))
-const adjustmentState = reactive(Object.fromEntries(props.confirmedEvents.map((booking) => [booking.id, {
-  duration_hours: booking.duration_hours ?? 4,
-  extra_menu_bundles: booking.service_adjustments?.extra_menu_bundles ?? [],
-  extra_add_ons: booking.service_adjustments?.extra_add_ons ?? [],
-}])))
 
 watch(
   () => props.confirmedEvents,
@@ -52,11 +46,6 @@ watch(
     bookings.forEach((booking) => {
       statusState[booking.id] = booking.status
       crewState[booking.id] = booking.assigned_staff_id ?? ''
-      adjustmentState[booking.id] = {
-        duration_hours: booking.duration_hours ?? 4,
-        extra_menu_bundles: booking.service_adjustments?.extra_menu_bundles ?? [],
-        extra_add_ons: booking.service_adjustments?.extra_add_ons ?? [],
-      }
     })
   },
 )
@@ -74,7 +63,7 @@ const markAsDone = (id) => {
     preserveScroll: true,
     preserveState: false,
     onSuccess: () => {
-      router.visit(route('admin.timeline'), {
+      router.visit(`${route('admin.reports')}#completed-event-reports`, {
         preserveScroll: true,
         preserveState: false,
       })
@@ -84,10 +73,6 @@ const markAsDone = (id) => {
 
 const updateCrew = (id) => {
   router.post(route('admin.reservations.crew', id), { assigned_staff_id: crewState[id] || null }, { preserveScroll: true, preserveState: true })
-}
-
-const updateServiceAdjustments = (id) => {
-  router.post(route('staff.reservations.adjustments', id), adjustmentState[id], { preserveScroll: true, preserveState: true })
 }
 
 const refreshConfirmed = () => {
@@ -161,7 +146,7 @@ onBeforeUnmount(() => {
         />
         <div v-if="filteredConfirmedEvents.length" class="space-y-4">
           <div v-for="booking in filteredConfirmedEvents" :key="booking.id" class="rounded-2xl bg-amber-50 p-4">
-            <div class="grid gap-4 md:grid-cols-[1.1fr,0.8fr,0.8fr]">
+            <div class="grid gap-4 lg:grid-cols-[1.35fr,0.65fr]">
               <div>
                 <div class="flex flex-wrap items-center gap-2">
                   <strong>{{ booking.booking_reference }}</strong>
@@ -183,6 +168,16 @@ onBeforeUnmount(() => {
                 <p v-if="booking.manual_menu_items?.length" class="mt-1 text-sm text-slate-500">
                   Manual tray: {{ booking.manual_menu_items.slice(0, 3).map((item) => `${item.quantity} x ${item.item_name}`).join(', ') }}<span v-if="booking.manual_menu_items.length > 3"> and {{ booking.manual_menu_items.length - 3 }} more</span>
                 </p>
+                <div class="mt-4 flex items-center justify-between gap-4 rounded-2xl bg-red-700 px-4 py-3 text-white">
+                  <div>
+                    <span class="text-sm font-black uppercase tracking-[0.15em]">Customer bill total</span>
+                    <p class="mt-1 text-xs text-white/75">{{ booking.payment_type_label }} · proof for {{ formatCurrency(booking.payment_amount_due) }}</p>
+                  </div>
+                  <div class="text-right">
+                    <strong class="text-xl">{{ formatCurrency(booking.total_amount) }}</strong>
+                    <p v-if="booking.payment_balance > 0" class="mt-1 text-xs text-white/75">{{ formatCurrency(booking.payment_balance) }} balance</p>
+                  </div>
+                </div>
                 <div class="mt-3 rounded-2xl bg-white p-4 text-sm">
                   <p class="font-black uppercase tracking-[0.15em] text-red-700">Special notes</p>
                   <p class="mt-2 text-slate-600">{{ booking.notes || 'None' }}</p>
@@ -208,32 +203,6 @@ onBeforeUnmount(() => {
                 <button type="button" class="mcd-button mcd-button--ghost" @click="updateCrew(booking.id)">Update crew</button>
               </div>
 
-              <div class="rounded-2xl bg-white p-4">
-                <p class="text-sm font-black uppercase tracking-[0.15em] text-red-700">Event edits</p>
-                <div class="mt-3 space-y-3">
-                  <select v-model="adjustmentState[booking.id].duration_hours" class="mcd-select">
-                    <option v-for="hours in durationOptions" :key="hours" :value="hours">{{ hours }} hours total</option>
-                  </select>
-
-                  <div class="rounded-2xl bg-amber-50 p-3">
-                    <p class="text-xs font-black uppercase tracking-[0.15em] text-red-700">Extra food</p>
-                    <label v-for="bundle in menuBundles" :key="`${booking.id}-${bundle.code}`" class="mt-2 flex items-center gap-2 text-sm">
-                      <input v-model="adjustmentState[booking.id].extra_menu_bundles" :value="bundle.code" type="checkbox" />
-                      <span>{{ bundle.name }}</span>
-                    </label>
-                  </div>
-
-                  <div class="rounded-2xl bg-amber-50 p-3">
-                    <p class="text-xs font-black uppercase tracking-[0.15em] text-red-700">Extra services</p>
-                    <label v-for="item in addOns" :key="`${booking.id}-${item.code}`" class="mt-2 flex items-center gap-2 text-sm">
-                      <input v-model="adjustmentState[booking.id].extra_add_ons" :value="item.code" type="checkbox" />
-                      <span>{{ item.name }}</span>
-                    </label>
-                  </div>
-
-                  <button type="button" class="mcd-button mcd-button--ghost" @click="updateServiceAdjustments(booking.id)">Save event edits</button>
-                </div>
-              </div>
             </div>
           </div>
         </div>

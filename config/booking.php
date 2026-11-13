@@ -26,6 +26,7 @@ return [
         'weekend_multiplier' => 1.15,
         'holiday_multiplier' => 1.25,
         'extension_hourly_rate' => 450,
+        'down_payment_percentage' => 50,
         'holidays' => [
             '2026-04-03',
             '2026-05-01',

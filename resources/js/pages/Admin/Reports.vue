@@ -7,6 +7,7 @@ import AdminQuickLinks from '@/Components/AdminQuickLinks.vue'
 const props = defineProps({
   pricing: Object,
   report: Object,
+  completedEvents: Array,
   inventory: Array,
   staffAssignments: Array,
 })
@@ -16,7 +17,7 @@ const formatCurrency = (value) =>
 
 const refreshReports = () => {
   router.reload({
-    only: ['pricing', 'report', 'inventory', 'staffAssignments'],
+    only: ['pricing', 'report', 'completedEvents', 'inventory', 'staffAssignments'],
     preserveScroll: true,
     preserveState: true,
   })
@@ -78,6 +79,7 @@ const addInventoryItem = (branchId) => {
             <h1 class="mt-4 text-4xl">Reports</h1>
           </div>
           <div class="flex flex-wrap gap-3">
+            <a :href="route('admin.reports.export', { status: 'completed' })" class="mcd-button">Download completed-event CSV</a>
             <a :href="route('admin.reports.export')" class="mcd-button">Download reservation CSV</a>
             <button type="button" class="mcd-button mcd-button--ghost" @click="refreshReports">Refresh reports</button>
           </div>
@@ -86,6 +88,62 @@ const addInventoryItem = (branchId) => {
           <AdminQuickLinks current="reports" />
         </div>
       </div>
+    </section>
+
+    <section id="completed-event-reports" class="mcd-section scroll-mt-6">
+      <article class="mcd-panel p-6">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p class="mcd-chip">Completion reports</p>
+            <h2 class="mt-4 text-3xl">Completed event billing reports</h2>
+            <p class="mt-2 text-sm text-slate-500">A final report appears here automatically when an administrator marks an event as completed.</p>
+          </div>
+          <div class="rounded-3xl bg-red-700 px-5 py-4 text-white">
+            <p class="text-xs font-black uppercase tracking-[0.15em] text-white/75">Completed revenue</p>
+            <p class="mt-2 text-2xl font-black">{{ report.completed_revenue }}</p>
+            <p class="mt-1 text-sm text-white/75">{{ report.completed_count }} completed event{{ report.completed_count === 1 ? '' : 's' }}</p>
+          </div>
+        </div>
+
+        <div v-if="completedEvents.length" class="mt-6 grid gap-4 xl:grid-cols-2">
+          <article v-for="booking in completedEvents" :key="booking.id" class="rounded-3xl border border-slate-200 bg-white p-5">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p class="text-lg font-black text-slate-900">{{ booking.booking_reference }}</p>
+                <p class="mt-1 text-sm text-slate-500">{{ booking.customer_name }} · {{ booking.branch }}</p>
+              </div>
+              <strong class="rounded-full bg-red-50 px-4 py-2 text-red-700">{{ formatCurrency(booking.total_amount) }}</strong>
+            </div>
+
+            <div class="mt-4 grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
+              <p><strong>Event:</strong> {{ booking.package_name }}</p>
+              <p><strong>Guests:</strong> {{ booking.guests }}</p>
+              <p><strong>Payment:</strong> {{ booking.payment_type_label }}</p>
+              <p><strong>Paid/proof amount:</strong> {{ formatCurrency(booking.payment_amount_due) }}</p>
+              <p><strong>Balance:</strong> {{ formatCurrency(booking.payment_balance) }}</p>
+              <p><strong>Schedule:</strong> {{ booking.event_date }} · {{ booking.event_time }}</p>
+              <p><strong>Completed:</strong> {{ booking.completed_at || 'Completion time recorded' }}</p>
+              <p><strong>Venue:</strong> {{ booking.venue_name || booking.branch }}</p>
+              <p><strong>Crew:</strong> {{ booking.assigned_staff_name || 'Unassigned' }}</p>
+            </div>
+
+            <div class="mt-4 rounded-2xl bg-amber-50 p-4">
+              <p class="text-xs font-black uppercase tracking-[0.15em] text-red-700">Final bill breakdown</p>
+              <div class="mt-3 space-y-2 text-sm">
+                <div v-for="line in booking.receipt.line_items" :key="`${booking.id}-${line.label}`" class="flex items-start justify-between gap-3">
+                  <span class="text-slate-600">{{ line.label }}</span>
+                  <strong>₱{{ line.amount }}</strong>
+                </div>
+                <div class="flex items-center justify-between gap-3 border-t border-amber-200 pt-3 text-base">
+                  <strong>Final total</strong>
+                  <strong class="text-red-700">{{ formatCurrency(booking.total_amount) }}</strong>
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+        <div v-else class="mcd-empty mt-6">No completed-event reports yet.</div>
+      </article>
     </section>
 
     <section class="mcd-section">

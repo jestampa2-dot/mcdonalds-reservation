@@ -163,7 +163,13 @@ class MobileApiTest extends TestCase
                     'branches',
                     'accounts',
                     'catalog',
-                    'reports',
+                    'reports' => [
+                        'pricing',
+                        'report',
+                        'completedEvents',
+                        'inventory',
+                        'staffAssignments',
+                    ],
                     'timeline',
                 ],
                 'staff' => [
@@ -240,6 +246,7 @@ class MobileApiTest extends TestCase
             'room_choice' => $roomChoice,
             'guests' => 12,
             'package_code' => $packageCode,
+            'payment_type' => 'down_payment',
             'payment_proof' => UploadedFile::fake()->image('payment-proof.jpg'),
         ], [
             'Accept' => 'application/json',
@@ -261,7 +268,13 @@ class MobileApiTest extends TestCase
             'venue_name' => 'Customer Family Residence',
             'venue_barangay' => 'Barangay Happy',
             'venue_municipality' => 'Surigao City',
+            'payment_type' => 'down_payment',
         ]);
+        $this->assertEqualsWithDelta(
+            (float) $storedReservation->total_amount * 0.5,
+            (float) $storedReservation->payment_amount_due,
+            0.01
+        );
         Storage::disk('public')->assertExists($storedReservation->payment_proof_path);
 
         $this->post('/api/mobile/reservations', [
@@ -279,6 +292,7 @@ class MobileApiTest extends TestCase
             'room_choice' => $roomChoice,
             'guests' => 12,
             'package_code' => $packageCode,
+            'payment_type' => 'down_payment',
             'payment_proof' => UploadedFile::fake()->image('payment-proof-retry.jpg'),
         ], [
             'Accept' => 'application/json',
@@ -309,6 +323,7 @@ class MobileApiTest extends TestCase
             ->assertJsonPath('bookings.0.status', 'confirmed')
             ->assertJsonPath('bookings.0.venue_name', 'Customer Family Residence')
             ->assertJsonPath('bookings.0.venue_full_address', '123 Celebration Street, Barangay Happy, Surigao City')
+            ->assertJsonPath('bookings.0.payment_type', 'down_payment')
             ->assertJsonPath('bookings.0.pass_image_data_url', fn ($value) => str_starts_with($value, 'data:image/png;base64,'));
 
         $this->get("/api/mobile/reservations/{$reservationId}/payment-proof")

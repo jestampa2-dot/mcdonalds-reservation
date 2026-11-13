@@ -416,6 +416,16 @@ export default function DashboardScreen() {
                       <Text style={styles.receiptTotalLabel}>Total</Text>
                       <Text style={styles.receiptTotalValue}>{booking.receipt.total}</Text>
                     </View>
+                    <View style={styles.receiptRow}>
+                      <Text style={styles.receiptLabel}>{booking.payment_type_label}</Text>
+                      <Text style={styles.receiptValue}>{formatCurrency(booking.payment_amount_due)}</Text>
+                    </View>
+                    {booking.payment_balance > 0 ? (
+                      <View style={styles.receiptRow}>
+                        <Text style={styles.receiptLabel}>Remaining balance</Text>
+                        <Text style={styles.receiptValue}>{formatCurrency(booking.payment_balance)}</Text>
+                      </View>
+                    ) : null}
                   </View>
 
                   <View style={styles.reservationDetails}>

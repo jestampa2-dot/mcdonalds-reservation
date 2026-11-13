@@ -166,6 +166,7 @@ class MobileReservationController extends ReservationController
             'add_ons' => ['array'],
             'add_ons.*' => ['string', Rule::in(collect($catalog['addOns'])->pluck('code')->all())],
             'notes' => ['nullable', 'string', 'max:1000'],
+            'payment_type' => ['nullable', Rule::in(['down_payment', 'full_payment'])],
             'payment_proof' => ['required', 'image', 'max:4096'],
         ]);
 
@@ -292,6 +293,8 @@ class MobileReservationController extends ReservationController
             $addOns,
             (int) $validated['duration_hours']
         );
+        $paymentType = $validated['payment_type'] ?? 'full_payment';
+        $paymentAmountDue = $this->paymentAmountDue($receipt['total_raw'], $paymentType);
 
         try {
             $reservation = Reservation::create([
@@ -327,6 +330,8 @@ class MobileReservationController extends ReservationController
                 'extra_manual_menu_items' => [],
             ],
             'payment_proof_path' => $proofPath,
+            'payment_type' => $paymentType,
+            'payment_amount_due' => $paymentAmountDue,
             'guests' => $validated['guests'],
             'total_amount' => $receipt['total_raw'],
             'check_in_code' => substr(hash('sha256', $bookingReference), 0, 10),

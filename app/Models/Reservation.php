@@ -38,6 +38,8 @@ class Reservation extends Model
         'manual_menu_items',
         'service_adjustments',
         'payment_proof_path',
+        'payment_type',
+        'payment_amount_due',
         'guests',
         'total_amount',
         'check_in_code',
@@ -56,6 +58,7 @@ class Reservation extends Model
         'checked_in_at' => 'datetime',
         'event_date' => 'date',
         'total_amount' => 'decimal:2',
+        'payment_amount_due' => 'decimal:2',
     ];
 
     public function user(): BelongsTo

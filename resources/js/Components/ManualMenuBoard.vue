@@ -155,6 +155,10 @@ const decreaseItem = (item) => {
   setQuantity(optionCode, quantityFor(optionCode) - 1)
 }
 
+const removeItem = (optionCode) => {
+  setQuantity(optionCode, 0)
+}
+
 const currentOption = (item) =>
   item.options?.find((option) => option.code === selectedOptionByItem[item.code]) ?? item.options?.[0] ?? null
 
@@ -301,7 +305,17 @@ const viewTray = (event) => {
               <p class="font-bold text-slate-800">{{ item.item_name }}</p>
               <p class="mt-1 text-sm text-slate-500">{{ item.option_label }} | {{ item.quantity }} qty</p>
             </div>
-            <strong class="text-red-700">{{ formatCurrency(item.line_total) }}</strong>
+            <div class="flex flex-col items-end gap-2">
+              <strong class="text-red-700">{{ formatCurrency(item.line_total) }}</strong>
+              <button
+                type="button"
+                class="rounded-full border border-red-200 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-red-700 transition hover:bg-red-50"
+                :aria-label="`Remove ${item.item_name} ${item.option_label} from the manual tray`"
+                @click="removeItem(item.option_code)"
+              >
+                Remove
+              </button>
+            </div>
           </div>
         </div>
       </div>

@@ -198,6 +198,11 @@ const respondToInvitation = async (invitationId, status) => {
             <div class="text-right">
               <p class="text-sm uppercase tracking-[0.25em] text-slate-500">Total</p>
               <p class="mt-2 text-3xl text-red-700">{{ formatCurrency(booking.total_amount) }}</p>
+              <p class="mt-2 text-sm font-bold text-slate-600">{{ booking.payment_type_label }}</p>
+              <p class="mt-1 text-xs text-slate-500">
+                Due now: {{ formatCurrency(booking.payment_amount_due) }}
+                <span v-if="booking.payment_balance > 0"> · Balance: {{ formatCurrency(booking.payment_balance) }}</span>
+              </p>
             </div>
           </div>
 

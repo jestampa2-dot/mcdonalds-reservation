@@ -28,6 +28,10 @@ defineProps({
     type: Object,
     required: true,
   },
+  paymentPreview: {
+    type: Object,
+    required: true,
+  },
   pricingRule: {
     type: Object,
     required: true,
@@ -53,6 +57,48 @@ defineProps({
       <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">7. Payment</p>
       <h2 class="mt-3 text-3xl">Upload proof and review the receipt.</h2>
       <p class="mt-2 text-sm text-slate-500">Finish by attaching the proof of payment and confirming the reservation details.</p>
+
+      <fieldset class="mt-6">
+        <legend class="text-sm font-black uppercase tracking-[0.15em] text-slate-700">Payment method</legend>
+        <div class="mt-3 grid gap-3 md:grid-cols-2">
+          <label
+            class="cursor-pointer rounded-3xl border p-4 transition"
+            :class="form.payment_type === 'down_payment' ? 'border-red-600 bg-red-50' : 'border-slate-200 bg-white'"
+          >
+            <span class="flex items-start gap-3">
+              <input v-model="form.payment_type" type="radio" value="down_payment" class="mt-1" />
+              <span>
+                <strong class="block text-slate-900">Down payment</strong>
+                <span class="mt-1 block text-sm text-slate-500">Pay {{ paymentPreview.percentage }}% now and settle the remaining balance later.</span>
+              </span>
+            </span>
+          </label>
+          <label
+            class="cursor-pointer rounded-3xl border p-4 transition"
+            :class="form.payment_type === 'full_payment' ? 'border-red-600 bg-red-50' : 'border-slate-200 bg-white'"
+          >
+            <span class="flex items-start gap-3">
+              <input v-model="form.payment_type" type="radio" value="full_payment" class="mt-1" />
+              <span>
+                <strong class="block text-slate-900">Full payment</strong>
+                <span class="mt-1 block text-sm text-slate-500">Pay the complete reservation total now.</span>
+              </span>
+            </span>
+          </label>
+        </div>
+        <p v-if="form.errors.payment_type" class="mt-2 text-sm text-red-700">{{ form.errors.payment_type }}</p>
+
+        <div class="mt-4 grid gap-3 rounded-3xl bg-amber-50 p-4 sm:grid-cols-2">
+          <div>
+            <p class="text-xs font-black uppercase tracking-[0.15em] text-red-700">Amount to pay now</p>
+            <p class="mt-2 text-2xl font-black text-slate-900">{{ formatCurrency(paymentPreview.amountDue) }}</p>
+          </div>
+          <div>
+            <p class="text-xs font-black uppercase tracking-[0.15em] text-red-700">Remaining balance</p>
+            <p class="mt-2 text-2xl font-black text-slate-900">{{ formatCurrency(paymentPreview.balance) }}</p>
+          </div>
+        </div>
+      </fieldset>
 
       <div class="mt-6 mcd-field">
         <label>Upload proof of payment</label>

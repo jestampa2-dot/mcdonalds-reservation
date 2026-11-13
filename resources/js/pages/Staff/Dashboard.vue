@@ -12,9 +12,6 @@ const props = defineProps({
   notifications: Array,
   history: Array,
   statusOptions: Array,
-  menuBundles: Array,
-  addOns: Array,
-  durationOptions: Array,
 })
 
 const checkInForm = useForm({
@@ -22,11 +19,6 @@ const checkInForm = useForm({
 })
 
 const statusState = reactive(Object.fromEntries(props.todayBookings.map((booking) => [booking.id, booking.service_status])))
-const adjustmentState = reactive(Object.fromEntries(props.todayBookings.map((booking) => [booking.id, {
-  duration_hours: booking.duration_hours ?? 4,
-  extra_menu_bundles: booking.service_adjustments?.extra_menu_bundles ?? [],
-  extra_add_ons: booking.service_adjustments?.extra_add_ons ?? [],
-}])))
 const notificationItems = ref(props.notifications)
 const historyItems = ref(props.history)
 const cameraScannerOpen = ref(false)
@@ -75,23 +67,11 @@ const updateStatus = (id) => {
   })
 }
 
-const updateServiceAdjustments = (id) => {
-  router.post(route('staff.reservations.adjustments', id), adjustmentState[id], {
-    preserveScroll: true,
-    preserveState: true,
-  })
-}
-
 watch(
   () => props.todayBookings,
   (bookings) => {
     bookings.forEach((booking) => {
       statusState[booking.id] = booking.service_status
-      adjustmentState[booking.id] = {
-        duration_hours: booking.duration_hours ?? 4,
-        extra_menu_bundles: booking.service_adjustments?.extra_menu_bundles ?? [],
-        extra_add_ons: booking.service_adjustments?.extra_add_ons ?? [],
-      }
     })
   },
 )
@@ -225,7 +205,7 @@ const refreshStaffView = () => {
         <p class="mcd-chip">Live floor management</p>
         <div v-if="todayBookings.length" class="mt-5 space-y-4">
           <div v-for="booking in todayBookings" :key="booking.id" class="rounded-3xl bg-white p-5">
-            <div class="grid gap-4 xl:grid-cols-[1fr,0.8fr,1fr]">
+            <div class="grid gap-4 xl:grid-cols-[1.3fr,0.7fr]">
               <div>
                 <div class="flex flex-wrap items-center gap-2">
                   <strong>{{ booking.booking_reference }}</strong>
@@ -250,32 +230,6 @@ const refreshStaffView = () => {
                 <button type="button" class="mcd-button" @click="updateStatus(booking.id)">Update status</button>
               </div>
 
-              <div class="rounded-2xl bg-amber-50 p-4">
-                <p class="text-sm font-black uppercase tracking-[0.15em] text-red-700">Ongoing event edits</p>
-                <div class="mt-3 space-y-3">
-                  <select v-model="adjustmentState[booking.id].duration_hours" class="mcd-select">
-                    <option v-for="hours in durationOptions" :key="hours" :value="hours">{{ hours }} hours total</option>
-                  </select>
-
-                  <div class="rounded-2xl bg-white p-3">
-                    <p class="text-xs font-black uppercase tracking-[0.15em] text-red-700">Add extra food</p>
-                    <label v-for="bundle in menuBundles" :key="`${booking.id}-${bundle.code}`" class="mt-2 flex items-center gap-2 text-sm">
-                      <input v-model="adjustmentState[booking.id].extra_menu_bundles" :value="bundle.code" type="checkbox" />
-                      <span>{{ bundle.name }}</span>
-                    </label>
-                  </div>
-
-                  <div class="rounded-2xl bg-white p-3">
-                    <p class="text-xs font-black uppercase tracking-[0.15em] text-red-700">Add extra services</p>
-                    <label v-for="item in addOns" :key="`${booking.id}-${item.code}`" class="mt-2 flex items-center gap-2 text-sm">
-                      <input v-model="adjustmentState[booking.id].extra_add_ons" :value="item.code" type="checkbox" />
-                      <span>{{ item.name }}</span>
-                    </label>
-                  </div>
-
-                  <button type="button" class="mcd-button mcd-button--ghost" @click="updateServiceAdjustments(booking.id)">Save event edits</button>
-                </div>
-              </div>
             </div>
           </div>
         </div>

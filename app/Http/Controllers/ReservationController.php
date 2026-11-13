@@ -125,6 +125,7 @@ class ReservationController extends Controller
             'add_ons' => ['array'],
             'add_ons.*' => ['string', Rule::in(collect($catalog['addOns'])->pluck('code')->all())],
             'notes' => ['nullable', 'string', 'max:1000'],
+            'payment_type' => ['nullable', Rule::in(['down_payment', 'full_payment'])],
             'payment_proof' => ['required', 'image', 'max:4096'],
         ]);
 
@@ -215,6 +216,8 @@ class ReservationController extends Controller
             $addOns,
             (int) $validated['duration_hours']
         );
+        $paymentType = $validated['payment_type'] ?? 'full_payment';
+        $paymentAmountDue = $this->paymentAmountDue($receipt['total_raw'], $paymentType);
 
         Reservation::create([
             'user_id' => $customer->id,
@@ -248,6 +251,8 @@ class ReservationController extends Controller
                 'extra_manual_menu_items' => [],
             ],
             'payment_proof_path' => $proofPath,
+            'payment_type' => $paymentType,
+            'payment_amount_due' => $paymentAmountDue,
             'guests' => $validated['guests'],
             'total_amount' => $receipt['total_raw'],
             'check_in_code' => substr(hash('sha256', $bookingReference), 0, 10),
@@ -332,9 +337,6 @@ class ReservationController extends Controller
             'stats' => $this->adminStats($this->adminStatsBookings()),
             'groupedBookings' => $this->groupedBookings($catalog, $bookings),
             'staffUsers' => $this->adminStaffUsers(),
-            'menuBundles' => $catalog['menuBundles'],
-            'addOns' => $catalog['addOns'],
-            'durationOptions' => range(1, 16),
         ]);
     }
 
@@ -342,26 +344,11 @@ class ReservationController extends Controller
     {
         $this->authorizeRoles($request, ['admin', 'manager']);
         $bookings = $this->adminReservations(['user', 'assignedStaff'], ['confirmed', 'rescheduled', 'checked_in']);
-        $requestedProps = collect(explode(',', (string) $request->header('X-Inertia-Partial-Data')))
-            ->filter();
-        $needsCatalog = $requestedProps->isEmpty()
-            || $requestedProps->contains('menuBundles')
-            || $requestedProps->contains('addOns');
-
-        $props = [
+        return Inertia::render('Admin/ConfirmedEvents', [
             'stats' => $this->adminStats($this->adminStatsBookings()),
             'confirmedEvents' => $bookings->map(fn (Reservation $reservation) => $this->serializeReservation($reservation))->values(),
             'staffUsers' => $this->adminStaffUsers(),
-            'durationOptions' => range(1, 16),
-        ];
-
-        if ($needsCatalog) {
-            $catalog = $this->catalog();
-            $props['menuBundles'] = $catalog['menuBundles'];
-            $props['addOns'] = $catalog['addOns'];
-        }
-
-        return Inertia::render('Admin/ConfirmedEvents', $props);
+        ]);
     }
 
     public function adminAvailability(Request $request): InertiaResponse
@@ -542,6 +529,12 @@ class ReservationController extends Controller
         return Inertia::render('Admin/Reports', [
             'pricing' => $catalog['pricing'],
             'report' => $this->analyticsReport($bookings),
+            'completedEvents' => $bookings
+                ->where('status', 'completed')
+                ->sortByDesc('event_date')
+                ->take(50)
+                ->map(fn (Reservation $reservation) => $this->serializeReservation($reservation))
+                ->values(),
             'inventory' => $this->inventorySnapshot($catalog, $bookings),
             'staffAssignments' => $this->staffAssignments($catalog, $bookings),
         ]);
@@ -576,7 +569,8 @@ class ReservationController extends Controller
             $stream = fopen('php://output', 'w');
             fputcsv($stream, [
                 'Booking reference', 'Branch', 'Customer', 'Email', 'Phone', 'Status',
-                'Event date', 'Event time', 'Guests', 'Total amount', 'Assigned employee',
+                'Event date', 'Event time', 'Guests', 'Total amount', 'Payment method',
+                'Amount paid/due', 'Remaining balance', 'Assigned employee',
             ]);
 
             foreach ($bookings as $booking) {
@@ -591,6 +585,9 @@ class ReservationController extends Controller
                     $booking->event_time,
                     $booking->guests,
                     $booking->total_amount,
+                    ($booking->payment_type ?: 'full_payment') === 'down_payment' ? 'Down payment' : 'Full payment',
+                    $booking->payment_amount_due ?? $booking->total_amount,
+                    max(0, (float) $booking->total_amount - (float) ($booking->payment_amount_due ?? $booking->total_amount)),
                     $booking->assignedStaff?->name,
                 ]);
             }
@@ -685,9 +682,6 @@ class ReservationController extends Controller
             'notifications' => $this->upcomingEventNotifications($relevantBookings, 6),
             'history' => $this->eventHistory($relevantBookings, 8),
             'statusOptions' => ['available', 'cleaning', 'in_progress'],
-            'menuBundles' => $catalog['menuBundles'],
-            'addOns' => $catalog['addOns'],
-            'durationOptions' => range(1, 16),
         ]);
     }
 
@@ -764,7 +758,7 @@ class ReservationController extends Controller
         }
 
         if ($validated['status'] === 'completed') {
-            return back()->with('success', 'Event marked as done and moved to history.');
+            return back()->with('success', 'Event marked as done. Its completion report is now available in Admin Reports.');
         }
 
         return back()->with('success', 'Booking status updated.');
@@ -1218,6 +1212,10 @@ class ReservationController extends Controller
             'duration_hours' => (int) $validated['duration_hours'],
             'service_adjustments' => $serviceAdjustments,
             'total_amount' => $receipt['total_raw'],
+            'payment_amount_due' => $this->paymentAmountDue(
+                $receipt['total_raw'],
+                $reservation->payment_type ?: 'full_payment'
+            ),
         ]);
 
         return back()->with('success', 'Live event updates saved.');
@@ -1476,6 +1474,7 @@ class ReservationController extends Controller
                         'weekend_multiplier' => (float) ($pricing?->weekend_multiplier ?? 1.15),
                         'holiday_multiplier' => (float) ($pricing?->holiday_multiplier ?? 1.25),
                         'extension_hourly_rate' => (float) ($pricing?->extension_hourly_rate ?? 450),
+                        'down_payment_percentage' => (int) config('booking.pricing.down_payment_percentage', 50),
                         'holidays' => $pricing?->holidays ?? [],
                     ],
                 ];
@@ -2425,12 +2424,19 @@ class ReservationController extends Controller
             'manual_menu_items' => $manualMenuItems,
             'service_adjustments' => $serviceAdjustments,
             'total_amount' => (float) $reservation->total_amount,
+            'payment_type' => $reservation->payment_type ?: 'full_payment',
+            'payment_type_label' => ($reservation->payment_type ?: 'full_payment') === 'down_payment' ? 'Down payment' : 'Full payment',
+            'payment_amount_due' => (float) ($reservation->payment_amount_due ?? $reservation->total_amount),
+            'payment_balance' => max(0, (float) $reservation->total_amount - (float) ($reservation->payment_amount_due ?? $reservation->total_amount)),
             'receipt' => $receipt,
             'assigned_staff_id' => $reservation->assigned_staff_id,
             'assigned_staff_name' => $reservation->assignedStaff?->name,
             'check_in_code' => $reservation->check_in_code,
             'checked_in_at' => $reservation->checked_in_at?->toDateTimeString(),
             'checked_in_by' => $reservation->checked_in_by,
+            'completed_at' => $reservation->status === 'completed'
+                ? $reservation->updated_at?->format('M j, Y g:i A')
+                : null,
             'pass_url' => route('reservations.pass', [$reservation, 'download' => 1]),
             'pass_preview_url' => route('reservations.pass', $reservation),
             'qr_check_in_url' => $this->qrCheckInUrl($reservation),
@@ -2906,6 +2912,17 @@ class ReservationController extends Controller
         return "\u{20B1}";
     }
 
+    protected function paymentAmountDue(float $total, string $paymentType): float
+    {
+        if ($paymentType !== 'down_payment') {
+            return round($total, 2);
+        }
+
+        $percentage = min(100, max(1, (int) config('booking.pricing.down_payment_percentage', 50)));
+
+        return round($total * ($percentage / 100), 2);
+    }
+
     protected function adminPageData(): array
     {
         $catalog = $this->catalog();
@@ -3114,7 +3131,12 @@ class ReservationController extends Controller
 
     protected function analyticsReport($bookings): array
     {
+        $completedBookings = $bookings->where('status', 'completed');
+
         return [
+            'completed_count' => $completedBookings->count(),
+            'completed_revenue_raw' => (float) $completedBookings->sum('total_amount'),
+            'completed_revenue' => $this->currencySymbol().number_format($completedBookings->sum('total_amount'), 2),
             'top_event_types' => $bookings->groupBy('reservation_type')->map->count()->sortDesc()->map(fn ($count, $type) => [
                 'type' => ucfirst($type),
                 'count' => $count,

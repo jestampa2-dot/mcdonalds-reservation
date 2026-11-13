@@ -27,6 +27,7 @@ const catalogPricing = props.catalog?.pricing ?? {
   weekend_multiplier: 1.15,
   holiday_multiplier: 1.25,
   extension_hourly_rate: 450,
+  down_payment_percentage: 50,
   holidays: [],
 }
 const defaultEventDate = props.defaults?.event_date ?? new Date().toISOString().slice(0, 10)
@@ -64,6 +65,7 @@ const form = useForm({
   manual_menu_items: [],
   add_ons: [],
   notes: '',
+  payment_type: 'full_payment',
   payment_proof: null,
 })
 
@@ -456,6 +458,19 @@ const receiptPreview = computed(() => {
   }
 })
 
+const paymentPreview = computed(() => {
+  const percentage = form.payment_type === 'down_payment'
+    ? Number(catalogPricing.down_payment_percentage ?? 50)
+    : 100
+  const amountDue = receiptPreview.value.total * (percentage / 100)
+
+  return {
+    percentage,
+    amountDue,
+    balance: Math.max(receiptPreview.value.total - amountDue, 0),
+  }
+})
+
 const ensureCatalogSelection = () => {
   const fallbackBranch = supportedBranches.value[0]
 
@@ -687,6 +702,9 @@ const validationMessageForStep = (step) => {
   }
 
   if (step === 7) {
+    if (!['down_payment', 'full_payment'].includes(form.payment_type)) {
+      return 'Choose down payment or full payment.'
+    }
     if (!form.payment_proof) {
       return 'Upload an image of your payment proof before confirming.'
     }
@@ -750,7 +768,7 @@ const stepForServerErrors = (errors) => {
     { step: 4, fields: ['manual_menu_items'] },
     { step: 5, fields: ['add_ons'] },
     { step: 6, fields: ['notes'] },
-    { step: 7, fields: ['payment_proof'] },
+    { step: 7, fields: ['payment_type', 'payment_proof'] },
   ]
 
   return groups.find((group) => group.fields.some((field) => errorFields.some((key) => key === field || key.startsWith(`${field}.`))))?.step ?? 7
@@ -976,6 +994,7 @@ const submit = () => {
                   :start-time-label="startTimeLabel"
                   :end-time-label="endTimeLabel"
                   :receipt-preview="receiptPreview"
+                  :payment-preview="paymentPreview"
                   :pricing-rule="pricingRule"
                   :selected-manual-menu-items="selectedManualMenuItems"
                   :format-currency="formatCurrency"
@@ -994,9 +1013,8 @@ const submit = () => {
                 </button>
 
                 <div class="booking-wizard-dialog__footer-copy">
-                  <span>{{ currentStepDetails.label }}</span>
-                  <strong v-if="currentStep === 7">{{ formatCurrency(receiptPreview.total) }}</strong>
-                  <strong v-else>Step {{ currentStep }} of {{ wizardSteps.length }}</strong>
+                  <span>{{ currentStepDetails.label }} · Running total</span>
+                  <strong>{{ formatCurrency(receiptPreview.total) }}</strong>
                 </div>
 
                 <button

@@ -16,6 +16,11 @@ mkdir -p /var/www/html/storage/app/public/payment-proofs
 chown -R www-data:www-data /var/www/html/storage/app/public
 chmod -R ug+rwX /var/www/html/storage/app/public
 
+# Keep the hosted database schema synchronized with every deployed release.
+# Laravel migration locks make this safe to rerun when Railway restarts the
+# container, while --force allows the command in the production environment.
+php artisan migrate --force
+
 sed -ri "s/^Listen [0-9]+$/Listen ${APP_PORT}/" /etc/apache2/ports.conf
 sed -ri "s/<VirtualHost \*:[0-9]+>/<VirtualHost *:${APP_PORT}>/" /etc/apache2/sites-available/*.conf
 

@@ -136,6 +136,7 @@ export type BookingCatalog = {
     weekend_multiplier: number;
     holiday_multiplier: number;
     extension_hourly_rate: number;
+    down_payment_percentage: number;
     holidays: string[];
   };
 };
@@ -213,6 +214,10 @@ export type ReservationRecord = {
   service_status: string;
   notes?: string | null;
   total_amount: number;
+  payment_type: 'down_payment' | 'full_payment';
+  payment_type_label: string;
+  payment_amount_due: number;
+  payment_balance: number;
   receipt: {
     total: string;
     total_raw: number;

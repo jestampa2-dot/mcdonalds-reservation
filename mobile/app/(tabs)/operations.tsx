@@ -1,5 +1,4 @@
 import { router } from 'expo-router';
-import type { Dispatch, SetStateAction } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Image, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -29,25 +28,11 @@ import {
   updateInventoryItem,
   updatePackage,
   updateRoomOption,
-  updateServiceAdjustments,
 } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { formatCurrency } from '@/lib/formatters';
 import { AppThemeColors, useAppTheme } from '@/lib/theme';
 import type { OperationsPayload } from '@/lib/types';
-
-type AdjustmentState = {
-  duration_hours: string;
-  extra_menu_bundles: string[];
-  extra_add_ons: string[];
-};
-
-function normalizeAdjustmentState(booking: any): AdjustmentState {
-  return {
-    duration_hours: String(booking.duration_hours ?? 4),
-    extra_menu_bundles: booking.service_adjustments?.extra_menu_bundles ?? [],
-    extra_add_ons: booking.service_adjustments?.extra_add_ons ?? [],
-  };
-}
 
 function defaultUserForm() {
   return {
@@ -86,10 +71,8 @@ export default function OperationsScreen() {
   const [checkInCode, setCheckInCode] = useState('');
   const [cameraScannerOpen, setCameraScannerOpen] = useState(false);
   const [serviceStatusState, setServiceStatusState] = useState<Record<number, string>>({});
-  const [serviceAdjustmentsState, setServiceAdjustmentsState] = useState<Record<number, AdjustmentState>>({});
   const [adminStatusState, setAdminStatusState] = useState<Record<number, string>>({});
   const [adminCrewState, setAdminCrewState] = useState<Record<number, string>>({});
-  const [adminAdjustmentState, setAdminAdjustmentState] = useState<Record<number, AdjustmentState>>({});
   const [userCreateForm, setUserCreateForm] = useState(defaultUserForm());
   const [accountEdits, setAccountEdits] = useState<Record<number, any>>({});
   const [branchAccessCode, setBranchAccessCode] = useState('');
@@ -130,7 +113,6 @@ export default function OperationsScreen() {
 
       const staffBookings = response.staff?.todayBookings ?? [];
       setServiceStatusState(Object.fromEntries(staffBookings.map((booking: any) => [booking.id, booking.service_status])));
-      setServiceAdjustmentsState(Object.fromEntries(staffBookings.map((booking: any) => [booking.id, normalizeAdjustmentState(booking)])));
 
       const adminBookings = [
         ...(response.admin?.bookings?.groupedBookings ?? []).flatMap((group: any) =>
@@ -141,7 +123,6 @@ export default function OperationsScreen() {
 
       setAdminStatusState(Object.fromEntries(adminBookings.map((booking: any) => [booking.id, booking.status])));
       setAdminCrewState(Object.fromEntries(adminBookings.map((booking: any) => [booking.id, String(booking.assigned_staff_id ?? '')])));
-      setAdminAdjustmentState(Object.fromEntries(adminBookings.map((booking: any) => [booking.id, normalizeAdjustmentState(booking)])));
 
       const users = response.admin?.accounts?.users ?? [];
       setAccountEdits(
@@ -305,20 +286,6 @@ export default function OperationsScreen() {
     })();
   }, [payload?.role, selectedAvailability.branchCode, selectedAvailability.date, token]);
 
-  function setAdjustmentState(
-    setter: Dispatch<SetStateAction<Record<number, AdjustmentState>>>,
-    bookingId: number,
-    next: Partial<AdjustmentState>,
-  ) {
-    setter((current) => ({
-      ...current,
-      [bookingId]: {
-        ...(current[bookingId] ?? { duration_hours: '4', extra_menu_bundles: [], extra_add_ons: [] }),
-        ...next,
-      },
-    }));
-  }
-
   function toggleArrayValue(values: string[], value: string) {
     return values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
   }
@@ -372,8 +339,6 @@ export default function OperationsScreen() {
   const staff = payload?.staff;
   const admin = payload?.admin;
   const adminStaffUsers = admin?.bookings?.staffUsers ?? admin?.confirmedEvents?.staffUsers ?? [];
-  const adminMenuBundles = admin?.bookings?.menuBundles ?? [];
-  const adminAddOns = admin?.bookings?.addOns ?? [];
   const branches = admin?.availability?.availability?.branches ?? [];
   const manageableRoles = admin?.accounts?.canAssignMasterAdmin
     ? ['master_admin', 'customer', 'staff', 'manager', 'admin']
@@ -481,57 +446,6 @@ export default function OperationsScreen() {
                       }
                       tone="secondary"
                     />
-                    <Field
-                      label="Duration hours"
-                      value={serviceAdjustmentsState[booking.id]?.duration_hours ?? '4'}
-                      onChangeText={(value) => setAdjustmentState(setServiceAdjustmentsState, booking.id, { duration_hours: value })}
-                      keyboardType="numeric"
-                    />
-                    <Text style={styles.helperStrong}>Extra food</Text>
-                    <View style={styles.tagWrap}>
-                      {(staff.menuBundles ?? []).map((bundle: any) => (
-                        <Tag
-                          key={`${booking.id}-${bundle.code}`}
-                          label={bundle.name}
-                          active={serviceAdjustmentsState[booking.id]?.extra_menu_bundles?.includes(bundle.code)}
-                          onPress={() =>
-                            setAdjustmentState(setServiceAdjustmentsState, booking.id, {
-                              extra_menu_bundles: toggleArrayValue(serviceAdjustmentsState[booking.id]?.extra_menu_bundles ?? [], bundle.code),
-                            })
-                          }
-                        />
-                      ))}
-                    </View>
-                    <Text style={styles.helperStrong}>Extra services</Text>
-                    <View style={styles.tagWrap}>
-                      {(staff.addOns ?? []).map((item: any) => (
-                        <Tag
-                          key={`${booking.id}-${item.code}`}
-                          label={item.name}
-                          active={serviceAdjustmentsState[booking.id]?.extra_add_ons?.includes(item.code)}
-                          onPress={() =>
-                            setAdjustmentState(setServiceAdjustmentsState, booking.id, {
-                              extra_add_ons: toggleArrayValue(serviceAdjustmentsState[booking.id]?.extra_add_ons ?? [], item.code),
-                            })
-                          }
-                        />
-                      ))}
-                    </View>
-                    <AppButton
-                      label="Save event edits"
-                      onPress={() =>
-                        void runAction(
-                          () =>
-                            updateServiceAdjustments(token, booking.id, {
-                              duration_hours: Number(serviceAdjustmentsState[booking.id]?.duration_hours ?? 4),
-                              extra_menu_bundles: serviceAdjustmentsState[booking.id]?.extra_menu_bundles ?? [],
-                              extra_add_ons: serviceAdjustmentsState[booking.id]?.extra_add_ons ?? [],
-                            }),
-                          'Live event updates saved',
-                        )
-                      }
-                      tone="ghost"
-                    />
                   </View>
                 ))}
               </View>
@@ -590,6 +504,9 @@ export default function OperationsScreen() {
                     <Text style={styles.cardMeta}>{booking.customer_name} · {booking.package_name}</Text>
                     <Text style={styles.cardMeta}>{booking.branch} · {booking.event_date} · {booking.event_time}</Text>
                     <Text style={styles.helper}>Contact: {booking.customer_email} · {booking.customer_phone}</Text>
+                    <Text style={styles.billTotal}>Total bill: {formatCurrency(Number(booking.total_amount ?? 0))}</Text>
+                    <Text style={styles.helper}>{booking.payment_type_label} · pay now {formatCurrency(Number(booking.payment_amount_due ?? booking.total_amount ?? 0))}</Text>
+                    {Number(booking.payment_balance ?? 0) > 0 ? <Text style={styles.helper}>Balance: {formatCurrency(Number(booking.payment_balance))}</Text> : null}
                     <Text style={styles.helper}>{booking.notes || 'No notes'}</Text>
                     {booking.payment_proof_preview_url ? (
                       <View style={styles.paymentProofPanel}>
@@ -661,6 +578,9 @@ export default function OperationsScreen() {
                     <Text style={styles.cardMeta}>{booking.customer_name} · {booking.package_name}</Text>
                     <Text style={styles.cardMeta}>{booking.branch} · {booking.event_date} · {booking.event_time}</Text>
                     <Text style={styles.helper}>Assigned crew: {booking.assigned_staff_name || 'Unassigned'}</Text>
+                    <Text style={styles.billTotal}>Total bill: {formatCurrency(Number(booking.total_amount ?? 0))}</Text>
+                    <Text style={styles.helper}>{booking.payment_type_label} · pay now {formatCurrency(Number(booking.payment_amount_due ?? booking.total_amount ?? 0))}</Text>
+                    {Number(booking.payment_balance ?? 0) > 0 ? <Text style={styles.helper}>Balance: {formatCurrency(Number(booking.payment_balance))}</Text> : null}
                     <Text style={styles.helperStrong}>Status</Text>
                     <View style={styles.tagWrap}>
                       {['confirmed', 'rescheduled', 'checked_in', 'completed', 'cancelled'].map((status) => (
@@ -681,57 +601,6 @@ export default function OperationsScreen() {
                         )
                       }
                       tone="secondary"
-                    />
-                    <Field
-                      label="Duration hours"
-                      value={adminAdjustmentState[booking.id]?.duration_hours ?? '4'}
-                      onChangeText={(value) => setAdjustmentState(setAdminAdjustmentState, booking.id, { duration_hours: value })}
-                      keyboardType="numeric"
-                    />
-                    <Text style={styles.helperStrong}>Extra food</Text>
-                    <View style={styles.tagWrap}>
-                      {adminMenuBundles.map((bundle: any) => (
-                        <Tag
-                          key={`${booking.id}-${bundle.code}`}
-                          label={bundle.name}
-                          active={adminAdjustmentState[booking.id]?.extra_menu_bundles?.includes(bundle.code)}
-                          onPress={() =>
-                            setAdjustmentState(setAdminAdjustmentState, booking.id, {
-                              extra_menu_bundles: toggleArrayValue(adminAdjustmentState[booking.id]?.extra_menu_bundles ?? [], bundle.code),
-                            })
-                          }
-                        />
-                      ))}
-                    </View>
-                    <Text style={styles.helperStrong}>Extra services</Text>
-                    <View style={styles.tagWrap}>
-                      {adminAddOns.map((item: any) => (
-                        <Tag
-                          key={`${booking.id}-${item.code}`}
-                          label={item.name}
-                          active={adminAdjustmentState[booking.id]?.extra_add_ons?.includes(item.code)}
-                          onPress={() =>
-                            setAdjustmentState(setAdminAdjustmentState, booking.id, {
-                              extra_add_ons: toggleArrayValue(adminAdjustmentState[booking.id]?.extra_add_ons ?? [], item.code),
-                            })
-                          }
-                        />
-                      ))}
-                    </View>
-                    <AppButton
-                      label="Save event edits"
-                      onPress={() =>
-                        void runAction(
-                          () =>
-                            updateServiceAdjustments(token, booking.id, {
-                              duration_hours: Number(adminAdjustmentState[booking.id]?.duration_hours ?? 4),
-                              extra_menu_bundles: adminAdjustmentState[booking.id]?.extra_menu_bundles ?? [],
-                              extra_add_ons: adminAdjustmentState[booking.id]?.extra_add_ons ?? [],
-                            }),
-                          'Live event updates saved',
-                        )
-                      }
-                      tone="ghost"
                     />
                   </View>
                 ))}
@@ -1118,6 +987,26 @@ export default function OperationsScreen() {
                 <Text key={`branch-mix-${item.branch}`} style={styles.helper}>{item.branch}: {item.count}</Text>
               ))}
 
+              <Text style={styles.helperStrong}>Completed event reports</Text>
+              <Text style={styles.billTotal}>{admin.reports?.report?.completed_revenue ?? formatCurrency(0)}</Text>
+              <Text style={styles.helper}>{admin.reports?.report?.completed_count ?? 0} completed events</Text>
+              <View style={styles.stack}>
+                {(admin.reports?.completedEvents ?? []).map((booking: any) => (
+                  <View key={`completed-report-${booking.id}`} style={styles.cardSoft}>
+                    <Text style={styles.cardTitle}>{booking.booking_reference}</Text>
+                    <Text style={styles.cardMeta}>{booking.customer_name} · {booking.branch}</Text>
+                    <Text style={styles.cardMeta}>{booking.event_date} · {booking.event_time}</Text>
+                    <Text style={styles.billTotal}>Final bill: {formatCurrency(Number(booking.total_amount ?? 0))}</Text>
+                    <Text style={styles.helper}>{booking.payment_type_label} · paid/proof {formatCurrency(Number(booking.payment_amount_due ?? booking.total_amount ?? 0))}</Text>
+                    <Text style={styles.helper}>Balance: {formatCurrency(Number(booking.payment_balance ?? 0))}</Text>
+                    <Text style={styles.helper}>Completed: {booking.completed_at || 'Recorded'}</Text>
+                    {(booking.receipt?.line_items ?? []).map((line: any) => (
+                      <Text key={`${booking.id}-${line.label}`} style={styles.helper}>• {line.label}: ₱{line.amount}</Text>
+                    ))}
+                  </View>
+                ))}
+              </View>
+
               <Text style={styles.helperStrong}>Inventory</Text>
               <View style={styles.stack}>
                 {(admin.reports?.inventory ?? []).map((branch: any) => (
@@ -1253,6 +1142,11 @@ const createStyles = (colors: AppThemeColors) => StyleSheet.create({
   cardMeta: {
     color: colors.textMuted,
     lineHeight: 19,
+  },
+  billTotal: {
+    color: colors.brandText,
+    fontSize: 18,
+    fontWeight: '900',
   },
   tagWrap: {
     flexDirection: 'row',
