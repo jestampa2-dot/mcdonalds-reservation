@@ -51,6 +51,7 @@ Route::prefix('mobile')->group(function () {
         Route::post('/admin/branch-access-requests', [MobileOperationsController::class, 'mobileStoreBranchAccessRequest']);
         Route::post('/admin/branch-access-requests/{branchAccessRequest}/review', [MobileOperationsController::class, 'mobileReviewBranchAccessRequest']);
         Route::post('/staff/check-in', [MobileOperationsController::class, 'mobileCheckIn']);
+        Route::post('/staff/branches/{branch}/payment-details', [MobileOperationsController::class, 'mobileUpdateBranchPaymentDetails']);
         Route::post('/staff/reservations/{reservation}/service-status', [MobileOperationsController::class, 'mobileUpdateServiceStatus']);
         Route::post('/staff/reservations/{reservation}/adjustments', [MobileOperationsController::class, 'mobileUpdateServiceAdjustments']);
 

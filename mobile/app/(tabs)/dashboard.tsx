@@ -30,7 +30,7 @@ import {
 } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { readCacheEnvelope, writeCache } from '@/lib/cache';
-import { formatLongDate, formatStatusLabel, formatTimeLabel } from '@/lib/formatters';
+import { formatCurrency, formatLongDate, formatStatusLabel, formatTimeLabel } from '@/lib/formatters';
 import { useAppPreferences } from '@/lib/preferences';
 import { AppThemeColors, useAppTheme } from '@/lib/theme';
 import type { DashboardPayload, EventInvitation } from '@/lib/types';

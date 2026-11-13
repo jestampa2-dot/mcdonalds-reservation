@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
+use Throwable;
 
 class MobileOperationsController extends ReservationController
 {
@@ -364,9 +365,72 @@ class MobileOperationsController extends ReservationController
         ]);
     }
 
+    public function mobileUpdateBranchPaymentDetails(Request $request, Branch $branch): JsonResponse
+    {
+        $this->authorizeRoles($request, ['admin', 'manager', 'staff']);
+        $this->authorizeBranchAccess($request, $branch->code);
+
+        $validated = $request->validate([
+            'payment_number' => ['nullable', 'string', 'max:100'],
+            'payment_qr' => ['nullable', 'image', 'max:4096'],
+            'remove_payment_qr' => ['sometimes', 'boolean'],
+        ]);
+
+        $disk = Storage::disk('public');
+        $oldPath = $branch->payment_qr_path;
+        $newPath = $oldPath;
+
+        if ($request->hasFile('payment_qr')) {
+            $newPath = $request->file('payment_qr')->store('branch-payment-qrs', 'public');
+        } elseif ($request->boolean('remove_payment_qr')) {
+            $newPath = null;
+        }
+
+        $paymentNumber = trim((string) ($validated['payment_number'] ?? ''));
+
+        if ($paymentNumber === '' && ! $newPath) {
+            return response()->json([
+                'message' => 'Enter a payment number or upload a payment QR code.',
+                'errors' => [
+                    'payment_number' => ['Enter a payment number or upload a payment QR code.'],
+                ],
+            ], 422);
+        }
+
+        try {
+            $branch->update([
+                'payment_number' => $paymentNumber !== '' ? $paymentNumber : null,
+                'payment_qr_path' => $newPath,
+            ]);
+        } catch (Throwable $exception) {
+            if ($newPath && $newPath !== $oldPath) {
+                $disk->delete($newPath);
+            }
+
+            report($exception);
+
+            return response()->json([
+                'message' => 'The branch payment details could not be saved. Please try again.',
+            ], 500);
+        }
+
+        if ($oldPath && $oldPath !== $newPath) {
+            $disk->delete($oldPath);
+        }
+
+        return response()->json([
+            'message' => 'Branch payment QR and number updated.',
+            'branch' => $this->serializeBranch($branch->fresh()),
+        ]);
+    }
+
     public function mobileDestroyBranch(Request $request, Branch $branch): JsonResponse
     {
         $this->authorizeRoles($request, ['master_admin']);
+
+        if ($branch->payment_qr_path) {
+            Storage::disk('public')->delete($branch->payment_qr_path);
+        }
 
         $branch->delete();
 
@@ -815,6 +879,7 @@ class MobileOperationsController extends ReservationController
             'notifications' => $this->upcomingEventNotifications($relevantBookings, 6),
             'history' => $this->eventHistory($relevantBookings, 8),
             'statusOptions' => ['available', 'cleaning', 'in_progress'],
+            'paymentBranches' => $this->branchPaymentDetailsList($request->user()),
         ];
     }
 
@@ -841,6 +906,8 @@ class MobileOperationsController extends ReservationController
             'name' => $branch->name,
             'city' => $branch->city,
             'map_url' => $branch->map_url,
+            'payment_number' => $branch->payment_number,
+            'payment_qr_url' => $this->branchPaymentQrUrl($branch),
             'concurrent_limit' => $branch->concurrent_limit,
             'max_guests' => $branch->max_guests,
             'supports' => collect($branch->supports ?? [])

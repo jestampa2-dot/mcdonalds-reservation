@@ -1,3 +1,5 @@
+import * as ImagePicker from 'expo-image-picker';
+import { File } from 'expo-file-system';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Image, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -23,6 +25,7 @@ import {
   updateAdminUser,
   updateBookingSettings,
   updateBranch,
+  updateBranchPaymentDetails,
   updateEventType,
   updateFloorStatus,
   updateInventoryItem,
@@ -79,6 +82,9 @@ export default function OperationsScreen() {
   const [branchAccessMessage, setBranchAccessMessage] = useState('');
   const [branchCreateForm, setBranchCreateForm] = useState(defaultBranchForm());
   const [branchEdits, setBranchEdits] = useState<Record<number, any>>({});
+  const [paymentNumberState, setPaymentNumberState] = useState<Record<number, string>>({});
+  const [paymentQrState, setPaymentQrState] = useState<Record<number, { uri: string; name: string; size: number }>>({});
+  const [paymentQrRemovalState, setPaymentQrRemovalState] = useState<Record<number, boolean>>({});
   const [bookingSettingsForm, setBookingSettingsForm] = useState({
     opening_hour: '7',
     closing_hour: '23',
@@ -113,6 +119,9 @@ export default function OperationsScreen() {
 
       const staffBookings = response.staff?.todayBookings ?? [];
       setServiceStatusState(Object.fromEntries(staffBookings.map((booking: any) => [booking.id, booking.service_status])));
+      const paymentBranches = response.staff?.paymentBranches ?? [];
+      setPaymentNumberState(Object.fromEntries(paymentBranches.map((branch: any) => [branch.id, branch.payment_number ?? ''])));
+      setPaymentQrRemovalState(Object.fromEntries(paymentBranches.map((branch: any) => [branch.id, false])));
 
       const adminBookings = [
         ...(response.admin?.bookings?.groupedBookings ?? []).flatMap((group: any) =>
@@ -310,6 +319,72 @@ export default function OperationsScreen() {
     await runAction(() => checkInGuest(token!, code), 'Guest checked in');
   }
 
+  async function selectBranchPaymentQr(branchId: number) {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (!permission.granted) {
+      Alert.alert('Photo access required', 'Allow photo access to select the branch payment QR image.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.85,
+    });
+
+    if (result.canceled || !result.assets[0]) {
+      return;
+    }
+
+    const asset = result.assets[0];
+    const selectedFile = new File(asset.uri);
+
+    if (selectedFile.size > 4 * 1024 * 1024) {
+      Alert.alert('QR image is too large', 'Choose an image that is 4 MB or smaller.');
+      return;
+    }
+
+    setPaymentQrState((current) => ({
+      ...current,
+      [branchId]: {
+        uri: asset.uri,
+        name: asset.fileName ?? `branch-payment-qr-${branchId}.jpg`,
+        size: selectedFile.size,
+      },
+    }));
+    setPaymentQrRemovalState((current) => ({ ...current, [branchId]: false }));
+  }
+
+  async function saveBranchPaymentDetails(branchId: number) {
+    if (!token) {
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('payment_number', paymentNumberState[branchId] ?? '');
+    formData.append('remove_payment_qr', paymentQrRemovalState[branchId] ? '1' : '0');
+
+    const selectedQr = paymentQrState[branchId];
+    if (selectedQr) {
+      formData.append('payment_qr', new File(selectedQr.uri), selectedQr.name);
+    }
+
+    try {
+      const response = await updateBranchPaymentDetails(token, branchId, formData);
+      Alert.alert('Payment details saved', response.message);
+      setPaymentQrState((current) => {
+        const next = { ...current };
+        delete next[branchId];
+        return next;
+      });
+      await loadOperations();
+    } catch (error) {
+      Alert.alert('Payment details not saved', getErrorMessage(error));
+    }
+  }
+
   if (booting) {
     return (
       <AppScreen eyebrow="Operations" title="Loading tools" subtitle="Checking role access and restoring your session.">
@@ -392,6 +467,44 @@ export default function OperationsScreen() {
                 }
               />
             </Panel>
+
+            {(staff.paymentBranches ?? []).length ? (
+              <Panel>
+                <SectionHeading label="Branch payments" title="Payment QR and account number" />
+                <Text style={styles.helper}>Only branches assigned to your account are shown. Customers see these details at payment.</Text>
+                <View style={styles.stack}>
+                  {(staff.paymentBranches ?? []).map((branch: any) => {
+                    const selectedQr = paymentQrState[branch.id];
+                    const visibleQr = paymentQrRemovalState[branch.id]
+                      ? null
+                      : selectedQr?.uri ?? branch.payment_qr_url;
+
+                    return (
+                      <View key={`payment-branch-${branch.id}`} style={styles.cardSoft}>
+                        <Text style={styles.cardTitle}>{branch.name}</Text>
+                        <Text style={styles.cardMeta}>{branch.code}</Text>
+                        {visibleQr ? <Image source={{ uri: visibleQr }} style={styles.branchPaymentQr} resizeMode="contain" /> : null}
+                        <Field
+                          label="Payment account or mobile number"
+                          value={paymentNumberState[branch.id] ?? ''}
+                          onChangeText={(value) => setPaymentNumberState((current) => ({ ...current, [branch.id]: value }))}
+                          placeholder="Example: GCash 0917 123 4567"
+                        />
+                        <AppButton label={selectedQr ? 'Change selected QR' : 'Choose QR image'} onPress={() => void selectBranchPaymentQr(branch.id)} tone="secondary" />
+                        {branch.payment_qr_url ? (
+                          <Tag
+                            label={paymentQrRemovalState[branch.id] ? 'QR will be removed' : 'Remove current QR'}
+                            active={Boolean(paymentQrRemovalState[branch.id])}
+                            onPress={() => setPaymentQrRemovalState((current) => ({ ...current, [branch.id]: !current[branch.id] }))}
+                          />
+                        ) : null}
+                        <AppButton label="Save payment details" onPress={() => void saveBranchPaymentDetails(branch.id)} />
+                      </View>
+                    );
+                  })}
+                </View>
+              </Panel>
+            ) : null}
 
             <Panel>
               <SectionHeading label="Staff" title="Prep list and alerts" />
@@ -1098,6 +1211,13 @@ const createStyles = (colors: AppThemeColors) => StyleSheet.create({
     height: 220,
     borderRadius: 8,
     backgroundColor: colors.surfaceMuted,
+  },
+  branchPaymentQr: {
+    alignSelf: 'center',
+    width: 220,
+    height: 220,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
   },
   helper: {
     color: colors.textMuted,

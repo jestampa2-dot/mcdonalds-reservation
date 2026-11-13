@@ -247,7 +247,7 @@ async function requestJson<T>(path: string, options: ApiRequestOptions = {}): Pr
 
     if (isUploadRequest) {
       throw new ApiError(
-        `The payment proof could not be uploaded to ${apiBaseUrl}. ${connectionHelp} Your booking was not duplicated; you can safely try again.`,
+        `The image could not be uploaded to ${apiBaseUrl}. ${connectionHelp} You can safely try again.`,
         0,
       );
     }
@@ -611,6 +611,15 @@ export function updateBranch(token: string, branchId: number, payload: Record<st
     method: 'PUT',
     token,
     body: JSON.stringify(payload),
+  });
+}
+
+export function updateBranchPaymentDetails(token: string, branchId: number, payload: FormData) {
+  return requestJson<{ message: string; branch: Record<string, any> }>(`/api/mobile/staff/branches/${branchId}/payment-details`, {
+    method: 'POST',
+    token,
+    body: payload,
+    timeoutMs: 20000,
   });
 }
 

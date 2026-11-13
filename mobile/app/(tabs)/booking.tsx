@@ -1307,6 +1307,26 @@ export default function BookingScreen() {
                   <Text style={styles.paymentChoiceAmount}>{formatCurrency(paymentBalance)}</Text>
                 </View>
               </View>
+              {selectedBranch?.payment_qr_url || selectedBranch?.payment_number ? (
+                <View style={styles.branchPaymentPanel}>
+                  <Text style={styles.branchPaymentTitle}>Pay {selectedBranch.name}</Text>
+                  {selectedBranch.payment_qr_url ? (
+                    <Image source={{ uri: selectedBranch.payment_qr_url }} style={styles.branchPaymentQr} resizeMode="contain" />
+                  ) : null}
+                  <Text style={styles.helperText}>Scan the branch QR or use the number below, then upload your receipt as proof.</Text>
+                  {selectedBranch.payment_number ? (
+                    <View style={styles.branchPaymentNumberCard}>
+                      <Text style={styles.branchPaymentNumberLabel}>Payment account or mobile number</Text>
+                      <Text selectable style={styles.branchPaymentNumber}>{selectedBranch.payment_number}</Text>
+                    </View>
+                  ) : null}
+                  <Text style={styles.branchPaymentDue}>Amount to send: {formatCurrency(paymentAmountDue)}</Text>
+                </View>
+              ) : (
+                <View style={styles.branchPaymentWarning}>
+                  <Text style={styles.helperText}>This branch has not published a payment QR or number yet. Contact the branch before sending payment.</Text>
+                </View>
+              )}
               <Text style={styles.helperText}>Choose a JPG, PNG, or another image format up to 4 MB.</Text>
               <CustomerButton
                 label={paymentProof ? 'Replace payment proof' : 'Choose payment proof'}
@@ -1629,6 +1649,54 @@ const createStyles = (colors: AppThemeColors) => StyleSheet.create({
     color: colors.brandText,
     fontSize: 18,
     fontWeight: '900',
+  },
+  branchPaymentPanel: {
+    gap: 12,
+    padding: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  branchPaymentTitle: {
+    color: colors.brandText,
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  branchPaymentQr: {
+    alignSelf: 'center',
+    width: 230,
+    height: 230,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+  },
+  branchPaymentNumberCard: {
+    gap: 6,
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceAlt,
+  },
+  branchPaymentNumberLabel: {
+    color: colors.brandText,
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  branchPaymentNumber: {
+    color: colors.text,
+    fontSize: 20,
+    fontWeight: '900',
+  },
+  branchPaymentDue: {
+    color: colors.text,
+    fontWeight: '900',
+  },
+  branchPaymentWarning: {
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.warningSurface,
   },
   horizontalScroll: {
     gap: 10,

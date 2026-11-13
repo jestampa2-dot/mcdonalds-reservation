@@ -682,6 +682,7 @@ class ReservationController extends Controller
             'notifications' => $this->upcomingEventNotifications($relevantBookings, 6),
             'history' => $this->eventHistory($relevantBookings, 8),
             'statusOptions' => ['available', 'cleaning', 'in_progress'],
+            'paymentBranches' => $this->branchPaymentDetailsList($request->user()),
         ]);
     }
 
@@ -1088,9 +1089,68 @@ class ReservationController extends Controller
         return back()->with('success', 'Branch updated.');
     }
 
+    public function updateBranchPaymentDetails(Request $request, Branch $branch): RedirectResponse
+    {
+        $this->authorizeRoles($request, ['admin', 'manager', 'staff']);
+        $this->authorizeBranchAccess($request, $branch->code);
+
+        $validated = $request->validate([
+            'payment_number' => ['nullable', 'string', 'max:100'],
+            'payment_qr' => ['nullable', 'image', 'max:4096'],
+            'remove_payment_qr' => ['sometimes', 'boolean'],
+        ]);
+
+        $disk = Storage::disk('public');
+        $oldPath = $branch->payment_qr_path;
+        $newPath = $oldPath;
+
+        if ($request->hasFile('payment_qr')) {
+            $newPath = $request->file('payment_qr')->store('branch-payment-qrs', 'public');
+        } elseif ($request->boolean('remove_payment_qr')) {
+            $newPath = null;
+        }
+
+        $paymentNumber = trim((string) ($validated['payment_number'] ?? ''));
+
+        if ($paymentNumber === '' && ! $newPath) {
+            if ($newPath && $newPath !== $oldPath) {
+                $disk->delete($newPath);
+            }
+
+            return back()->withErrors([
+                'payment_number' => 'Enter a payment number or upload a payment QR code.',
+            ])->with('error', 'A branch payment number or QR code is required.');
+        }
+
+        try {
+            $branch->update([
+                'payment_number' => $paymentNumber !== '' ? $paymentNumber : null,
+                'payment_qr_path' => $newPath,
+            ]);
+        } catch (Throwable $exception) {
+            if ($newPath && $newPath !== $oldPath) {
+                $disk->delete($newPath);
+            }
+
+            report($exception);
+
+            return back()->with('error', 'The branch payment details could not be saved. Please try again.');
+        }
+
+        if ($oldPath && $oldPath !== $newPath) {
+            $disk->delete($oldPath);
+        }
+
+        return back()->with('success', 'Branch payment QR and number updated.');
+    }
+
     public function destroyBranch(Request $request, Branch $branch): RedirectResponse
     {
         $this->authorizeRoles($request, ['master_admin']);
+
+        if ($branch->payment_qr_path) {
+            Storage::disk('public')->delete($branch->payment_qr_path);
+        }
 
         $branch->delete();
 
@@ -1564,6 +1624,8 @@ class ReservationController extends Controller
                     'name' => $branch->name,
                     'city' => $branch->city,
                     'map_url' => $branch->map_url,
+                    'payment_number' => $branch->payment_number,
+                    'payment_qr_url' => $this->branchPaymentQrUrl($branch),
                     'concurrent_limit' => $branch->concurrent_limit,
                     'max_guests' => $branch->max_guests,
                     'supports' => collect($branch->supports ?? [])
@@ -1587,6 +1649,8 @@ class ReservationController extends Controller
             'name' => $branch['name'],
             'city' => $branch['city'],
             'map_url' => $branch['map_url'] ?? null,
+            'payment_number' => $branch['payment_number'] ?? null,
+            'payment_qr_url' => $branch['payment_qr_url'] ?? null,
             'concurrent_limit' => $branch['concurrent_limit'] ?? 1,
             'max_guests' => $branch['max_guests'] ?? 40,
             'supports' => collect($branch['supports'] ?? [])
@@ -1646,6 +1710,36 @@ class ReservationController extends Controller
         }
 
         return $codes->map(fn ($code) => (string) $code)->unique()->values()->all();
+    }
+
+    protected function branchPaymentDetailsList(?User $user): array
+    {
+        if (! $this->hasTableSafely('branches')) {
+            return [];
+        }
+
+        return $this->runDatabaseCheck(
+            fn () => $this->scopeToAccessibleBranches(Branch::query(), $user, 'code')
+                ->orderBy('name')
+                ->get()
+                ->map(fn (Branch $branch) => [
+                    'id' => $branch->id,
+                    'code' => $branch->code,
+                    'name' => $branch->name,
+                    'payment_number' => $branch->payment_number,
+                    'payment_qr_url' => $this->branchPaymentQrUrl($branch),
+                ])
+                ->values()
+                ->all(),
+            []
+        );
+    }
+
+    protected function branchPaymentQrUrl(Branch $branch): ?string
+    {
+        return $branch->payment_qr_path
+            ? url(Storage::disk('public')->url($branch->payment_qr_path))
+            : null;
     }
 
     protected function canAccessBranch(?User $user, ?string $branchCode): bool
@@ -1875,6 +1969,8 @@ class ReservationController extends Controller
                 'concurrent_limit' => $branch->concurrent_limit,
                 'max_guests' => $branch->max_guests,
                 'map_url' => $branch->map_url,
+                'payment_number' => $branch->payment_number,
+                'payment_qr_url' => $this->branchPaymentQrUrl($branch),
                 'inventory' => $branch->inventoryItems->isNotEmpty()
                     ? $branch->inventoryItems->sortBy('sort_order')->map(fn ($item) => [
                         'item' => $item->item,

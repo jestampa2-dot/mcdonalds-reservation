@@ -58,6 +58,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/admin/booking-settings', [ReservationController::class, 'updateBookingSettings'])->name('admin.booking-settings.update');
 
     Route::get('/staff/dashboard', [ReservationController::class, 'staffDashboard'])->name('staff.dashboard');
+    Route::post('/staff/branches/{branch}/payment-details', [ReservationController::class, 'updateBranchPaymentDetails'])->name('staff.branches.payment-details');
     Route::post('/staff/check-in', [ReservationController::class, 'checkIn'])->name('staff.check-in');
     Route::post('/staff/reservations/{reservation}/service-status', [ReservationController::class, 'updateServiceStatus'])->name('staff.reservations.service-status');
     Route::post('/staff/reservations/{reservation}/adjustments', [ReservationController::class, 'updateServiceAdjustments'])->name('staff.reservations.adjustments');

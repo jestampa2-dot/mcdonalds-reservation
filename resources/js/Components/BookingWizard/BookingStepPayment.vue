@@ -98,6 +98,26 @@ defineProps({
             <p class="mt-2 text-2xl font-black text-slate-900">{{ formatCurrency(paymentPreview.balance) }}</p>
           </div>
         </div>
+
+        <div v-if="branch?.payment_qr_url || branch?.payment_number" class="mt-5 rounded-3xl border border-amber-200 bg-white p-5">
+          <p class="text-sm font-black uppercase tracking-[0.15em] text-red-700">Pay {{ branch?.name }}</p>
+          <div class="mt-4 grid items-center gap-5 sm:grid-cols-[220px,1fr]">
+            <div v-if="branch?.payment_qr_url" class="rounded-2xl border border-slate-200 bg-white p-3">
+              <img :src="branch.payment_qr_url" :alt="`${branch.name} payment QR code`" class="aspect-square w-full rounded-xl object-contain" />
+            </div>
+            <div>
+              <p class="text-sm text-slate-600">Scan the branch QR or use the payment number below, then upload your receipt as proof.</p>
+              <div v-if="branch?.payment_number" class="mt-4 rounded-2xl bg-amber-50 p-4">
+                <p class="text-xs font-black uppercase tracking-[0.15em] text-red-700">Payment account or mobile number</p>
+                <p class="mt-2 break-all text-xl font-black text-slate-900">{{ branch.payment_number }}</p>
+              </div>
+              <p class="mt-4 text-sm font-bold text-slate-700">Amount to send: {{ formatCurrency(paymentPreview.amountDue) }}</p>
+            </div>
+          </div>
+        </div>
+        <div v-else class="mt-5 rounded-3xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-slate-700">
+          This branch has not published a payment QR or number yet. Contact the branch before sending payment.
+        </div>
       </fieldset>
 
       <div class="mt-6 mcd-field">

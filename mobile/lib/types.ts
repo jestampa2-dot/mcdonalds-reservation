@@ -30,6 +30,8 @@ export type Branch = {
   concurrent_limit: number;
   max_guests: number;
   map_url?: string | null;
+  payment_number?: string | null;
+  payment_qr_url?: string | null;
 };
 
 export type PackageOption = {

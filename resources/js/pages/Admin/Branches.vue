@@ -22,6 +22,8 @@ const emptyBranchEdit = (branch) => ({
 })
 
 const branchEdits = reactive({})
+const paymentEdits = reactive({})
+const paymentSaving = reactive({})
 
 const branchForm = useForm({
   name: '',
@@ -43,9 +45,17 @@ watch(
     Object.keys(branchEdits).forEach((key) => {
       delete branchEdits[key]
     })
+    Object.keys(paymentEdits).forEach((key) => {
+      delete paymentEdits[key]
+    })
 
     branches.forEach((branch) => {
       branchEdits[branch.id] = emptyBranchEdit(branch)
+      paymentEdits[branch.id] = {
+        payment_number: branch.payment_number ?? '',
+        payment_qr: null,
+        remove_payment_qr: false,
+      }
     })
   },
   { immediate: true },
@@ -55,6 +65,31 @@ const updateBranch = (id) => {
   router.post(route('admin.branches.update', id), branchEdits[id], {
     preserveScroll: true,
     preserveState: true,
+  })
+}
+
+const selectPaymentQr = (id, event) => {
+  paymentEdits[id].payment_qr = event.target.files?.[0] ?? null
+  paymentEdits[id].remove_payment_qr = false
+}
+
+const updatePaymentDetails = (id) => {
+  const data = new FormData()
+  data.append('payment_number', paymentEdits[id].payment_number ?? '')
+  data.append('remove_payment_qr', paymentEdits[id].remove_payment_qr ? '1' : '0')
+
+  if (paymentEdits[id].payment_qr) {
+    data.append('payment_qr', paymentEdits[id].payment_qr)
+  }
+
+  paymentSaving[id] = true
+  router.post(route('staff.branches.payment-details', id), data, {
+    forceFormData: true,
+    preserveScroll: true,
+    preserveState: true,
+    onFinish: () => {
+      paymentSaving[id] = false
+    },
   })
 }
 
@@ -147,6 +182,38 @@ const deleteBranch = (id) => {
                     <label class="flex items-center gap-2"><input v-model="branchEdits[branch.id].supports" type="checkbox" value="birthday" /> <span>Birthday</span></label>
                     <label class="flex items-center gap-2"><input v-model="branchEdits[branch.id].supports" type="checkbox" value="business" /> <span>Business</span></label>
                     <label class="flex items-center gap-2"><input v-model="branchEdits[branch.id].supports" type="checkbox" value="table" /> <span>Table</span></label>
+                  </div>
+                </div>
+                <div class="rounded-3xl border border-amber-200 bg-amber-50 p-5">
+                  <p class="text-sm font-black uppercase tracking-[0.2em] text-red-700">Customer payment destination</p>
+                  <p class="mt-2 text-sm text-slate-600">This branch's QR code and account or mobile number will appear in the customer's payment step.</p>
+                  <div class="mt-4 grid gap-4 lg:grid-cols-[180px,1fr]">
+                    <div class="rounded-2xl bg-white p-3 text-center">
+                      <img
+                        v-if="branch.payment_qr_url && !paymentEdits[branch.id].remove_payment_qr"
+                        :src="branch.payment_qr_url"
+                        :alt="`${branch.name} payment QR code`"
+                        class="mx-auto aspect-square w-full rounded-xl object-contain"
+                      />
+                      <p v-else class="grid aspect-square place-items-center text-sm font-bold text-slate-400">No QR uploaded</p>
+                    </div>
+                    <div class="grid gap-3">
+                      <label class="mcd-field">
+                        <span>Payment account or mobile number</span>
+                        <input v-model="paymentEdits[branch.id].payment_number" type="text" class="mcd-input" maxlength="100" placeholder="Example: GCash 0917 123 4567" />
+                      </label>
+                      <label class="mcd-field">
+                        <span>Upload payment QR</span>
+                        <input type="file" accept="image/*" class="mcd-input" @change="selectPaymentQr(branch.id, $event)" />
+                      </label>
+                      <label v-if="branch.payment_qr_url" class="flex items-center gap-2 text-sm font-semibold text-slate-600">
+                        <input v-model="paymentEdits[branch.id].remove_payment_qr" type="checkbox" />
+                        <span>Remove the current QR image</span>
+                      </label>
+                      <button type="button" class="mcd-button" :disabled="paymentSaving[branch.id]" @click="updatePaymentDetails(branch.id)">
+                        {{ paymentSaving[branch.id] ? 'Saving payment details...' : 'Save payment QR and number' }}
+                      </button>
+                    </div>
                   </div>
                 </div>
                 <div class="flex flex-wrap gap-3">

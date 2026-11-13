@@ -16,6 +16,8 @@ class Branch extends Model
         'concurrent_limit',
         'max_guests',
         'map_url',
+        'payment_number',
+        'payment_qr_path',
         'inventory',
         'hosts',
         'is_active',
